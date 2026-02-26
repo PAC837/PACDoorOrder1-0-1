@@ -94,14 +94,14 @@ function computeCompositeProfile(
     toolEdges.push(pts ? buildEdgesFromPoints(pts) : []);
   }
 
-  // Build mirrored shape edges for each back tool.
-  // Mirror Y around material center: y → thickness - y
+  // Build shape edges for each back tool.
+  // No Y-mirroring needed: the depth formula (halfThickness - minY) gives
+  // the tool's cutting depth regardless of front/back. The difference is
+  // only in rendering (front depth from top, back depth from bottom).
   const backToolEdges: ShapeEdge[][] = [];
   for (const tool of backTools) {
     const pts = buildCrossSectionPoints(tool, profiles, thickness);
-    if (!pts) { backToolEdges.push([]); continue; }
-    const mirrored = pts.map(p => ({ x: p.x, y: thickness - p.y }));
-    backToolEdges.push(buildEdgesFromPoints(mirrored));
+    backToolEdges.push(pts ? buildEdgesFromPoints(pts) : []);
   }
 
   const step = 0.05; // 0.05mm resolution

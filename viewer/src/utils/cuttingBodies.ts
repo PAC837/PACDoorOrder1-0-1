@@ -30,15 +30,23 @@ export type GraphToolEntry = DoorGraphData['operations'][0]['tools'][0];
  *
  * Coordinates: X = across-path (+ = outward from panel), Y = Z in world (+ = toward front face).
  * The shape is positioned so tool center X = offset, tool tip Y = tipZ.
+ *
+ * When flipSide=true, the cross-section is positioned to cut from the back face
+ * (negative Z) instead of the front face (positive Z).
  */
 export function buildCrossSection(
   tool: GraphToolEntry,
   profiles: ToolProfileData[],
   thickness: number,
+  flipSide = false,
 ): THREE.Shape | null {
   const offset = -tool.entryOffset;
-  const tipZ = thickness / 2 - tool.entryDepth;
-  const surfaceZ = thickness / 2 + SURFACE_OVERSHOOT;
+  const tipZ = flipSide
+    ? -thickness / 2 + tool.entryDepth
+    : thickness / 2 - tool.entryDepth;
+  const surfaceZ = flipSide
+    ? -thickness / 2 - SURFACE_OVERSHOOT
+    : thickness / 2 + SURFACE_OVERSHOOT;
 
   // Profile tool (isCNCDoor = true) — use actual profile shape
   const profile = profiles.find((p) => p.toolId === tool.toolId);
@@ -331,7 +339,7 @@ export function buildCarvedDoor(
   thickness: number,
   toolpathRects: { rect: SceneRect; tools: GraphToolEntry[]; depth?: number }[],
   profiles: ToolProfileData[],
-  backPocket?: { rect: SceneRect; depth: number } | null,
+  backPocket?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] } | null,
 ): THREE.BufferGeometry {
   console.time('[CNCDoorSlab] CSG carving');
   const evaluator = new Evaluator();
@@ -423,25 +431,83 @@ export function buildCarvedDoor(
     }
   }
 
-  // Back pocket subtraction (simple box)
+  // Back pocket subtraction — box recess + tool profiles (mirrored to back face)
   if (backPocket) {
-    const pocketW = backPocket.rect.width;
-    const pocketH = backPocket.rect.height;
-    const pocketD = backPocket.depth;
-    const pocketGeo = new THREE.BoxGeometry(pocketW, pocketH, pocketD + SURFACE_OVERSHOOT);
-    const pocketBrush = new Brush(pocketGeo);
-    pocketBrush.position.set(
-      backPocket.rect.x,
-      backPocket.rect.y,
-      -thickness / 2 + pocketD / 2 - SURFACE_OVERSHOOT / 2,
-    );
-    pocketBrush.updateMatrixWorld(true);
-    try {
-      slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-      opCount++;
-    } catch (e) {
-      failedOps++;
-      console.warn('[CNCDoorSlab] CSG subtract failed for back pocket, skipping', e);
+    const { rect: backRect, depth: backPocketDepth, tools: backTools } = backPocket;
+
+    // Back pocket box recess
+    if (backPocketDepth > 0) {
+      const pocketGeo = new THREE.BoxGeometry(
+        backRect.width, backRect.height, backPocketDepth + SURFACE_OVERSHOOT,
+      );
+      const pocketBrush = new Brush(pocketGeo);
+      pocketBrush.position.set(
+        backRect.x,
+        backRect.y,
+        -thickness / 2 + backPocketDepth / 2 - SURFACE_OVERSHOOT / 2,
+      );
+      pocketBrush.updateMatrixWorld(true);
+      try {
+        slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
+        opCount++;
+      } catch (e) {
+        failedOps++;
+        console.warn('[CNCDoorSlab] CSG subtract failed for back pocket, skipping', e);
+      }
+    }
+
+    // Back tool profiles — same dispatch as front but with flipSide=true
+    for (const tool of backTools) {
+      const offset = -tool.entryOffset;
+      const radius = tool.toolDiameter / 2;
+      const tipZ = -thickness / 2 + tool.entryDepth;
+      const surfaceZ = -thickness / 2 - SURFACE_OVERSHOOT;
+
+      const isProfile = tool.isCNCDoor;
+      const isVBit = tool.sharpCornerAngle > 0;
+      const toolType = isProfile ? 'profile' : isVBit ? 'v-bit' : 'flat';
+
+      console.log(
+        `[CNCDoorSlab] Back tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
+        `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
+        `surfaceZ=${surfaceZ.toFixed(2)}`,
+      );
+
+      if (!isProfile && !isVBit) {
+        // FLAT TOOL — frame pocket on back face
+        const pocketGeo = buildFramePocket(backRect, offset, radius, surfaceZ, tipZ);
+        const pocketBrush = new Brush(pocketGeo);
+        pocketBrush.updateMatrixWorld(true);
+        try {
+          slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
+          opCount++;
+        } catch (e) {
+          failedOps++;
+          console.warn(
+            `[CNCDoorSlab] CSG subtract failed for back flat tool "${tool.toolName}", skipping`, e,
+          );
+        }
+      } else {
+        // PROFILE or V-BIT — sweep cross-section along back toolpath
+        const crossSection = buildCrossSection(tool, profiles, thickness, true);
+        if (!crossSection) {
+          console.warn(`[CNCDoorSlab] No back cross-section for "${tool.toolName}", skipping`);
+          continue;
+        }
+
+        const sweepGeo = buildRectangularSweep(crossSection, backRect);
+        const sweepBrush = new Brush(sweepGeo);
+        sweepBrush.updateMatrixWorld(true);
+        try {
+          slabBrush = evaluator.evaluate(slabBrush, sweepBrush, SUBTRACTION);
+          opCount++;
+        } catch (e) {
+          failedOps++;
+          console.warn(
+            `[CNCDoorSlab] CSG subtract failed for back tool "${tool.toolName}", skipping`, e,
+          );
+        }
+      }
     }
   }
 

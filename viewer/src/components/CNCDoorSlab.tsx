@@ -75,12 +75,21 @@ export function CNCDoorSlab({
       }
     }
 
-    // Back pocket
-    let backPocket: { rect: ReturnType<typeof toolPathToRect>; depth: number } | null = null;
+    // Back pocket — extract tools from graph just like front operations
+    let backPocket: { rect: ReturnType<typeof toolPathToRect>; depth: number; tools: DoorGraphData['operations'][0]['tools'] } | null = null;
     if (backPocketVisible && backPocketOp?.OperationToolPathNode && backPocketOp.OperationToolPathNode.length >= 3) {
+      const graphBackOp = graph?.operations.find((go) => go.operationId === backPocketOp.ID);
+      const backTools = graphBackOp
+        ? graphBackOp.tools.filter((_, ti) => {
+            const key = `${graphBackOp.operationId}-${ti}`;
+            return toolVisibility[key] !== false;
+          })
+        : [];
+
       backPocket = {
         rect: toolPathToRect(backPocketOp.OperationToolPathNode, doorW, doorH),
         depth: backPocketOp.Depth,
+        tools: backTools,
       };
     }
 

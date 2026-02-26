@@ -2,8 +2,11 @@ import * as THREE from 'three';
 
 /**
  * A single profile shape point from profiles.json.
- * ptType: 0 = straight line vertex, 1 = filleted corner, 2 = filleted corner (alt)
- * data: fillet radius at this corner (sign controls convex vs concave)
+ * ptType: 0 = straight line vertex
+ * ptType: 1 = filleted corner (data = fillet radius in mm, sign = convex/concave)
+ * ptType: 2 = Mozaik sagitta arc (data = sagitta in mm from this vertex to the next;
+ *             sagitta = perpendicular distance from chord midpoint to arc midpoint,
+ *             positive = arc curves left of travel direction, negative = right)
  */
 export interface ProfilePoint {
   x_mm: number;
@@ -189,6 +192,85 @@ function filletPolygon(
 }
 
 // ---------------------------------------------------------------------------
+// Sagitta-based arc tessellation
+// ---------------------------------------------------------------------------
+
+/**
+ * Tessellate an arc between two points defined by a Mozaik sagitta value.
+ *
+ * The sagitta is the perpendicular distance from the chord midpoint to the
+ * arc midpoint (the "height" of the arc), in mm.
+ *
+ *   Positive sagitta → arc curves to the LEFT of the p1→p2 direction (CCW)
+ *   Negative sagitta → arc curves to the RIGHT (CW)
+ *
+ * Returns an array of points along the arc INCLUDING p1, EXCLUDING p2
+ * (p2 will be emitted by the next segment).
+ */
+function tessellateArc(
+  p1: Vec2,
+  p2: Vec2,
+  sagitta: number,
+  segments: number,
+): Vec2[] {
+  if (Math.abs(sagitta) < 1e-10) return [p1];
+
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const chord = Math.sqrt(dx * dx + dy * dy);
+  if (chord < 1e-10) return [p1];
+
+  // Arc geometry from sagitta
+  const s = Math.abs(sagitta);
+  const halfChord = chord / 2;
+  const radius = (s * s + halfChord * halfChord) / (2 * s);
+
+  // Midpoint of chord
+  const mx = (p1.x + p2.x) / 2;
+  const my = (p1.y + p2.y) / 2;
+
+  // Unit perpendicular to chord (LEFT of p1→p2 direction)
+  const px = -dy / chord;
+  const py = dx / chord;
+
+  // Center is on the opposite side of chord from the arc,
+  // at distance (radius - s) from midpoint
+  const centerDist = radius - s;
+  const sign = sagitta > 0 ? 1 : -1;
+  const cx = mx - sign * px * centerDist;
+  const cy = my - sign * py * centerDist;
+
+  // Sweep angles
+  const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
+  const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
+
+  // Determine sweep direction
+  let sweep = endAngle - startAngle;
+  if (sagitta > 0) {
+    // CW: arc curves left of p1→p2, center is on right → sweep negative
+    if (sweep > 0) sweep -= 2 * Math.PI;
+  } else {
+    // CCW: arc curves right of p1→p2, center is on left → sweep positive
+    if (sweep < 0) sweep += 2 * Math.PI;
+  }
+
+  const numSegs = Math.max(4, Math.ceil(Math.abs(sweep) / (2 * Math.PI) * segments));
+  const result: Vec2[] = [];
+
+  // Emit all points except the last (p2 will be emitted by next segment)
+  for (let j = 0; j < numSegs; j++) {
+    const frac = j / numSegs;
+    const angle = startAngle + sweep * frac;
+    result.push({
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    });
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Mirror for full tool
 // ---------------------------------------------------------------------------
 
@@ -232,9 +314,9 @@ export function mirrorForFullTool(halfPoints: Vec2[]): Vec2[] {
 /**
  * Convert profile points into an array of 2D points for rendering.
  *
- * Points define vertices of a closed polygon. Vertices with ptType != 0
- * get a corner fillet applied with radius = |data|. Sign of data controls
- * convex (+) vs concave (-) fillet direction.
+ * Two-phase approach:
+ *   Phase 1: Resolve ptType=2 (DXF bulge) segments into tessellated arc points.
+ *   Phase 2: Apply ptType=1 corner fillets on the expanded polygon.
  *
  * When fullTool=true, mirrors the half-profile across x=0.
  */
@@ -245,11 +327,40 @@ export function profileToLinePoints(
 ): Vec2[] {
   if (points.length < 2) return [];
 
-  const vertices = points.map((p) => ({ x: p.x_mm, y: p.y_mm }));
-  const radii = points.map((p) => (p.ptType !== 0 ? Math.abs(p.data) : 0));
-  const signs = points.map((p) => (p.data >= 0 ? 1 : -1));
+  const n = points.length;
 
-  const filleted = filletPolygon(vertices, radii, signs, arcSegments);
+  // Phase 1: Resolve ptType=2 (bulge) segments into tessellated arc points
+  const expanded: Vec2[] = [];
+  const expandedRadii: number[] = [];
+  const expandedSigns: number[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const curr: Vec2 = { x: points[i].x_mm, y: points[i].y_mm };
+    const next: Vec2 = { x: points[(i + 1) % n].x_mm, y: points[(i + 1) % n].y_mm };
+
+    if (points[i].ptType === 2 && Math.abs(points[i].data) > 1e-10) {
+      // Bulge arc from curr to next — tessellate into line segments
+      const arcPts = tessellateArc(curr, next, points[i].data, arcSegments);
+      for (const p of arcPts) {
+        expanded.push(p);
+        expandedRadii.push(0);   // Arc points don't get fillets
+        expandedSigns.push(1);
+      }
+    } else {
+      // Straight vertex (ptType=0 or ptType=1)
+      expanded.push(curr);
+      if (points[i].ptType === 1 && Math.abs(points[i].data) > 1e-10) {
+        expandedRadii.push(Math.abs(points[i].data));
+        expandedSigns.push(points[i].data >= 0 ? 1 : -1);
+      } else {
+        expandedRadii.push(0);
+        expandedSigns.push(1);
+      }
+    }
+  }
+
+  // Phase 2: Apply corner fillets for ptType=1 vertices
+  const filleted = filletPolygon(expanded, expandedRadii, expandedSigns, arcSegments);
 
   // Close the polygon
   filleted.push({ x: filleted[0].x, y: filleted[0].y });
@@ -259,6 +370,7 @@ export function profileToLinePoints(
 
 /**
  * Convert profile points into straight-line polygon (no fillets) for debug overlay.
+ * ptType=2 bulge arcs are tessellated with a few segments for visibility.
  */
 export function profileToStraightLines(
   points: ProfilePoint[],
@@ -266,9 +378,22 @@ export function profileToStraightLines(
 ): Vec2[] {
   if (points.length < 2) return [];
 
-  const result = points.map((p) => ({ x: p.x_mm, y: p.y_mm }));
-  result.push({ x: points[0].x_mm, y: points[0].y_mm });
+  const n = points.length;
+  const result: Vec2[] = [];
 
+  for (let i = 0; i < n; i++) {
+    const curr: Vec2 = { x: points[i].x_mm, y: points[i].y_mm };
+    const next: Vec2 = { x: points[(i + 1) % n].x_mm, y: points[(i + 1) % n].y_mm };
+
+    if (points[i].ptType === 2 && Math.abs(points[i].data) > 1e-10) {
+      const arcPts = tessellateArc(curr, next, points[i].data, 8);
+      for (const p of arcPts) result.push(p);
+    } else {
+      result.push(curr);
+    }
+  }
+
+  result.push({ x: result[0].x, y: result[0].y });
   return fullTool ? mirrorForFullTool(result) : result;
 }
 

@@ -559,7 +559,10 @@ function buildOptimizerXml(door: any): string {
       }
       const nodes = op.OperationToolPathNode ?? [];
       for (const node of nodes) {
-        xml += `          <OperationToolPathNode X="${node.X}" Y="${node.Y}" DepthOR="${node.DepthOR ?? -9999}" PtType="${node.PtType ?? 0}" Data="${node.Data ?? 0}" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />\n`;
+        // Internal convention: Y=0 is LEFT. Mozaik convention: Y=0 is RIGHT.
+        // Mirror the Y coordinate for export.
+        const exportY = w - node.Y;
+        xml += `          <OperationToolPathNode X="${node.X}" Y="${exportY}" DepthOR="${node.DepthOR ?? -9999}" PtType="${node.PtType ?? 0}" Data="${node.Data ?? 0}" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />\n`;
       }
       xml += '        </OperationPocket>\n';
     }
