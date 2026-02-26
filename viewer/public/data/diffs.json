@@ -1,0 +1,101 @@
+[
+  {
+    "doorA": "_S008 Inside Bead125 Door",
+    "doorB": "_S008BP Inside Bead125 Door BACK POCKET",
+    "attributeDiffs": [
+      {
+        "path": "Name",
+        "valueA": "_S008 Inside Bead125 Door",
+        "valueB": "_S008BP Inside Bead125 Door BACK POCKET"
+      }
+    ],
+    "operationDiffs": [
+      {
+        "type": "added",
+        "operationId": 2,
+        "details": "ToolGroupID=58, Depth=3.175, FlipSideOp=true"
+      }
+    ],
+    "sectionDiffs": []
+  },
+  {
+    "doorA": "_S008 Inside Bead125 Door",
+    "doorB": "_S008 Inside Bead125 Door MID RAIL",
+    "attributeDiffs": [
+      {
+        "path": "Name",
+        "valueA": "_S008 Inside Bead125 Door",
+        "valueB": "_S008 Inside Bead125 Door MID RAIL"
+      },
+      {
+        "path": "DefaultH",
+        "valueA": 762,
+        "valueB": 1981.2
+      }
+    ],
+    "operationDiffs": [
+      {
+        "type": "added",
+        "operationId": 2,
+        "details": "ToolGroupID=70, Depth=6.35, FlipSideOp=false"
+      }
+    ],
+    "sectionDiffs": [
+      {
+        "type": "changed",
+        "path": "MainSection.IsSplitSection",
+        "details": "false -> true"
+      },
+      {
+        "type": "added",
+        "path": "MainSection.Dividers",
+        "details": "0 divider(s) -> 1 divider(s)"
+      },
+      {
+        "type": "added",
+        "path": "MainSection.SubPanels",
+        "details": "0 sub-panel(s) -> 2 sub-panel(s)"
+      }
+    ]
+  },
+  {
+    "doorA": "_S008BP Inside Bead125 Door BACK POCKET",
+    "doorB": "_S008 Inside Bead125 Door MID RAIL",
+    "attributeDiffs": [
+      {
+        "path": "Name",
+        "valueA": "_S008BP Inside Bead125 Door BACK POCKET",
+        "valueB": "_S008 Inside Bead125 Door MID RAIL"
+      },
+      {
+        "path": "DefaultH",
+        "valueA": 762,
+        "valueB": 1981.2
+      }
+    ],
+    "operationDiffs": [
+      {
+        "type": "changed",
+        "operationId": 2,
+        "details": "ToolGroupID: 58 -> 70; FlipSideOp: true -> false; Depth: 3.175 -> 6.35; CCW: false -> true; InsideOut: true -> false"
+      }
+    ],
+    "sectionDiffs": [
+      {
+        "type": "changed",
+        "path": "MainSection.IsSplitSection",
+        "details": "false -> true"
+      },
+      {
+        "type": "added",
+        "path": "MainSection.Dividers",
+        "details": "0 divider(s) -> 1 divider(s)"
+      },
+      {
+        "type": "added",
+        "path": "MainSection.SubPanels",
+        "details": "0 sub-panel(s) -> 2 sub-panel(s)"
+      }
+    ]
+  }
+]

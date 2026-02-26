@@ -1,0 +1,319 @@
+[
+  {
+    "doorName": "_S008 Inside Bead125 Door",
+    "doorType": 3,
+    "operationCount": 1,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "doorName": "_S008BP Inside Bead125 Door BACK POCKET",
+    "doorType": 3,
+    "operationCount": 2,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488
+          }
+        ]
+      },
+      {
+        "operationId": 2,
+        "toolGroupId": 58,
+        "toolGroupName": "_S000 Back Pocket (1/8\")",
+        "depth": 3.175,
+        "flipSideOp": true,
+        "toolCount": 2,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.175,
+            "entryOffset": 6.34492
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.175,
+            "entryOffset": 1.2065
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "doorName": "_S008 Inside Bead125 Door MID RAIL",
+    "doorType": 3,
+    "operationCount": 2,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488
+          }
+        ]
+      },
+      {
+        "operationId": 2,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "doorName": "Default Door",
+    "doorType": 2,
+    "operationCount": 0,
+    "operations": []
+  },
+  {
+    "doorName": "Default Drawer",
+    "doorType": 2,
+    "operationCount": 0,
+    "operations": []
+  }
+]
