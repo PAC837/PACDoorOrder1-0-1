@@ -72,24 +72,36 @@ interface CompositeProfile {
   frontProfile: { x: number; y: number }[];
   /** Front profile used for outline rendering (same as frontProfile) */
   frontOutline: { x: number; y: number }[];
+  /** Back face depth profile: array of {x, y=depthFromBackFace} from right to left */
+  backProfile: { x: number; y: number }[];
 }
 
 function computeCompositeProfile(
   tools: ToolEntry[],
+  backTools: ToolEntry[],
   profiles: ToolProfileData[],
   frontPocketDepth: number,
+  backPocketDepth: number,
   thickness: number,
   stileW: number,
 ): CompositeProfile {
   const halfThickness = thickness / 2;
 
-  // Build shape edges for each tool using the same geometry as the 3D viewer.
-  // All tools are included — the composite max-depth correctly shows the groove
-  // floor (flat tools) with roundover arcs visible where they extend beyond.
+  // Build shape edges for each front tool using the same geometry as the 3D viewer.
   const toolEdges: ShapeEdge[][] = [];
   for (const tool of tools) {
     const pts = buildCrossSectionPoints(tool, profiles, thickness);
     toolEdges.push(pts ? buildEdgesFromPoints(pts) : []);
+  }
+
+  // Build mirrored shape edges for each back tool.
+  // Mirror Y around material center: y → thickness - y
+  const backToolEdges: ShapeEdge[][] = [];
+  for (const tool of backTools) {
+    const pts = buildCrossSectionPoints(tool, profiles, thickness);
+    if (!pts) { backToolEdges.push([]); continue; }
+    const mirrored = pts.map(p => ({ x: p.x, y: thickness - p.y }));
+    backToolEdges.push(buildEdgesFromPoints(mirrored));
   }
 
   const step = 0.05; // 0.05mm resolution
@@ -112,11 +124,25 @@ function computeCompositeProfile(
     rawProfile.push({ x, y: depth });
   }
 
-  // Return raw profile directly — no colinear simplification.
-  // The old simplification (cross-product threshold 0.001) was flattening
-  // roundover arcs because their curvature produces cross-products of ~0.00004
-  // at 0.05mm sampling — 40x below the threshold. All arc detail was lost.
-  return { frontProfile: rawProfile, frontOutline: rawProfile };
+  // Back profile: same approach with mirrored edges
+  const rawBackProfile: { x: number; y: number }[] = [];
+  for (let x = stileW; x >= -VIEW_HALF; x -= step) {
+    let depth = 0;
+    if (x < 0 && backPocketDepth > 0) {
+      depth = backPocketDepth;
+    }
+    for (const edges of backToolEdges) {
+      if (edges.length === 0) continue;
+      const minY = getMinYAtX(edges, x);
+      if (minY !== null) {
+        const d = halfThickness - minY;
+        if (d > depth) depth = d;
+      }
+    }
+    rawBackProfile.push({ x, y: depth });
+  }
+
+  return { frontProfile: rawProfile, frontOutline: rawProfile, backProfile: rawBackProfile };
 }
 
 // ---------------------------------------------------------------------------
@@ -421,17 +447,32 @@ function generateDxf(
       w('10'); w(p.x.toFixed(4));
       w('20'); w((-p.y).toFixed(4));
     }
-    // Slab boundary vertices (3 corners — closed polyline auto-closes back to first vertex)
-    w('0'); w('VERTEX');
-    w('8'); w('OUTLINE');
-    w('10'); w((-VIEW_HALF).toFixed(4));
-    w('20'); w((-thickness).toFixed(4));
 
-    w('0'); w('VERTEX');
-    w('8'); w('OUTLINE');
-    w('10'); w(stileW.toFixed(4));
-    w('20'); w((-thickness).toFixed(4));
+    // Back profile from left to right (reverse order)
+    // backProfile[i].y = depth-from-back-face; DXF Y = -(thickness - depth)
+    const bp = composite.backProfile;
+    const hasBackCut = bp.length > 1 && bp.some(p => p.y > 0);
+    if (hasBackCut) {
+      for (let i = bp.length - 1; i >= 0; i--) {
+        w('0'); w('VERTEX');
+        w('8'); w('OUTLINE');
+        w('10'); w(bp[i].x.toFixed(4));
+        w('20'); w((-(thickness - bp[i].y)).toFixed(4));
+      }
+    } else {
+      // Flat bottom edge (no back cuts)
+      w('0'); w('VERTEX');
+      w('8'); w('OUTLINE');
+      w('10'); w((-VIEW_HALF).toFixed(4));
+      w('20'); w((-thickness).toFixed(4));
 
+      w('0'); w('VERTEX');
+      w('8'); w('OUTLINE');
+      w('10'); w(stileW.toFixed(4));
+      w('20'); w((-thickness).toFixed(4));
+    }
+
+    // Top-right corner (auto-closes back to first vertex)
     w('0'); w('VERTEX');
     w('8'); w('OUTLINE');
     w('10'); w(stileW.toFixed(4));
@@ -439,17 +480,6 @@ function generateDxf(
 
     w('0'); w('SEQEND');
     w('8'); w('OUTLINE');
-  }
-
-  // --- Back pocket boundary (if present) ---
-  if (backPocketDepth > 0) {
-    const bpY = -(thickness - backPocketDepth);
-    w('0'); w('LINE');
-    w('8'); w('OUTLINE');
-    w('10'); w((-VIEW_HALF).toFixed(4));
-    w('20'); w(bpY.toFixed(4));
-    w('11'); w(stileW.toFixed(4));
-    w('21'); w(bpY.toFixed(4));
   }
 
   // --- Title text ---
@@ -506,12 +536,17 @@ function CrossSectionCanvas({
     const backPocketDepth = backOp?.Depth ?? 0;
 
     const graphFrontOp = graph?.operations.find((o) => !o.flipSideOp);
+    const graphBackOp = graph?.operations.find((o) => o.flipSideOp);
     const tools = graphFrontOp?.tools ?? [];
+    const backTools = graphBackOp?.tools ?? [];
     const stileW = door.LeftRightStileW;
 
-    // Compute composite depth profile
-    const composite = computeCompositeProfile(tools, profiles, frontPocketDepth, thickness, stileW);
+    // Compute composite depth profile (front + back)
+    const composite = computeCompositeProfile(
+      tools, backTools, profiles, frontPocketDepth, backPocketDepth, thickness, stileW,
+    );
     const outline = composite.frontOutline;
+    const backProfile = composite.backProfile;
 
     // --- Coordinate transform ---
     const dimSpace = showDimensions ? 50 : 0;
@@ -563,14 +598,19 @@ function CrossSectionCanvas({
         ctx.closePath();
       }
 
-      // Back pocket hole
-      if (backPocketDepth > 0) {
-        const bpTop = toY(thickness - backPocketDepth);
-        ctx.moveTo(slabLeft, slabBot);
-        ctx.lineTo(slabLeft, bpTop);
-        ctx.lineTo(slabRight, bpTop);
-        ctx.lineTo(slabRight, slabBot);
-        ctx.closePath();
+      // Back profile hole (counter-clockwise from back face)
+      if (backProfile.length > 1) {
+        const hasBackCut = backProfile.some(p => p.y > 0);
+        if (hasBackCut) {
+          // backProfile[i].y is depth-from-back-face → screen Y = toY(thickness - y)
+          ctx.moveTo(toX(backProfile[0].x), toY(thickness - backProfile[0].y));
+          for (let i = 1; i < backProfile.length; i++) {
+            ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
+          }
+          ctx.lineTo(slabLeft, slabBot);
+          ctx.lineTo(slabRight, slabBot);
+          ctx.closePath();
+        }
       }
 
       ctx.clip('evenodd');
@@ -590,15 +630,25 @@ function CrossSectionCanvas({
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1.5;
 
-    // Single continuous closed outline: composite front profile + slab edges
+    // Single continuous closed outline: composite front profile + slab edges + back profile
     ctx.beginPath();
     if (outline.length > 1) {
-      // Start at rightmost composite point (VIEW_HALF side)
+      // Start at rightmost composite point (stile edge)
       ctx.moveTo(toX(outline[0].x), toY(outline[0].y));
       // Right edge down to bottom-right
       ctx.lineTo(slabRight, slabBot);
-      // Bottom edge to bottom-left
-      ctx.lineTo(slabLeft, slabBot);
+      // Bottom edge: back profile from right to left (reverse order)
+      const hasBackCut = backProfile.length > 1 && backProfile.some(p => p.y > 0);
+      if (hasBackCut) {
+        // Back profile from right to left
+        for (let i = 0; i < backProfile.length; i++) {
+          ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
+        }
+        // Left edge up from leftmost back profile to back face
+        ctx.lineTo(slabLeft, slabBot);
+      } else {
+        ctx.lineTo(slabLeft, slabBot);
+      }
       // Left edge up to leftmost composite point
       ctx.lineTo(toX(outline[outline.length - 1].x), toY(outline[outline.length - 1].y));
       // Composite front profile from left to right (reverse order)
@@ -616,11 +666,13 @@ function CrossSectionCanvas({
     }
     ctx.stroke();
 
-    // Back pocket ceiling line
-    if (backPocketDepth > 0) {
+    // Back profile outline (separate stroke for clarity when no front profile)
+    if (backProfile.length > 1 && backProfile.some(p => p.y > 0) && outline.length <= 1) {
       ctx.beginPath();
-      ctx.moveTo(slabLeft, toY(thickness - backPocketDepth));
-      ctx.lineTo(slabRight, toY(thickness - backPocketDepth));
+      ctx.moveTo(toX(backProfile[0].x), toY(thickness - backProfile[0].y));
+      for (let i = 1; i < backProfile.length; i++) {
+        ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
+      }
       ctx.stroke();
     }
 
@@ -741,10 +793,14 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
     const backPocketDepth = backOp?.Depth ?? 0;
 
     const graphFrontOp = graph?.operations.find((o) => !o.flipSideOp);
+    const graphBackOp = graph?.operations.find((o) => o.flipSideOp);
     const tools = graphFrontOp?.tools ?? [];
+    const backTools = graphBackOp?.tools ?? [];
     const stileW = door.LeftRightStileW;
 
-    const composite = computeCompositeProfile(tools, profiles, frontPocketDepth, thickness, stileW);
+    const composite = computeCompositeProfile(
+      tools, backTools, profiles, frontPocketDepth, backPocketDepth, thickness, stileW,
+    );
     const dxf = generateDxf(composite, thickness, frontPocketDepth, backPocketDepth, door.Name, stileW);
 
     const blob = new Blob([dxf], { type: 'application/dxf' });

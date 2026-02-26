@@ -125,3 +125,35 @@ export interface ToolProfileData {
 
 /** Material thickness — standard 3/4" stock. */
 export const MATERIAL_THICKNESS = 19.05; // mm
+
+// ---------------------------------------------------------------------------
+// Raw tool library types (loaded from toolGroups.json / tools.json)
+// ---------------------------------------------------------------------------
+
+export interface RawToolEntry {
+  ToolID: number;
+  Depth: number;       // mm
+  Offset: number;      // mm (can be negative)
+  ThruCut: boolean;
+  SharpCorners: boolean;
+  NoRamp: boolean;
+  FlipSide: boolean;
+}
+
+export interface RawToolGroup {
+  Name: string;
+  Type: number;          // 0 = panel op, 1 = edge op
+  ToolGroupID: number;
+  Alignment: number;
+  DefaultMaterialThickness: number;
+  PartSpacing: number;
+  ToolEntry: RawToolEntry[];
+}
+
+export interface RawTool {
+  Name: string;
+  ToolID: number;
+  Dia: number;            // diameter mm
+  SharpCornerAngle: number;
+  AppCNCDoor: boolean;
+}
