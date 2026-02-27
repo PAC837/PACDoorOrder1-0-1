@@ -7,11 +7,12 @@ import { OperationOverlay } from './components/OperationOverlay.js';
 import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
+import { ElevationViewer } from './components/ElevationViewer.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import type { OperationVisibility, ToolVisibility, PanelType, UnitSystem } from './types.js';
 import { MATERIAL_THICKNESS, formatUnit } from './types.js';
 
-type Tab = 'door' | 'tools' | 'cross-section' | 'admin';
+type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
 
 const GENERIC_DOOR_VALUE = 'generic';
 
@@ -33,6 +34,13 @@ export default function App() {
   const [topRailW, setTopRailW] = useState(63.5);        // 2.5"
   const [bottomRailW, setBottomRailW] = useState(63.5);  // 2.5"
   const [units, setUnits] = useState<UnitSystem>('mm');
+  const [hasMidRail, setHasMidRail] = useState(false);
+  const [midRailPos, setMidRailPos] = useState(381);       // mm from bottom to center
+  const [midRailW, setMidRailW] = useState(76.2);           // 3" bar width
+  const [hasMidStile, setHasMidStile] = useState(false);
+  const [midStilePos, setMidStilePos] = useState(254);     // mm from left to center
+  const [midStileW, setMidStileW] = useState(76.2);         // 3" bar width
+  const [selectedPanelIdx, setSelectedPanelIdx] = useState<number | null>(null);
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
   const [libraries, setLibraries] = useState<string[]>([]);
@@ -133,6 +141,8 @@ export default function App() {
         effectiveFrontDepth, effectiveBackDepth,
         508, 762,
         leftStileW, rightStileW, topRailW, bottomRailW,
+        hasMidRail, midRailPos, midRailW,
+        hasMidStile, midStilePos, midStileW,
       );
       return { activeDoor: door, activeGraph: graph };
     }
@@ -144,6 +154,7 @@ export default function App() {
     return { activeDoor: undefined, activeGraph: undefined };
   }, [isGenericDoor, frontGroupId, backGroupId, effectiveFrontDepth, effectiveBackDepth,
       leftStileW, rightStileW, topRailW, bottomRailW,
+      hasMidRail, midRailPos, midRailW, hasMidStile, midStilePos, midStileW,
       toolGroups, tools, doors, selectedIndex, graphs]);
 
   // Export the current door to Mozaik optimizer XML
@@ -201,6 +212,33 @@ export default function App() {
     );
   }
 
+  // --- Tab: Elevation ---
+  if (currentTab === 'elevation' && activeDoor) {
+    // For library doors, extract mid-rail info from MainSection data
+    const libHasMidRail = !isGenericDoor && activeDoor.MainSection.IsSplitSection;
+    const libMidRailPos = libHasMidRail && activeDoor.MainSection.Dividers?.Divider?.[0]
+      ? activeDoor.MainSection.Dividers.Divider[0].DBStart + activeDoor.MainSection.Dividers.Divider[0].DB / 2
+      : 0;
+    const libMidRailW = libHasMidRail && activeDoor.MainSection.Dividers?.Divider?.[0]
+      ? activeDoor.MainSection.Dividers.Divider[0].DB
+      : 0;
+    return (
+      <div style={styles.container}>
+        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
+        <ElevationViewer
+          door={activeDoor}
+          units={units}
+          hasMidRail={isGenericDoor ? hasMidRail : libHasMidRail}
+          midRailPos={isGenericDoor ? midRailPos : libMidRailPos}
+          midRailW={isGenericDoor ? midRailW : libMidRailW}
+          hasMidStile={isGenericDoor ? hasMidStile : false}
+          midStilePos={isGenericDoor ? midStilePos : 0}
+          midStileW={isGenericDoor ? midStileW : 0}
+        />
+      </div>
+    );
+  }
+
   // Camera distance based on door size
   const maxDim = activeDoor ? Math.max(activeDoor.DefaultW, activeDoor.DefaultH) : 500;
   const camDist = maxDim * 1.8;
@@ -218,6 +256,7 @@ export default function App() {
           far: 50000,
         }}
         style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
+        onPointerMissed={() => setSelectedPanelIdx(null)}
       >
         <color attach="background" args={['#1a1a2e']} />
 
@@ -237,6 +276,8 @@ export default function App() {
             frontPanelType={isGenericDoor ? frontPanelType : undefined}
             backPanelType={isGenericDoor ? backPanelType : undefined}
             hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
+            selectedPanelIdx={isGenericDoor ? selectedPanelIdx : undefined}
+            onPanelSelect={isGenericDoor ? setSelectedPanelIdx : undefined}
           />
         )}
 
@@ -459,6 +500,77 @@ export default function App() {
                 <span style={styles.unitLabel}>{formatUnit(bottomRailW, units)}</span>
               </div>
             </div>
+
+            {/* Mid Rail / Mid Stile */}
+            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
+              <div style={{ fontSize: '11px', color: '#8888aa', marginBottom: 6 }}>
+                {selectedPanelIdx !== null
+                  ? `Panel ${selectedPanelIdx + 1} selected`
+                  : 'Click a panel in the 3D view to select it'}
+              </div>
+              {selectedPanelIdx !== null && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  {!hasMidRail && (
+                    <button
+                      style={styles.bulkBtn}
+                      onClick={() => { setHasMidRail(true); setSelectedPanelIdx(null); setOperationVisibility({}); setToolVisibility({}); }}
+                    >
+                      Add Mid Rail
+                    </button>
+                  )}
+                  {!hasMidStile && (
+                    <button
+                      style={styles.bulkBtn}
+                      onClick={() => { setHasMidStile(true); setSelectedPanelIdx(null); setOperationVisibility({}); setToolVisibility({}); }}
+                    >
+                      Add Mid Stile
+                    </button>
+                  )}
+                </div>
+              )}
+              {hasMidRail && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Mid Rail Pos:</label>
+                    <input type="number" value={midRailPos} step={0.5} min={0}
+                      onChange={(e) => { setMidRailPos(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                      style={styles.numberInput} />
+                    <span style={styles.unitLabel}>{formatUnit(midRailPos, units)}</span>
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Mid Rail W:</label>
+                    <input type="number" value={midRailW} step={0.5} min={0}
+                      onChange={(e) => { setMidRailW(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                      style={styles.numberInput} />
+                    <span style={styles.unitLabel}>{formatUnit(midRailW, units)}</span>
+                    <button style={styles.removeBtn} onClick={() => { setHasMidRail(false); setOperationVisibility({}); setToolVisibility({}); }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+              {hasMidStile && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Mid Stile Pos:</label>
+                    <input type="number" value={midStilePos} step={0.5} min={0}
+                      onChange={(e) => { setMidStilePos(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                      style={styles.numberInput} />
+                    <span style={styles.unitLabel}>{formatUnit(midStilePos, units)}</span>
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Mid Stile W:</label>
+                    <input type="number" value={midStileW} step={0.5} min={0}
+                      onChange={(e) => { setMidStileW(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                      style={styles.numberInput} />
+                    <span style={styles.unitLabel}>{formatUnit(midStileW, units)}</span>
+                    <button style={styles.removeBtn} onClick={() => { setHasMidStile(false); setOperationVisibility({}); setToolVisibility({}); }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -581,6 +693,15 @@ function TabBar({ currentTab, onTabChange, units, onUnitsChange }: {
         onClick={() => onTabChange('cross-section')}
       >
         Cross Section
+      </button>
+      <button
+        style={{
+          ...tabStyles.tab,
+          ...(currentTab === 'elevation' ? tabStyles.activeTab : {}),
+        }}
+        onClick={() => onTabChange('elevation')}
+      >
+        Elevation
       </button>
       <button
         style={{
@@ -840,6 +961,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: '#8888aa',
     flexShrink: 0,
+  },
+  bulkBtn: {
+    padding: '4px 12px',
+    borderRadius: 4,
+    border: '1px solid #555577',
+    background: 'rgba(42, 42, 72, 0.8)',
+    color: '#aaaacc',
+    fontSize: '11px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  removeBtn: {
+    padding: '3px 8px',
+    borderRadius: 4,
+    border: '1px solid #664444',
+    background: 'rgba(72, 42, 42, 0.8)',
+    color: '#ff8888',
+    fontSize: '10px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    marginLeft: 4,
   },
   info: {
     background: 'rgba(26, 26, 46, 0.85)',

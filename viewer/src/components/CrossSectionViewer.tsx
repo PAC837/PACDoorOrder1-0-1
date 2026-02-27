@@ -778,7 +778,7 @@ function CrossSectionCanvas({
           const d = tool.entryDepth;
           const tipSx = toX(offset);
           const tipSy = toY(d);
-          drawAngleDim(ctx, tipSx, tipSy, tool.sharpCornerAngle, 25);
+          drawAngleDim(ctx, tipSx, tipSy, tool.sharpCornerAngle / 2, 25);
         }
       }
 

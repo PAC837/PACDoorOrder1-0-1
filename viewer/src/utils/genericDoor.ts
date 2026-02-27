@@ -29,56 +29,104 @@ export function buildGenericDoor(
   rightStileW = 63.5,       // 2.5"
   topRailW = 63.5,          // 2.5"
   bottomRailW = 63.5,       // 2.5"
+  hasMidRail = false,
+  midRailPos = 381,         // mm from bottom to center of mid-rail
+  midRailW = 76.2,          // 3" bar width
+  hasMidStile = false,
+  midStilePos = 254,        // mm from left to center of mid-stile
+  midStileW = 76.2,         // 3" bar width
 ): { door: DoorData; graph: DoorGraphData } {
   // Look up maps
   const toolGroupById = new Map(allToolGroups.map((g) => [g.ToolGroupID, g]));
   const toolById = new Map(allTools.map((t) => [t.ToolID, t]));
 
-  // Toolpath rectangle nodes (Mozaik coords: X=height, Y=width)
-  const pathNodes: ToolPathNodeData[] = [
-    { X: bottomRailW,      Y: doorW - rightStileW, DepthOR: -9999, PtType: 0, Data: 0 },
-    { X: bottomRailW,      Y: leftStileW,          DepthOR: -9999, PtType: 0, Data: 0 },
-    { X: doorH - topRailW, Y: leftStileW,          DepthOR: -9999, PtType: 0, Data: 0 },
-    { X: doorH - topRailW, Y: doorW - rightStileW, DepthOR: -9999, PtType: 0, Data: 0 },
-  ];
+  // Compute sub-panel rectangles in Mozaik coords (X=height, Y=width)
+  // Full panel bounds
+  const panelXMin = bottomRailW;
+  const panelXMax = doorH - topRailW;
+  const panelYMin = leftStileW;
+  const panelYMax = doorW - rightStileW;
 
-  // Build operations
+  // Vertical splits (mid-rail splits height into bottom/top)
+  const xSplits: [number, number][] = [];
+  if (hasMidRail) {
+    const railHalf = midRailW / 2;
+    xSplits.push([panelXMin, midRailPos - railHalf]);
+    xSplits.push([midRailPos + railHalf, panelXMax]);
+  } else {
+    xSplits.push([panelXMin, panelXMax]);
+  }
+
+  // Horizontal splits (mid-stile splits width into left/right)
+  const ySplits: [number, number][] = [];
+  if (hasMidStile) {
+    const stileHalf = midStileW / 2;
+    ySplits.push([panelYMin, midStilePos - stileHalf]);
+    ySplits.push([midStilePos + stileHalf, panelYMax]);
+  } else {
+    ySplits.push([panelYMin, panelYMax]);
+  }
+
+  // Build sub-panel toolpath rectangles (grid of xSplits × ySplits)
+  const subPanelPaths: ToolPathNodeData[][] = [];
+  for (const [xMin, xMax] of xSplits) {
+    for (const [yMin, yMax] of ySplits) {
+      subPanelPaths.push([
+        { X: xMin, Y: yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: xMin, Y: yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: xMax, Y: yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: xMax, Y: yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+      ]);
+    }
+  }
+
+  // Build operations — one per sub-panel per face
   const operations: OperationData[] = [];
   const graphOperations: DoorGraphData['operations'] = [];
+  let nextId = 1;
 
   if (frontGroupId !== null) {
     const group = toolGroupById.get(frontGroupId);
     if (group) {
-      operations.push({
-        ID: 1,
-        ToolGroupID: frontGroupId,
-        Depth: frontDepth,
-        FlipSideOp: false,
-        ClosedShape: true,
-        InsideOut: true,
-        CCW: false,
-        OperationToolPathNode: pathNodes,
-      });
-      graphOperations.push(buildGraphOperation(1, group, toolById, frontDepth, false));
+      for (const pathNodes of subPanelPaths) {
+        operations.push({
+          ID: nextId,
+          ToolGroupID: frontGroupId,
+          Depth: frontDepth,
+          FlipSideOp: false,
+          ClosedShape: true,
+          InsideOut: true,
+          CCW: false,
+          OperationToolPathNode: pathNodes,
+        });
+        graphOperations.push(buildGraphOperation(nextId, group, toolById, frontDepth, false));
+        nextId++;
+      }
     }
   }
 
   if (backGroupId !== null) {
     const group = toolGroupById.get(backGroupId);
     if (group) {
-      operations.push({
-        ID: 2,
-        ToolGroupID: backGroupId,
-        Depth: backDepth,
-        FlipSideOp: true,
-        ClosedShape: true,
-        InsideOut: true,
-        CCW: false,
-        OperationToolPathNode: pathNodes,
-      });
-      graphOperations.push(buildGraphOperation(2, group, toolById, backDepth, true));
+      for (const pathNodes of subPanelPaths) {
+        operations.push({
+          ID: nextId,
+          ToolGroupID: backGroupId,
+          Depth: backDepth,
+          FlipSideOp: true,
+          ClosedShape: true,
+          InsideOut: true,
+          CCW: false,
+          OperationToolPathNode: pathNodes,
+        });
+        graphOperations.push(buildGraphOperation(nextId, group, toolById, backDepth, true));
+        nextId++;
+      }
     }
   }
+
+  // MainSection metadata
+  const isSplit = hasMidRail || hasMidStile;
 
   const door: DoorData = {
     Name: 'Generic Door',
@@ -92,15 +140,20 @@ export function buildGenericDoor(
     TopRailW: topRailW,
     BottomRailW: bottomRailW,
     LeftRightStileW: leftStileW,
-    CenterStileW: 76.2,
-    CenterRailW: 76.2,
+    CenterStileW: midStileW,
+    CenterRailW: midRailW,
     PanelRecess: frontDepth,
     MainSection: {
-      IsSplitSection: false,
+      IsSplitSection: isSplit,
       X: leftStileW,
       Y: bottomRailW,
       DX: doorW - leftStileW - rightStileW,
       DY: doorH - topRailW - bottomRailW,
+      SplitType: hasMidRail ? 1 : undefined,
+      Dividers: hasMidRail
+        ? { Divider: [{ DB: midRailW, DBStart: midRailPos - midRailW / 2 }] }
+        : undefined,
+      SubPanels: isSplit ? buildSubPanels(xSplits, ySplits) : undefined,
     },
     RoutedLockedShape: {
       Operations: {
@@ -117,6 +170,25 @@ export function buildGenericDoor(
   };
 
   return { door, graph };
+}
+
+/** Build SubPanels metadata from splits. */
+function buildSubPanels(
+  xSplits: [number, number][],
+  ySplits: [number, number][],
+): { SubPanel: import('../types.js').SubPanelData[] } {
+  const panels: import('../types.js').SubPanelData[] = [];
+  for (const [xMin, xMax] of xSplits) {
+    for (const [yMin, yMax] of ySplits) {
+      const h = xMax - xMin;
+      const w = yMax - yMin;
+      panels.push({
+        DA: h,
+        Panel: { X: yMin, Y: xMin, DX: w, DY: h },
+      });
+    }
+  }
+  return { SubPanel: panels };
 }
 
 function buildGraphOperation(
