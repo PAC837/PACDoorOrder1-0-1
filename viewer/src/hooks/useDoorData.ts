@@ -11,7 +11,7 @@ interface DoorDataState {
   error: string | null;
 }
 
-export function useDoorData(): DoorDataState {
+export function useDoorData(reloadKey: number = 0): DoorDataState {
   const [state, setState] = useState<DoorDataState>({
     doors: [],
     graphs: [],
@@ -24,6 +24,7 @@ export function useDoorData(): DoorDataState {
 
   useEffect(() => {
     async function load() {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const [doorsRes, graphsRes, profilesRes, toolGroupsRes, toolsRes] = await Promise.all([
           fetch('/data/doors.json'),
@@ -57,7 +58,7 @@ export function useDoorData(): DoorDataState {
       }
     }
     load();
-  }, []);
+  }, [reloadKey]);
 
   return state;
 }

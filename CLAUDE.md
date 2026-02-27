@@ -76,10 +76,24 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 - Sweep mesh uses `toNonIndexed()` for flat per-face normals (keeps V-bit faces sharp, roundover arcs true to shape)
 - `three-bvh-csg` requires matching attributes (position, normal, uv) on both CSG operands
 
+**Back-face tool handling:**
+- `buildCrossSection(tool, profiles, thickness, flipSide=true)` positions the cross-section at the back face: `tipZ = -thickness/2 + entryDepth`, `surfaceZ = -thickness/2 - overshoot`
+- `buildProfileCrossSection` uses `direction = surfaceZ >= tipZ ? 1 : -1` to flip Y for back profiles, with `clipLocalY = Math.abs(surfaceZ - tipZ)` to keep clipping correct
+- The Y-flip reverses polygon winding (CCW→CW). `buildRectangularSweep` corrects this via a shoelace signed-area check, reversing CW cross-sections back to CCW
+- `buildFramePocket` args are intentionally swapped for back tools (`surfaceZ, tipZ` instead of `tipZ, surfaceZ`) to keep ExtrudeGeometry depth positive
+
 **Profile shapes** (`profileShape.ts`):
-- `profileToLinePoints()` converts tool profile points into a 2D polygon with filleted corners
-- `ptType 0` = straight vertex, `ptType 1/2` = filleted corner with radius = `|data|`, sign controls convex/concave
+- `ptType 0` = straight line vertex
+- `ptType 1` = filleted corner (data = radius in mm, sign = convex/concave)
+- `ptType 2` = Mozaik sagitta arc (data = sagitta in mm, perpendicular distance from chord midpoint to arc midpoint; positive = arc curves left of travel, negative = right)
+- `profileToLinePoints()` uses a two-phase approach: Phase 1 tessellates ptType=2 arcs via `tessellateArc()` (sagitta→radius formula: `r = (s² + halfChord²) / (2s)`), Phase 2 applies ptType=1 corner fillets via `filletPolygon()`
 - `mirrorForFullTool()` mirrors a half-profile across x=0 for symmetric tools
+
+**2D cross-section viewer** (`CrossSectionViewer.tsx`):
+- Samples depth at 0.05mm resolution across a 152.4mm (6") slice centered on the toolpath boundary
+- Uses `buildCrossSectionPoints()` WITHOUT flipSide for both front and back tools — this is intentional because `depth = halfThickness - minY` gives correct cutting depth regardless of face (profiles are symmetric via `fullTool=true`)
+- Back profile rendering: `thickness - depth` converts depth-from-back to screen Y
+- Exports DXF in R12 format for Vectric/AutoCAD compatibility
 
 **Data loading** (`hooks/useDoorData.ts`):
 - Fetches `doors.json`, `doorGraphs.json`, `profiles.json` from `/data/`
@@ -92,6 +106,12 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 ### Tool offset convention
 
 `entryOffset` from Mozaik data is negated when used: `offset = -tool.entryOffset`. A positive result means the toolpath is outward from the panel edge; negative means inward.
+
+### Generic Door feature
+
+`genericDoor.ts` → `buildGenericDoor()` creates doors with independently configurable front/back tool groups, depths, and stile/rail widths. Generates both `DoorData` (for rendering) and `DoorGraphData` (relational graph) from raw tool group/tool data.
+
+The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) to convert from internal convention (Y=0 = left edge) to Mozaik convention (Y=0 = right edge). This applies to all operations uniformly (both front and back).
 
 ## Key Dependencies
 

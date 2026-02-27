@@ -36,16 +36,18 @@ export function resolveToolGroup(
   group: ToolGroup,
   toolById: Map<number, Tool>
 ): ResolvedToolGroup {
-  const tools: ResolvedToolEntry[] = group.ToolEntry.map((entry) => {
+  const tools: ResolvedToolEntry[] = [];
+  for (const entry of group.ToolEntry) {
     const tool = toolById.get(entry.ToolID);
     if (!tool) {
-      throw new Error(
-        `Tool ID ${entry.ToolID} referenced by ToolGroup "${group.Name}" ` +
-        `(ID: ${group.ToolGroupID}) not found in ToolLibrary`
+      console.warn(
+        `[buildGraph] Skipping Tool ID ${entry.ToolID} in ToolGroup "${group.Name}" ` +
+        `(ID: ${group.ToolGroupID}) — not found in ToolLibrary`
       );
+      continue;
     }
-    return { entry, tool };
-  });
+    tools.push({ entry, tool });
+  }
   return { group, tools };
 }
 
@@ -62,10 +64,11 @@ export function resolveDoor(
   for (const operation of ops) {
     const group = maps.toolGroupById.get(operation.ToolGroupID);
     if (!group) {
-      throw new Error(
-        `ToolGroup ID ${operation.ToolGroupID} referenced by operation ` +
-        `ID ${operation.ID} in door "${door.Name}" not found`
+      console.warn(
+        `[buildGraph] Skipping operation ID ${operation.ID} in door "${door.Name}" ` +
+        `— ToolGroup ID ${operation.ToolGroupID} not found`
       );
+      continue;
     }
     const toolGroup = resolveToolGroup(group, maps.toolById);
     operations.push({ operation, toolGroup });

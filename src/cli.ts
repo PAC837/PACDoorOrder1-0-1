@@ -147,6 +147,7 @@ function main() {
         sharpCornerAngle: t.tool.SharpCornerAngle,
         entryDepth: t.entry.Depth,
         entryOffset: t.entry.Offset,
+        flipSide: t.entry.FlipSide,
       })),
     })),
   }));

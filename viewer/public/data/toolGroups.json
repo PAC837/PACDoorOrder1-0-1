@@ -2141,5 +2141,87 @@
         "FlipSide": false
       }
     ]
+  },
+  {
+    "Name": "_S008 Inside Bead125 GLASS",
+    "Type": 0,
+    "ToolGroupID": 83,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 15,
+        "Depth": 6.35,
+        "Offset": 6.34492,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 6.35,
+        "Offset": 1.1811,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 3.302,
+        "Offset": -7.8613,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 214,
+        "Depth": 3.302,
+        "Offset": -0.2032,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 214,
+        "Depth": 3.302,
+        "Offset": -6.5278,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 168,
+        "Depth": 3.302,
+        "Offset": -9.4488,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 15,
+        "Depth": 9.525,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 203,
+        "Depth": 7.551954,
+        "Offset": -6.205575,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
   }
 ]

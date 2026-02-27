@@ -3,3 +3,5 @@ dist/
 output/
 .DS_Store
 *.log
+.pac-config.json
+.browse-folder.ps1

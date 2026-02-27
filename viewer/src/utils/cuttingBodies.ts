@@ -388,10 +388,16 @@ export function buildCarvedDoor(
     }
 
     for (const tool of tools) {
+      // Per-tool flip: FlipSide tools in a front operation render on the back face
+      const effectiveFlipSide = tool.flipSide ?? false;
       const offset = -tool.entryOffset;
       const radius = tool.toolDiameter / 2;
-      const tipZ = thickness / 2 - tool.entryDepth;
-      const surfaceZ = thickness / 2 + SURFACE_OVERSHOOT;
+      const tipZ = effectiveFlipSide
+        ? -thickness / 2 + tool.entryDepth
+        : thickness / 2 - tool.entryDepth;
+      const surfaceZ = effectiveFlipSide
+        ? -thickness / 2 - SURFACE_OVERSHOOT
+        : thickness / 2 + SURFACE_OVERSHOOT;
 
       const isProfile = tool.isCNCDoor;
       const isVBit = tool.sharpCornerAngle > 0;
@@ -400,12 +406,15 @@ export function buildCarvedDoor(
       console.log(
         `[CNCDoorSlab] Tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
         `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
-        `surfaceZ=${surfaceZ.toFixed(2)}`,
+        `surfaceZ=${surfaceZ.toFixed(2)}${effectiveFlipSide ? ' (FLIPPED to back)' : ''}`,
       );
 
       if (!isProfile && !isVBit) {
         // FLAT TOOL — frame pocket (1 CSG op)
-        const pocketGeo = buildFramePocket(rect, offset, radius, tipZ, surfaceZ);
+        // Swap args for back face to keep ExtrudeGeometry depth positive
+        const pocketGeo = effectiveFlipSide
+          ? buildFramePocket(rect, offset, radius, surfaceZ, tipZ)
+          : buildFramePocket(rect, offset, radius, tipZ, surfaceZ);
         const pocketBrush = new Brush(pocketGeo);
         pocketBrush.updateMatrixWorld(true);
         try {
@@ -421,7 +430,7 @@ export function buildCarvedDoor(
         }
       } else {
         // PROFILE or V-BIT — sweep cross-section along rectangular toolpath
-        const crossSection = buildCrossSection(tool, profiles, thickness);
+        const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
         if (!crossSection) {
           console.warn(`[CNCDoorSlab] No cross-section for "${tool.toolName}", skipping`);
           continue;
@@ -469,12 +478,18 @@ export function buildCarvedDoor(
       }
     }
 
-    // Back tool profiles — same dispatch as front but with flipSide=true
+    // Back tool profiles — same dispatch as front but with flipSide=true by default
+    // Per-tool flip: FlipSide tools in a back operation render on the front face (XOR)
     for (const tool of backTools) {
+      const effectiveFlipSide = !(tool.flipSide ?? false);
       const offset = -tool.entryOffset;
       const radius = tool.toolDiameter / 2;
-      const tipZ = -thickness / 2 + tool.entryDepth;
-      const surfaceZ = -thickness / 2 - SURFACE_OVERSHOOT;
+      const tipZ = effectiveFlipSide
+        ? -thickness / 2 + tool.entryDepth
+        : thickness / 2 - tool.entryDepth;
+      const surfaceZ = effectiveFlipSide
+        ? -thickness / 2 - SURFACE_OVERSHOOT
+        : thickness / 2 + SURFACE_OVERSHOOT;
 
       const isProfile = tool.isCNCDoor;
       const isVBit = tool.sharpCornerAngle > 0;
@@ -483,12 +498,14 @@ export function buildCarvedDoor(
       console.log(
         `[CNCDoorSlab] Back tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
         `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
-        `surfaceZ=${surfaceZ.toFixed(2)}`,
+        `surfaceZ=${surfaceZ.toFixed(2)}${!effectiveFlipSide ? ' (FLIPPED to front)' : ''}`,
       );
 
       if (!isProfile && !isVBit) {
-        // FLAT TOOL — frame pocket on back face
-        const pocketGeo = buildFramePocket(backRect, offset, radius, surfaceZ, tipZ);
+        // FLAT TOOL — frame pocket; swap args for back face
+        const pocketGeo = effectiveFlipSide
+          ? buildFramePocket(backRect, offset, radius, surfaceZ, tipZ)
+          : buildFramePocket(backRect, offset, radius, tipZ, surfaceZ);
         const pocketBrush = new Brush(pocketGeo);
         pocketBrush.updateMatrixWorld(true);
         try {
@@ -502,7 +519,7 @@ export function buildCarvedDoor(
         }
       } else {
         // PROFILE or V-BIT — sweep cross-section along back toolpath
-        const crossSection = buildCrossSection(tool, profiles, thickness, true);
+        const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
         if (!crossSection) {
           console.warn(`[CNCDoorSlab] No back cross-section for "${tool.toolName}", skipping`);
           continue;

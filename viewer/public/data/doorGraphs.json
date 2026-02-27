@@ -19,7 +19,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 6.34492
+            "entryOffset": 6.34492,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -28,7 +29,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 1.1811
+            "entryOffset": 1.1811,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -37,7 +39,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -7.8613
+            "entryOffset": -7.8613,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -46,7 +49,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -0.2032
+            "entryOffset": -0.2032,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -55,7 +59,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -6.5278
+            "entryOffset": -6.5278,
+            "flipSide": false
           },
           {
             "toolId": 168,
@@ -64,7 +69,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 30,
             "entryDepth": 3.302,
-            "entryOffset": -9.4488
+            "entryOffset": -9.4488,
+            "flipSide": false
           }
         ]
       }
@@ -90,7 +96,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 6.34492
+            "entryOffset": 6.34492,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -99,7 +106,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 1.1811
+            "entryOffset": 1.1811,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -108,7 +116,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -7.8613
+            "entryOffset": -7.8613,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -117,7 +126,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -0.2032
+            "entryOffset": -0.2032,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -126,7 +136,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -6.5278
+            "entryOffset": -6.5278,
+            "flipSide": false
           },
           {
             "toolId": 168,
@@ -135,7 +146,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 30,
             "entryDepth": 3.302,
-            "entryOffset": -9.4488
+            "entryOffset": -9.4488,
+            "flipSide": false
           }
         ]
       },
@@ -154,7 +166,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 0,
             "entryDepth": 3.175,
-            "entryOffset": 6.34492
+            "entryOffset": 6.34492,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -163,7 +176,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 3.175,
-            "entryOffset": 1.2065
+            "entryOffset": 1.2065,
+            "flipSide": false
           }
         ]
       }
@@ -189,7 +203,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 6.34492
+            "entryOffset": 6.34492,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -198,7 +213,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 1.1811
+            "entryOffset": 1.1811,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -207,7 +223,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -7.8613
+            "entryOffset": -7.8613,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -216,7 +233,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -0.2032
+            "entryOffset": -0.2032,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -225,7 +243,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -6.5278
+            "entryOffset": -6.5278,
+            "flipSide": false
           },
           {
             "toolId": 168,
@@ -234,7 +253,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 30,
             "entryDepth": 3.302,
-            "entryOffset": -9.4488
+            "entryOffset": -9.4488,
+            "flipSide": false
           }
         ]
       },
@@ -253,7 +273,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 6.34492
+            "entryOffset": 6.34492,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -262,7 +283,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 6.35,
-            "entryOffset": 1.1811
+            "entryOffset": 1.1811,
+            "flipSide": false
           },
           {
             "toolId": 61,
@@ -271,7 +293,8 @@
             "toolDiameter": 3.2004,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -7.8613
+            "entryOffset": -7.8613,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -280,7 +303,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -0.2032
+            "entryOffset": -0.2032,
+            "flipSide": false
           },
           {
             "toolId": 214,
@@ -289,7 +313,8 @@
             "toolDiameter": 6.35,
             "sharpCornerAngle": 0,
             "entryDepth": 3.302,
-            "entryOffset": -6.5278
+            "entryOffset": -6.5278,
+            "flipSide": false
           },
           {
             "toolId": 168,
@@ -298,7 +323,8 @@
             "toolDiameter": 12.7,
             "sharpCornerAngle": 30,
             "entryDepth": 3.302,
-            "entryOffset": -9.4488
+            "entryOffset": -9.4488,
+            "flipSide": false
           }
         ]
       }

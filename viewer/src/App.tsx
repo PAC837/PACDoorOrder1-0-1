@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import { useDoorData } from './hooks/useDoorData.js';
@@ -6,17 +6,19 @@ import { DoorViewer } from './components/DoorViewer.js';
 import { OperationOverlay } from './components/OperationOverlay.js';
 import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
+import { AdminPanel } from './components/AdminPanel.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import type { OperationVisibility, ToolVisibility } from './types.js';
 import { MATERIAL_THICKNESS } from './types.js';
 
-type Tab = 'door' | 'tools' | 'cross-section';
+type Tab = 'door' | 'tools' | 'cross-section' | 'admin';
 
 const GENERIC_DOOR_VALUE = 'generic';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<Tab>('door');
-  const { doors, graphs, profiles, toolGroups, tools, loading, error } = useDoorData();
+  const [dataVersion, setDataVersion] = useState(0);
+  const { doors, graphs, profiles, toolGroups, tools, loading, error } = useDoorData(dataVersion);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isGenericDoor, setIsGenericDoor] = useState(false);
   const [frontGroupId, setFrontGroupId] = useState<number | null>(null);
@@ -31,6 +33,22 @@ export default function App() {
   const [bottomRailW, setBottomRailW] = useState(63.5);  // 2.5"
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
+  const [libraries, setLibraries] = useState<string[]>([]);
+  const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+
+  // Fetch library list + selected library on mount and after data reloads
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/libraries').then((r) => r.json()),
+      fetch('/api/config').then((r) => r.json()),
+    ])
+      .then(([libData, config]) => {
+        setLibraries(libData.libraries || []);
+        if (config.selectedLibrary) setSelectedLibrary(config.selectedLibrary);
+      })
+      .catch(() => {});
+  }, [dataVersion]);
 
   // Panel-type tool groups (Type=0), sorted by name
   const panelToolGroups = useMemo(
@@ -47,6 +65,30 @@ export default function App() {
     } else {
       setIsGenericDoor(false);
       setSelectedIndex(Number(value));
+    }
+  }, []);
+
+  const handleLibraryChange = useCallback(async (library: string) => {
+    setSelectedLibrary(library);
+    setLibraryLoading(true);
+    try {
+      const res = await fetch('/api/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ library }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setDataVersion((v) => v + 1);
+        setSelectedIndex(0);
+        setIsGenericDoor(false);
+        setOperationVisibility({});
+        setToolVisibility({});
+      }
+    } catch {
+      // load failed — keep current state
+    } finally {
+      setLibraryLoading(false);
     }
   }, []);
 
@@ -121,36 +163,12 @@ export default function App() {
     );
   }
 
-  // --- Tab: Door Viewer ---
-  if (loading) {
+  // --- Tab: Admin ---
+  if (currentTab === 'admin') {
     return (
       <div style={styles.container}>
         <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
-        <div style={styles.loading}>
-          <p>Loading door data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
-        <div style={styles.loading}>
-          <p style={{ color: '#ff6b6b' }}>Error: {error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (doors.length === 0 && !isGenericDoor) {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
-        <div style={styles.loading}>
-          <p>No CNC doors found in data.</p>
-        </div>
+        <AdminPanel onDataReloaded={() => setDataVersion((v) => v + 1)} />
       </div>
     );
   }
@@ -169,26 +187,15 @@ export default function App() {
     );
   }
 
-  if (!activeDoor) {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
-        <div style={styles.loading}>
-          <p>Select a door or configure the Generic Door.</p>
-        </div>
-      </div>
-    );
-  }
-
   // Camera distance based on door size
-  const maxDim = Math.max(activeDoor.DefaultW, activeDoor.DefaultH);
+  const maxDim = activeDoor ? Math.max(activeDoor.DefaultW, activeDoor.DefaultH) : 500;
   const camDist = maxDim * 1.8;
 
   return (
     <div style={styles.container}>
       <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
 
-      {/* 3D Canvas */}
+      {/* 3D Canvas — always mounted to prevent WebGL context loss */}
       <Canvas
         camera={{
           position: [camDist * 0.3, camDist * 0.2, camDist],
@@ -196,7 +203,7 @@ export default function App() {
           near: 1,
           far: 50000,
         }}
-        style={styles.canvas}
+        style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
       >
         <color attach="background" args={['#1a1a2e']} />
 
@@ -206,13 +213,15 @@ export default function App() {
         <directionalLight position={[-300, 400, -500]} intensity={0.3} />
 
         {/* Door */}
-        <DoorViewer
-          door={activeDoor}
-          graph={activeGraph}
-          profiles={profiles}
-          operationVisibility={operationVisibility}
-          toolVisibility={toolVisibility}
-        />
+        {activeDoor && (
+          <DoorViewer
+            door={activeDoor}
+            graph={activeGraph}
+            profiles={profiles}
+            operationVisibility={operationVisibility}
+            toolVisibility={toolVisibility}
+          />
+        )}
 
         {/* Grid on the back plane */}
         <Grid
@@ -237,9 +246,51 @@ export default function App() {
         />
       </Canvas>
 
+      {/* Status messages (shown when no door is active) */}
+      {!activeDoor && (
+        <div style={styles.loading}>
+          <p>
+            {loading
+              ? 'Loading door data...'
+              : error
+                ? <span style={{ color: '#ff6b6b' }}>Error: {error}</span>
+                : doors.length === 0
+                  ? 'No CNC doors in this library. Select a different library or use Generic Door.'
+                  : 'Select a door or configure the Generic Door.'}
+          </p>
+        </div>
+      )}
+
+      {/* Loading overlay (shown during reload while door is visible) */}
+      {loading && activeDoor && (
+        <div style={styles.loadingOverlay}>
+          Loading...
+        </div>
+      )}
+
       {/* Left UI Overlay */}
       <div style={styles.overlay}>
         <h2 style={styles.title}>PAC Door Viewer</h2>
+
+        {/* Library Selector */}
+        {libraries.length > 0 && (
+          <div style={styles.selector}>
+            <label style={styles.label}>Library:</label>
+            <select
+              value={selectedLibrary || ''}
+              onChange={(e) => handleLibraryChange(e.target.value)}
+              disabled={libraryLoading}
+              style={styles.select}
+            >
+              {!selectedLibrary && <option value="">-- Select Library --</option>}
+              {libraries.map((lib) => (
+                <option key={lib} value={lib}>
+                  {lib}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Door Selector */}
         <div style={styles.selector}>
@@ -247,6 +298,7 @@ export default function App() {
           <select
             value={isGenericDoor ? GENERIC_DOOR_VALUE : String(selectedIndex)}
             onChange={(e) => handleDoorChange(e.target.value)}
+            disabled={libraryLoading}
             style={styles.select}
           >
             <option value={GENERIC_DOOR_VALUE}>Generic Door</option>
@@ -380,58 +432,62 @@ export default function App() {
         )}
 
         {/* Door Info */}
-        <div style={styles.info}>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Size:</span>
-            <span>{activeDoor.DefaultW.toFixed(1)} x {activeDoor.DefaultH.toFixed(1)} mm</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Size (in):</span>
-            <span>{(activeDoor.DefaultW / 25.4).toFixed(2)}" x {(activeDoor.DefaultH / 25.4).toFixed(2)}"</span>
-          </div>
-          {isGenericDoor ? (
-            <>
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>L/R Stile:</span>
-                <span>{leftStileW.toFixed(2)} / {rightStileW.toFixed(2)} mm</span>
-              </div>
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>T/B Rail:</span>
-                <span>{topRailW.toFixed(2)} / {bottomRailW.toFixed(2)} mm</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>Rail W:</span>
-                <span>{activeDoor.TopRailW.toFixed(2)} mm ({(activeDoor.TopRailW / 25.4).toFixed(3)}")</span>
-              </div>
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>Stile W:</span>
-                <span>{activeDoor.LeftRightStileW.toFixed(2)} mm ({(activeDoor.LeftRightStileW / 25.4).toFixed(3)}")</span>
-              </div>
-            </>
-          )}
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Recess:</span>
-            <span>{activeDoor.PanelRecess.toFixed(2)} mm ({(activeDoor.PanelRecess / 25.4).toFixed(3)}")</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Split:</span>
-            <span>{activeDoor.MainSection.IsSplitSection ? 'Yes (Mid-Rail)' : 'No'}</span>
-          </div>
-          {activeGraph && (
+        {activeDoor && (
+          <div style={styles.info}>
             <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Operations:</span>
-              <span>{activeGraph.operationCount}</span>
+              <span style={styles.infoLabel}>Size:</span>
+              <span>{activeDoor.DefaultW.toFixed(1)} x {activeDoor.DefaultH.toFixed(1)} mm</span>
             </div>
-          )}
-        </div>
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Size (in):</span>
+              <span>{(activeDoor.DefaultW / 25.4).toFixed(2)}" x {(activeDoor.DefaultH / 25.4).toFixed(2)}"</span>
+            </div>
+            {isGenericDoor ? (
+              <>
+                <div style={styles.infoRow}>
+                  <span style={styles.infoLabel}>L/R Stile:</span>
+                  <span>{leftStileW.toFixed(2)} / {rightStileW.toFixed(2)} mm</span>
+                </div>
+                <div style={styles.infoRow}>
+                  <span style={styles.infoLabel}>T/B Rail:</span>
+                  <span>{topRailW.toFixed(2)} / {bottomRailW.toFixed(2)} mm</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Rail W:</span>
+                  <span>{activeDoor.TopRailW.toFixed(2)} mm ({(activeDoor.TopRailW / 25.4).toFixed(3)}")</span>
+                </div>
+                <div style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Stile W:</span>
+                  <span>{activeDoor.LeftRightStileW.toFixed(2)} mm ({(activeDoor.LeftRightStileW / 25.4).toFixed(3)}")</span>
+                </div>
+              </>
+            )}
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Recess:</span>
+              <span>{activeDoor.PanelRecess.toFixed(2)} mm ({(activeDoor.PanelRecess / 25.4).toFixed(3)}")</span>
+            </div>
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Split:</span>
+              <span>{activeDoor.MainSection.IsSplitSection ? 'Yes (Mid-Rail)' : 'No'}</span>
+            </div>
+            {activeGraph && (
+              <div style={styles.infoRow}>
+                <span style={styles.infoLabel}>Operations:</span>
+                <span>{activeGraph.operationCount}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Export Button */}
-        <button onClick={handleExport} style={styles.exportBtn}>
-          Export Optimizer XML
-        </button>
+        {activeDoor && (
+          <button onClick={handleExport} style={styles.exportBtn}>
+            Export Optimizer XML
+          </button>
+        )}
 
         <div style={styles.hint}>
           Drag to orbit / Scroll to zoom / Right-drag to pan
@@ -439,14 +495,16 @@ export default function App() {
       </div>
 
       {/* Right-side Operation Overlay */}
-      <OperationOverlay
-        graph={activeGraph}
-        visibility={operationVisibility}
-        onToggle={toggleOperation}
-        toolVisibility={toolVisibility}
-        onToggleTool={toggleTool}
-        onSetAllTools={setAllTools}
-      />
+      {activeDoor && (
+        <OperationOverlay
+          graph={activeGraph}
+          visibility={operationVisibility}
+          onToggle={toggleOperation}
+          toolVisibility={toolVisibility}
+          onToggleTool={toggleTool}
+          onSetAllTools={setAllTools}
+        />
+      )}
     </div>
   );
 }
@@ -481,6 +539,15 @@ function TabBar({ currentTab, onTabChange }: { currentTab: Tab; onTabChange: (ta
       >
         Cross Section
       </button>
+      <button
+        style={{
+          ...tabStyles.tab,
+          ...(currentTab === 'admin' ? tabStyles.activeTab : {}),
+        }}
+        onClick={() => onTabChange('admin')}
+      >
+        Admin
+      </button>
     </div>
   );
 }
@@ -498,7 +565,9 @@ const tabStyles: Record<string, React.CSSProperties> = {
   },
   tab: {
     padding: '6px 20px',
-    border: '1px solid #444466',
+    borderTop: '1px solid #444466',
+    borderLeft: '1px solid #444466',
+    borderRight: '1px solid #444466',
     borderBottom: 'none',
     borderRadius: '8px 8px 0 0',
     background: 'rgba(26, 26, 46, 0.7)',
@@ -511,7 +580,9 @@ const tabStyles: Record<string, React.CSSProperties> = {
   activeTab: {
     background: 'rgba(42, 74, 110, 0.9)',
     color: '#ffffff',
-    borderColor: '#5577aa',
+    borderTopColor: '#5577aa',
+    borderLeftColor: '#5577aa',
+    borderRightColor: '#5577aa',
   },
 };
 
@@ -596,13 +667,25 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
   },
   loading: {
-    width: '100%',
-    height: '100%',
+    position: 'absolute',
+    inset: 0,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     color: '#e0e0e0',
     fontSize: '18px',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 48,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'rgba(26, 26, 46, 0.85)',
+    color: '#e0e0e0',
+    padding: '6px 18px',
+    borderRadius: 6,
+    fontSize: '13px',
+    zIndex: 50,
   },
   overlay: {
     position: 'absolute',

@@ -136,6 +136,7 @@ function buildGraphOperation(
       sharpCornerAngle: tool?.SharpCornerAngle ?? 0,
       entryDepth: entry.Depth,
       entryOffset: entry.Offset,
+      flipSide: entry.FlipSide,
     };
   });
 

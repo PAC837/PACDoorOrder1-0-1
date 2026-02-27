@@ -100,6 +100,7 @@ export interface DoorGraphData {
       sharpCornerAngle: number;
       entryDepth: number;
       entryOffset: number;
+      flipSide: boolean;
     }[];
   }[];
 }

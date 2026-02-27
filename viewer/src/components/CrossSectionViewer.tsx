@@ -535,10 +535,19 @@ function CrossSectionCanvas({
     const frontPocketDepth = frontOp?.Depth ?? 0;
     const backPocketDepth = backOp?.Depth ?? 0;
 
-    const graphFrontOp = graph?.operations.find((o) => !o.flipSideOp);
-    const graphBackOp = graph?.operations.find((o) => o.flipSideOp);
-    const tools = graphFrontOp?.tools ?? [];
-    const backTools = graphBackOp?.tools ?? [];
+    // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
+    const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
+    const backTools: typeof tools = [];
+    for (const graphOp of (graph?.operations ?? [])) {
+      for (const tool of graphOp.tools) {
+        const effectiveFlip = graphOp.flipSideOp !== (tool.flipSide ?? false);
+        if (effectiveFlip) {
+          backTools.push(tool);
+        } else {
+          tools.push(tool);
+        }
+      }
+    }
     const stileW = door.LeftRightStileW;
 
     // Compute composite depth profile (front + back)
@@ -792,10 +801,19 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
     const frontPocketDepth = frontOp?.Depth ?? 0;
     const backPocketDepth = backOp?.Depth ?? 0;
 
-    const graphFrontOp = graph?.operations.find((o) => !o.flipSideOp);
-    const graphBackOp = graph?.operations.find((o) => o.flipSideOp);
-    const tools = graphFrontOp?.tools ?? [];
-    const backTools = graphBackOp?.tools ?? [];
+    // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
+    const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
+    const backTools: typeof tools = [];
+    for (const graphOp of (graph?.operations ?? [])) {
+      for (const tool of graphOp.tools) {
+        const effectiveFlip = graphOp.flipSideOp !== (tool.flipSide ?? false);
+        if (effectiveFlip) {
+          backTools.push(tool);
+        } else {
+          tools.push(tool);
+        }
+      }
+    }
     const stileW = door.LeftRightStileW;
 
     const composite = computeCompositeProfile(
