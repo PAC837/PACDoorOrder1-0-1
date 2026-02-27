@@ -100,12 +100,14 @@ function buildProfileCrossSection(
 
   // Clip polygon at surfaceZ — only keep geometry within the slab + overshoot.
   // Points above surfaceZ are clamped; consecutive duplicates from clamping are removed.
-  const clipLocalY = surfaceZ - tipZ;
+  // Direction: +1 for front (surfaceZ > tipZ), -1 for back (surfaceZ < tipZ).
+  const direction = surfaceZ >= tipZ ? 1 : -1;
+  const clipLocalY = Math.abs(surfaceZ - tipZ);
 
   const clipped: { x: number; y: number }[] = [];
   for (const p of fullPts) {
     const wx = offset + p.x;
-    const wy = tipZ + Math.min(p.y, clipLocalY);
+    const wy = tipZ + direction * Math.min(p.y, clipLocalY);
     const prev = clipped[clipped.length - 1];
     if (prev && Math.abs(wx - prev.x) < 0.05 && Math.abs(wy - prev.y) < 0.05) continue;
     clipped.push({ x: wx, y: wy });
@@ -159,7 +161,7 @@ function buildVBitCrossSection(
 ): THREE.Shape {
   const halfAngle = (angleDeg / 2) * (Math.PI / 180);
   const r = diameter / 2;
-  const cutHeight = surfaceZ - tipZ;
+  const cutHeight = Math.abs(surfaceZ - tipZ);
   // V-width at the surface — capped at full tool diameter
   const halfW = Math.min(cutHeight * Math.tan(halfAngle), r);
 
@@ -250,6 +252,17 @@ function buildRectangularSweep(
   if (csPoints.length > 1 &&
       csPoints[0].distanceTo(csPoints[csPoints.length - 1]) < 0.01) {
     csPoints.pop();
+  }
+
+  // Ensure CCW winding for correct outward-facing normals in the sweep mesh.
+  // Back-face cross-sections have reversed Y (direction=-1), which flips winding to CW.
+  let signedArea = 0;
+  for (let i = 0; i < csPoints.length; i++) {
+    const j = (i + 1) % csPoints.length;
+    signedArea += csPoints[i].x * csPoints[j].y - csPoints[j].x * csPoints[i].y;
+  }
+  if (signedArea < 0) {
+    csPoints.reverse();
   }
 
   const N = csPoints.length;
