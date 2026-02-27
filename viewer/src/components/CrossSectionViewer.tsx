@@ -1,7 +1,22 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { buildCrossSectionPoints } from '../utils/cuttingBodies.js';
-import type { DoorData, DoorGraphData, ToolProfileData } from '../types.js';
-import { MATERIAL_THICKNESS } from '../types.js';
+import type { DoorData, DoorGraphData, ToolProfileData, PanelType } from '../types.js';
+import { MATERIAL_THICKNESS, GLASS_THICKNESS } from '../types.js';
+
+/** Extract the back rabbet depth (min back-face flat tool depth, excluding through-cuts). */
+function getBackRabbetDepth(graph: DoorGraphData | undefined, thickness: number): number {
+  if (!graph) return 0;
+  let minDepth = Infinity;
+  for (const op of graph.operations) {
+    for (const tool of op.tools) {
+      const effectiveBack = op.flipSideOp !== (tool.flipSide ?? false);
+      if (effectiveBack && !tool.isCNCDoor && tool.sharpCornerAngle === 0 && tool.entryDepth < thickness) {
+        minDepth = Math.min(minDepth, tool.entryDepth);
+      }
+    }
+  }
+  return minDepth === Infinity ? 0 : minDepth;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,6 +26,8 @@ interface CrossSectionViewerProps {
   door: DoorData;
   graph?: DoorGraphData;
   profiles: ToolProfileData[];
+  frontPanelType?: PanelType;
+  backPanelType?: PanelType;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -140,6 +157,16 @@ function computeCompositeProfile(
       }
     }
     rawBackProfile.push({ x, y: depth });
+  }
+
+  // Cap so front + back depth never exceeds thickness.
+  // Prevents the clip path from self-intersecting where cuts overlap.
+  const capLen = Math.min(rawProfile.length, rawBackProfile.length);
+  for (let i = 0; i < capLen; i++) {
+    const total = rawProfile[i].y + rawBackProfile[i].y;
+    if (total > thickness) {
+      rawBackProfile[i].y = Math.max(0, thickness - rawProfile[i].y);
+    }
   }
 
   return { frontProfile: rawProfile, frontOutline: rawProfile, backProfile: rawBackProfile };
@@ -384,6 +411,8 @@ function generateDxf(
   backPocketDepth: number,
   doorName: string,
   stileW: number,
+  showGlass = false,
+  rabbetDepth = 0,
 ): string {
   let dxf = '';
   const w = (s: string) => { dxf += s + '\n'; };
@@ -402,7 +431,7 @@ function generateDxf(
 
   w('0'); w('TABLE');
   w('2'); w('LAYER');
-  w('70'); w('3'); // 3 layers
+  w('70'); w(showGlass ? '4' : '3');
 
   // OUTLINE layer (black)
   w('0'); w('LAYER');
@@ -424,6 +453,15 @@ function generateDxf(
   w('70'); w('0');
   w('62'); w('1');  // red
   w('6'); w('CONTINUOUS');
+
+  if (showGlass) {
+    // GLASS layer (cyan)
+    w('0'); w('LAYER');
+    w('2'); w('GLASS');
+    w('70'); w('0');
+    w('62'); w('4');  // cyan
+    w('6'); w('CONTINUOUS');
+  }
 
   w('0'); w('ENDTAB');
   w('0'); w('ENDSEC');
@@ -482,6 +520,30 @@ function generateDxf(
     w('8'); w('OUTLINE');
   }
 
+  // --- Glass pane ---
+  if (showGlass) {
+    const glassLip = 9.525; // 3/8" overlap into stile/rail
+    const glassTopY = rabbetDepth > 0
+      ? thickness - rabbetDepth  // glass front face at back rabbet floor
+      : thickness / 2 - GLASS_THICKNESS / 2;
+    const glassBotY = glassTopY + GLASS_THICKNESS;
+    w('0'); w('POLYLINE');
+    w('8'); w('GLASS');
+    w('66'); w('1');
+    w('70'); w('1'); // closed
+    for (const [px, py] of [
+      [-VIEW_HALF, -glassTopY], [glassLip, -glassTopY],
+      [glassLip, -glassBotY], [-VIEW_HALF, -glassBotY],
+    ]) {
+      w('0'); w('VERTEX');
+      w('8'); w('GLASS');
+      w('10'); w(px.toFixed(4));
+      w('20'); w(py.toFixed(4));
+    }
+    w('0'); w('SEQEND');
+    w('8'); w('GLASS');
+  }
+
   // --- Title text ---
   w('0'); w('TEXT');
   w('8'); w('DIMENSIONS');
@@ -507,6 +569,8 @@ function CrossSectionCanvas({
   door,
   graph,
   profiles,
+  frontPanelType,
+  backPanelType,
   showHatching,
   showDimensions,
 }: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean }) {
@@ -532,8 +596,9 @@ function CrossSectionCanvas({
     const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
     const frontOp = operations.find((op) => !op.FlipSideOp);
     const backOp = operations.find((op) => op.FlipSideOp);
-    const frontPocketDepth = frontOp?.Depth ?? 0;
-    const backPocketDepth = backOp?.Depth ?? 0;
+    // Glass = full through-cut (removes all panel material, fixes remnant island)
+    const frontPocketDepth = frontPanelType === 'glass' ? thickness : (frontOp?.Depth ?? 0);
+    const backPocketDepth = backPanelType === 'glass' ? thickness : (backOp?.Depth ?? 0);
 
     // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
     const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
@@ -582,47 +647,38 @@ function CrossSectionCanvas({
 
     // --- 2. Build solid material clip path and draw hatching ---
     if (showHatching || true) {
-      // Build clip path: slab boundary + front profile cut + back pocket
+      // Clip to the actual material outline: front profile (top boundary) →
+      // left edge → back profile reversed (bottom boundary) → right edge.
+      // Never goes through slabBot explicitly, preventing the back groove
+      // from being enclosed as material.
       ctx.save();
       ctx.beginPath();
 
-      // Outer slab boundary (clockwise)
-      ctx.moveTo(slabRight, slabTop);
-      ctx.lineTo(slabRight, slabBot);
-      ctx.lineTo(slabLeft, slabBot);
-      ctx.lineTo(slabLeft, slabTop);
-      ctx.closePath();
-
-      // Front profile cut (counter-clockwise hole)
-      if (outline.length > 1) {
-        // Start from right-top, go along the front face to the first outline point,
-        // then follow outline, then back along front face to start
+      if (outline.length > 1 && backProfile.length > 1) {
+        // Front profile from right to left (top boundary of material)
         ctx.moveTo(toX(outline[0].x), toY(outline[0].y));
         for (let i = 1; i < outline.length; i++) {
           ctx.lineTo(toX(outline[i].x), toY(outline[i].y));
         }
-        // Close back along front face
+        // Left edge: from front profile's leftmost down to back profile's leftmost
+        const lastIdx = backProfile.length - 1;
+        ctx.lineTo(toX(backProfile[lastIdx].x), toY(thickness - backProfile[lastIdx].y));
+        // Back profile from left to right (bottom boundary, reversed order)
+        for (let i = lastIdx - 1; i >= 0; i--) {
+          ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
+        }
+        // Right edge: closePath connects back to front profile start
+        ctx.closePath();
+      } else {
+        // Fallback: plain slab rectangle
+        ctx.moveTo(slabRight, slabTop);
+        ctx.lineTo(slabRight, slabBot);
+        ctx.lineTo(slabLeft, slabBot);
         ctx.lineTo(slabLeft, slabTop);
-        ctx.lineTo(slabRight, slabTop);
         ctx.closePath();
       }
 
-      // Back profile hole (counter-clockwise from back face)
-      if (backProfile.length > 1) {
-        const hasBackCut = backProfile.some(p => p.y > 0);
-        if (hasBackCut) {
-          // backProfile[i].y is depth-from-back-face → screen Y = toY(thickness - y)
-          ctx.moveTo(toX(backProfile[0].x), toY(thickness - backProfile[0].y));
-          for (let i = 1; i < backProfile.length; i++) {
-            ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
-          }
-          ctx.lineTo(slabLeft, slabBot);
-          ctx.lineTo(slabRight, slabBot);
-          ctx.closePath();
-        }
-      }
-
-      ctx.clip('evenodd');
+      ctx.clip(); // nonzero (default)
 
       if (showHatching) {
         const hatchSpacing = Math.max(3, 2 * scale);
@@ -639,30 +695,20 @@ function CrossSectionCanvas({
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1.5;
 
-    // Single continuous closed outline: composite front profile + slab edges + back profile
+    // Same material outline as clip path: front profile → left edge → back profile reversed → right edge
     ctx.beginPath();
-    if (outline.length > 1) {
-      // Start at rightmost composite point (stile edge)
+    if (outline.length > 1 && backProfile.length > 1) {
+      // Front profile from right to left (top boundary)
       ctx.moveTo(toX(outline[0].x), toY(outline[0].y));
-      // Right edge down to bottom-right
-      ctx.lineTo(slabRight, slabBot);
-      // Bottom edge: back profile from right to left (reverse order)
-      const hasBackCut = backProfile.length > 1 && backProfile.some(p => p.y > 0);
-      if (hasBackCut) {
-        // Back profile from right to left
-        for (let i = 0; i < backProfile.length; i++) {
-          ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
-        }
-        // Left edge up from leftmost back profile to back face
-        ctx.lineTo(slabLeft, slabBot);
-      } else {
-        ctx.lineTo(slabLeft, slabBot);
-      }
-      // Left edge up to leftmost composite point
-      ctx.lineTo(toX(outline[outline.length - 1].x), toY(outline[outline.length - 1].y));
-      // Composite front profile from left to right (reverse order)
-      for (let i = outline.length - 2; i >= 0; i--) {
+      for (let i = 1; i < outline.length; i++) {
         ctx.lineTo(toX(outline[i].x), toY(outline[i].y));
+      }
+      // Left edge: front profile last → back profile last
+      const lastIdx = backProfile.length - 1;
+      ctx.lineTo(toX(backProfile[lastIdx].x), toY(thickness - backProfile[lastIdx].y));
+      // Back profile from left to right (bottom boundary, reversed)
+      for (let i = lastIdx - 1; i >= 0; i--) {
+        ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
       }
       ctx.closePath();
     } else {
@@ -675,14 +721,19 @@ function CrossSectionCanvas({
     }
     ctx.stroke();
 
-    // Back profile outline (separate stroke for clarity when no front profile)
-    if (backProfile.length > 1 && backProfile.some(p => p.y > 0) && outline.length <= 1) {
+    // For glass through-cut, erase the degenerate panel-area outline where
+    // front and back profiles both sit at slabBot (no material = no outline)
+    if (frontPanelType === 'glass') {
+      ctx.save();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(toX(backProfile[0].x), toY(thickness - backProfile[0].y));
-      for (let i = 1; i < backProfile.length; i++) {
-        ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
-      }
+      // Find the panel-area boundary (x ≈ 0, where front depth transitions to thickness)
+      const panelBoundX = toX(0);
+      ctx.moveTo(slabLeft, slabBot);
+      ctx.lineTo(panelBoundX, slabBot);
       ctx.stroke();
+      ctx.restore();
     }
 
     // --- 4. Dimensions ---
@@ -691,14 +742,14 @@ function CrossSectionCanvas({
       drawLinearDim(ctx, stileW, 0, stileW, thickness,
         formatDim(thickness), 30, 'right', toX, toY);
 
-      // Front pocket depth (left side)
-      if (frontPocketDepth > 0) {
+      // Front pocket depth (left side) — skip for glass (redundant with thickness)
+      if (frontPocketDepth > 0 && frontPanelType !== 'glass') {
         drawLinearDim(ctx, -VIEW_HALF, 0, -VIEW_HALF, frontPocketDepth,
           formatDim(frontPocketDepth), 30, 'left', toX, toY);
       }
 
-      // Back pocket depth (left side, from back face)
-      if (backPocketDepth > 0) {
+      // Back pocket depth (left side, from back face) — skip for glass
+      if (backPocketDepth > 0 && backPanelType !== 'glass') {
         drawLinearDim(ctx, -VIEW_HALF, thickness - backPocketDepth, -VIEW_HALF, thickness,
           formatDim(backPocketDepth), 55, 'left', toX, toY);
       }
@@ -761,6 +812,34 @@ function CrossSectionCanvas({
       }
     }
 
+    // --- 4b. Glass pane ---
+    const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';
+    if (showGlass) {
+      // Glass sits in the back rabbet groove, extending 3/8" into stile/rail
+      const backRabbet = getBackRabbetDepth(graph, thickness);
+      const glassLip = 9.525; // 3/8" overlap into stile/rail
+      const glassTopY = backRabbet > 0
+        ? thickness - backRabbet  // glass front face at back rabbet floor
+        : thickness / 2 - GLASS_THICKNESS / 2;
+      const glassBotY = glassTopY + GLASS_THICKNESS;
+      const gLeft = slabLeft;
+      const gRight = toX(glassLip); // extends into stile
+      const gTop = toY(glassTopY);
+      const gBot = toY(glassBotY);
+      ctx.save();
+      ctx.fillStyle = 'rgba(100, 180, 255, 0.35)';
+      ctx.fillRect(gLeft, gTop, gRight - gLeft, gBot - gTop);
+      ctx.strokeStyle = '#4488cc';
+      ctx.lineWidth = 1.0;
+      ctx.strokeRect(gLeft, gTop, gRight - gLeft, gBot - gTop);
+      ctx.restore();
+
+      if (showDimensions) {
+        drawLinearDim(ctx, -VIEW_HALF, glassTopY, -VIEW_HALF, glassBotY,
+          formatDim(GLASS_THICKNESS), 80, 'left', toX, toY);
+      }
+    }
+
     // --- 5. Labels ---
     ctx.fillStyle = '#666666';
     ctx.font = '11px sans-serif';
@@ -773,7 +852,7 @@ function CrossSectionCanvas({
     ctx.fillText('Stile / Rail', toX(VIEW_HALF * 0.5), slabBot + 30);
     ctx.fillText('Panel Area', toX(-VIEW_HALF * 0.5), slabBot + 30);
 
-  }, [door, graph, profiles, showHatching, showDimensions]);
+  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -789,7 +868,7 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewerProps) {
+export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType }: CrossSectionViewerProps) {
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
 
@@ -798,8 +877,9 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
     const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
     const frontOp = operations.find((op) => !op.FlipSideOp);
     const backOp = operations.find((op) => op.FlipSideOp);
-    const frontPocketDepth = frontOp?.Depth ?? 0;
-    const backPocketDepth = backOp?.Depth ?? 0;
+    // Glass = full through-cut
+    const frontPocketDepth = frontPanelType === 'glass' ? thickness : (frontOp?.Depth ?? 0);
+    const backPocketDepth = backPanelType === 'glass' ? thickness : (backOp?.Depth ?? 0);
 
     // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
     const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
@@ -815,11 +895,13 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
       }
     }
     const stileW = door.LeftRightStileW;
+    const exportShowGlass = frontPanelType === 'glass' || backPanelType === 'glass';
+    const exportRabbetDepth = getBackRabbetDepth(graph, thickness);
 
     const composite = computeCompositeProfile(
       tools, backTools, profiles, frontPocketDepth, backPocketDepth, thickness, stileW,
     );
-    const dxf = generateDxf(composite, thickness, frontPocketDepth, backPocketDepth, door.Name, stileW);
+    const dxf = generateDxf(composite, thickness, frontPocketDepth, backPocketDepth, door.Name, stileW, exportShowGlass, exportRabbetDepth);
 
     const blob = new Blob([dxf], { type: 'application/dxf' });
     const url = URL.createObjectURL(blob);
@@ -828,7 +910,7 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
     a.download = `${door.Name.replace(/\s+/g, '_')}_cross_section.dxf`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [door, graph, profiles]);
+  }, [door, graph, profiles, frontPanelType, backPanelType]);
 
   return (
     <div style={styles.container}>
@@ -914,6 +996,7 @@ export function CrossSectionViewer({ door, graph, profiles }: CrossSectionViewer
       <div style={styles.canvasArea}>
         <CrossSectionCanvas
           door={door} graph={graph} profiles={profiles}
+          frontPanelType={frontPanelType} backPanelType={backPanelType}
           showHatching={showHatching} showDimensions={showDimensions}
         />
       </div>

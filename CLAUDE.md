@@ -13,7 +13,7 @@ Two separate packages share no runtime code but are connected by JSON data files
 - **Root package (`src/`)** — TypeScript library that parses Mozaik `.dat` XML files, validates with Zod schemas, builds relational graphs linking doors→operations→toolGroups→tools, and exports JSON + optimizer XML.
 - **Viewer package (`viewer/`)** — React + Three.js app that loads the JSON output and renders interactive 3D door models with CSG boolean subtraction to carve CNC tool profiles from a door slab.
 
-Data flows one-way: `src/cli.ts` writes JSON to `output/`, which is copied to `viewer/public/data/` for the viewer to fetch at runtime.
+Data flows one-way: `src/cli.ts` writes JSON to `output/`, which is copied to `viewer/public/data/` for the viewer to fetch at runtime. The viewer also has a server-side API (`viewer/server/`) that can dynamically parse door libraries on demand via `/api/load`.
 
 ## Commands
 
@@ -82,6 +82,13 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 - The Y-flip reverses polygon winding (CCW→CW). `buildRectangularSweep` corrects this via a shoelace signed-area check, reversing CW cross-sections back to CCW
 - `buildFramePocket` args are intentionally swapped for back tools (`surfaceZ, tipZ` instead of `tipZ, surfaceZ`) to keep ExtrudeGeometry depth positive
 
+**Per-tool FlipSide:**
+- Individual tool entries within a tool group can have `FlipSide: true`, meaning that tool operates on the **opposite face** from the operation's assigned face
+- The effective face is computed via XOR: `effectiveFlipSide = operation.FlipSideOp !== tool.flipSide`
+- In `cuttingBodies.ts`, the front tools loop uses `effectiveFlipSide = tool.flipSide ?? false` and the back tools loop uses `effectiveFlipSide = !(tool.flipSide ?? false)` (XOR with `true` since the operation is already back-face)
+- `CrossSectionViewer.tsx` partitions tools across ALL operations by effective flip side rather than by operation-level `flipSideOp`
+- `flipSide` is propagated through the data pipeline: `RawToolEntry.FlipSide` → `cli.ts` serialization → `doorGraphs.json` → viewer types
+
 **Profile shapes** (`profileShape.ts`):
 - `ptType 0` = straight line vertex
 - `ptType 1` = filleted corner (data = radius in mm, sign = convex/concave)
@@ -96,12 +103,26 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 - Exports DXF in R12 format for Vectric/AutoCAD compatibility
 
 **Data loading** (`hooks/useDoorData.ts`):
-- Fetches `doors.json`, `doorGraphs.json`, `profiles.json` from `/data/`
+- Fetches `doors.json`, `doorGraphs.json`, `profiles.json`, `toolGroups.json`, `tools.json` from `/data/`
 - Filters to CNC doors only (Type=3 with RoutedLockedShape)
+- Supports dynamic reload via `/api/load` when user switches libraries in the Admin panel
 
 **Key constants:**
 - `MATERIAL_THICKNESS = 19.05` mm (3/4" stock) in `types.ts`
 - `SURFACE_OVERSHOOT = 1.0` mm in `cuttingBodies.ts` (prevents coincident-face CSG artifacts)
+
+### Admin Panel & Server API (viewer/server/)
+
+The viewer includes a Vite plugin (`api-plugin.ts`) that adds server-side API routes:
+
+- **`/api/config`** (GET/POST) — persists two folder paths (CNC tools folder, door libraries folder) to `viewer/server/config.json`
+- **`/api/libraries`** (GET) — scans the door libraries folder for subdirectories containing `Doors.dat`
+- **`/api/load`** (POST) — dynamically parses a selected door library using the root package's compiled `dist/` parsers, writes JSON to `viewer/public/data/`, and returns the parsed data
+- **`/api/browse`** (POST) — opens a native Windows folder picker dialog via PowerShell
+
+The pipeline (`pipeline.ts`) uses dynamic `import()` with cache-busting (`?t=${Date.now()}`) to load from `dist/` so that recompiled parsers take effect without restarting Vite.
+
+The Admin panel UI (`AdminPanel.tsx`) provides folder configuration and a library selector dropdown. The Canvas component stays mounted (hidden via `display: none`) during library switches to prevent WebGL context loss.
 
 ### Tool offset convention
 
@@ -120,7 +141,14 @@ The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) 
 
 ## Source Data
 
-Mozaik `.dat` files live in `Control Doors S008/`. The CLI reads three files:
-- `Door Visualizer 1.0/Doors.dat` — door library definitions
+Mozaik `.dat` files are organized in two folders configured via the Admin panel:
+
+**CNC Tools folder** (e.g. `Control Doors S008/`):
 - `ToolGroups.dat` — tool groupings linking operations to tools with depth/offset
 - `ToolLib.dat` — CNC tool definitions including cutting profiles
+
+**Door Libraries folder** (e.g. `Control Doors S008/`):
+- Each subfolder is a library (e.g. `Door Visualizer 1.0/`)
+- Each library contains `Doors.dat` — door definitions with operations referencing tool groups
+
+The CLI (`src/cli.ts`) reads all three files from hardcoded paths. The viewer's `/api/load` endpoint reads them dynamically based on Admin panel configuration.

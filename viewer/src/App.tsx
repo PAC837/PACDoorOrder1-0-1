@@ -8,7 +8,7 @@ import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
-import type { OperationVisibility, ToolVisibility } from './types.js';
+import type { OperationVisibility, ToolVisibility, PanelType } from './types.js';
 import { MATERIAL_THICKNESS } from './types.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'admin';
@@ -23,8 +23,8 @@ export default function App() {
   const [isGenericDoor, setIsGenericDoor] = useState(false);
   const [frontGroupId, setFrontGroupId] = useState<number | null>(null);
   const [backGroupId, setBackGroupId] = useState<number | null>(null);
-  const [frontIsPocket, setFrontIsPocket] = useState(true);
-  const [backIsPocket, setBackIsPocket] = useState(true);
+  const [frontPanelType, setFrontPanelType] = useState<PanelType>('pocket');
+  const [backPanelType, setBackPanelType] = useState<PanelType>('pocket');
   const [frontDepth, setFrontDepth] = useState(6.35);    // 1/4"
   const [backDepth, setBackDepth] = useState(3.175);     // 1/8"
   const [leftStileW, setLeftStileW] = useState(63.5);    // 2.5"
@@ -117,11 +117,15 @@ export default function App() {
     });
   }, []);
 
+  // Effective depths — computed once, used for both door building and display
+  const { effectiveFrontDepth, effectiveBackDepth } = useMemo(
+    () => computeEffectiveDepths(frontPanelType, backPanelType, frontDepth, backDepth, MATERIAL_THICKNESS),
+    [frontPanelType, backPanelType, frontDepth, backDepth],
+  );
+
   // Compute active door + graph (either real door or generic)
   const { activeDoor, activeGraph } = useMemo(() => {
     if (isGenericDoor && frontGroupId !== null) {
-      const effectiveFrontDepth = frontIsPocket ? frontDepth : 0;
-      const effectiveBackDepth = backIsPocket ? backDepth : 0;
       const { door, graph } = buildGenericDoor(
         toolGroups, tools, frontGroupId, backGroupId,
         effectiveFrontDepth, effectiveBackDepth,
@@ -136,8 +140,8 @@ export default function App() {
       return { activeDoor: door, activeGraph: graph };
     }
     return { activeDoor: undefined, activeGraph: undefined };
-  }, [isGenericDoor, frontGroupId, backGroupId, frontIsPocket, backIsPocket,
-      frontDepth, backDepth, leftStileW, rightStileW, topRailW, bottomRailW,
+  }, [isGenericDoor, frontGroupId, backGroupId, effectiveFrontDepth, effectiveBackDepth,
+      leftStileW, rightStileW, topRailW, bottomRailW,
       toolGroups, tools, doors, selectedIndex, graphs]);
 
   // Export the current door to Mozaik optimizer XML
@@ -182,6 +186,8 @@ export default function App() {
           door={activeDoor}
           graph={activeGraph}
           profiles={profiles}
+          frontPanelType={isGenericDoor ? frontPanelType : undefined}
+          backPanelType={isGenericDoor ? backPanelType : undefined}
         />
       </div>
     );
@@ -220,6 +226,8 @@ export default function App() {
             profiles={profiles}
             operationVisibility={operationVisibility}
             toolVisibility={toolVisibility}
+            frontPanelType={isGenericDoor ? frontPanelType : undefined}
+            backPanelType={isGenericDoor ? backPanelType : undefined}
           />
         )}
 
@@ -317,12 +325,13 @@ export default function App() {
             <div style={styles.sideRow}>
               <label style={styles.label}>Front:</label>
               <select
-                value={frontIsPocket ? 'pocket' : 'onepiece'}
-                onChange={(e) => setFrontIsPocket(e.target.value === 'pocket')}
+                value={frontPanelType}
+                onChange={(e) => setFrontPanelType(e.target.value as PanelType)}
                 style={styles.typeSelect}
               >
                 <option value="pocket">Pocket</option>
-                <option value="onepiece">One-piece</option>
+                <option value="raised">Raised Panel</option>
+                <option value="glass">Glass</option>
               </select>
               <select
                 value={frontGroupId ?? ''}
@@ -346,25 +355,27 @@ export default function App() {
               <label style={styles.label}>Front Depth:</label>
               <input
                 type="number"
-                value={frontDepth}
+                value={frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth}
                 step={0.5}
                 min={0}
                 onChange={(e) => setFrontDepth(Number(e.target.value))}
-                style={styles.numberInput}
+                disabled={frontPanelType !== 'pocket'}
+                style={{ ...styles.numberInput, ...(frontPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>mm ({(frontDepth / 25.4).toFixed(3)}")</span>
+              <span style={styles.unitLabel}>mm ({((frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth) / 25.4).toFixed(3)}")</span>
             </div>
 
             {/* Back: type + depth + tool group */}
             <div style={styles.sideRow}>
               <label style={styles.label}>Back:</label>
               <select
-                value={backIsPocket ? 'pocket' : 'onepiece'}
-                onChange={(e) => setBackIsPocket(e.target.value === 'pocket')}
+                value={backPanelType}
+                onChange={(e) => setBackPanelType(e.target.value as PanelType)}
                 style={styles.typeSelect}
               >
                 <option value="pocket">Pocket</option>
-                <option value="onepiece">One-piece</option>
+                <option value="raised">Raised Panel</option>
+                <option value="glass">Glass</option>
               </select>
               <select
                 value={backGroupId ?? ''}
@@ -388,13 +399,14 @@ export default function App() {
               <label style={styles.label}>Back Depth:</label>
               <input
                 type="number"
-                value={backDepth}
+                value={backPanelType === 'pocket' ? backDepth : effectiveBackDepth}
                 step={0.5}
                 min={0}
                 onChange={(e) => setBackDepth(Number(e.target.value))}
-                style={styles.numberInput}
+                disabled={backPanelType !== 'pocket'}
+                style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>mm ({(backDepth / 25.4).toFixed(3)}")</span>
+              <span style={styles.unitLabel}>mm ({((backPanelType === 'pocket' ? backDepth : effectiveBackDepth) / 25.4).toFixed(3)}")</span>
             </div>
 
             {/* Stile & Rail Widths */}
@@ -507,6 +519,18 @@ export default function App() {
       )}
     </div>
   );
+}
+
+function computeEffectiveDepths(
+  frontType: PanelType, backType: PanelType,
+  frontDepth: number, backDepth: number, thickness: number,
+) {
+  let eFront = frontType === 'pocket' ? frontDepth : 0;
+  let eBack = backType === 'pocket' ? backDepth : 0;
+  // Glass = full through-cut — pocket removes all panel material
+  if (frontType === 'glass') eFront = thickness;
+  if (backType === 'glass') eBack = thickness;
+  return { effectiveFrontDepth: eFront, effectiveBackDepth: eBack };
 }
 
 function TabBar({ currentTab, onTabChange }: { currentTab: Tab; onTabChange: (tab: Tab) => void }) {
@@ -747,7 +771,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     cursor: 'pointer',
     flexShrink: 0,
-    width: 85,
+    width: 105,
   },
   groupSelect: {
     flex: 1,

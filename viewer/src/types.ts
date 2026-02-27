@@ -127,6 +127,12 @@ export interface ToolProfileData {
 /** Material thickness — standard 3/4" stock. */
 export const MATERIAL_THICKNESS = 19.05; // mm
 
+/** Panel type for Generic Door front/back panel configuration. */
+export type PanelType = 'pocket' | 'raised' | 'glass';
+
+/** Glass pane thickness: 1/8" = 3.175 mm. */
+export const GLASS_THICKNESS = 3.175;
+
 // ---------------------------------------------------------------------------
 // Raw tool library types (loaded from toolGroups.json / tools.json)
 // ---------------------------------------------------------------------------

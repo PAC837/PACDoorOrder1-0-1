@@ -1,4 +1,4 @@
-import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility } from '../types.js';
+import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType } from '../types.js';
 import { MATERIAL_THICKNESS } from '../types.js';
 import { CNCDoorSlab } from './CNCDoorSlab.js';
 
@@ -8,9 +8,11 @@ interface DoorViewerProps {
   profiles: ToolProfileData[];
   operationVisibility: OperationVisibility;
   toolVisibility: ToolVisibility;
+  frontPanelType?: PanelType;
+  backPanelType?: PanelType;
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType }: DoorViewerProps) {
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
 
   // Separate front profile ops (TG 70) from back pocket op (TG 58)
@@ -37,6 +39,8 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
       frontVisible={frontVisible}
       backPocketVisible={backPocketVisible}
       toolVisibility={toolVisibility}
+      frontPanelType={frontPanelType}
+      backPanelType={backPanelType}
     />
   );
 }
