@@ -5,7 +5,10 @@ import type {
   RawTool,
   OperationData,
   ToolPathNodeData,
+  HoleData,
 } from '../types.js';
+import type { PanelTree, PanelBounds } from './panelTree.js';
+import { flattenTree, enumerateSplits } from './panelTree.js';
 
 /**
  * Build a synthetic DoorData + DoorGraphData from user-selected tool groups.
@@ -15,6 +18,7 @@ import type {
  *   - Depth = 0 → one-piece: NO pocket, but tools still carve decorative profiles.
  *
  * Stile/rail widths are fully independent (left, right, top, bottom).
+ * Panel splitting is controlled by the recursive PanelTree.
  */
 export function buildGenericDoor(
   allToolGroups: RawToolGroup[],
@@ -29,55 +33,31 @@ export function buildGenericDoor(
   rightStileW = 63.5,       // 2.5"
   topRailW = 63.5,          // 2.5"
   bottomRailW = 63.5,       // 2.5"
-  hasMidRail = false,
-  midRailPos = 381,         // mm from bottom to center of mid-rail
-  midRailW = 76.2,          // 3" bar width
-  hasMidStile = false,
-  midStilePos = 254,        // mm from left to center of mid-stile
-  midStileW = 76.2,         // 3" bar width
-): { door: DoorData; graph: DoorGraphData } {
+  panelTree: PanelTree = { type: 'leaf' },
+  holes: HoleData[] = [],
+): { door: DoorData; graph: DoorGraphData; panelBounds: PanelBounds[] } {
   // Look up maps
   const toolGroupById = new Map(allToolGroups.map((g) => [g.ToolGroupID, g]));
   const toolById = new Map(allTools.map((t) => [t.ToolID, t]));
 
-  // Compute sub-panel rectangles in Mozaik coords (X=height, Y=width)
-  // Full panel bounds
-  const panelXMin = bottomRailW;
-  const panelXMax = doorH - topRailW;
-  const panelYMin = leftStileW;
-  const panelYMax = doorW - rightStileW;
+  // Root panel bounds (inside the frame)
+  const rootBounds: PanelBounds = {
+    xMin: bottomRailW,
+    xMax: doorH - topRailW,
+    yMin: leftStileW,
+    yMax: doorW - rightStileW,
+  };
+  const panelBounds = flattenTree(panelTree, rootBounds);
 
-  // Vertical splits (mid-rail splits height into bottom/top)
-  const xSplits: [number, number][] = [];
-  if (hasMidRail) {
-    const railHalf = midRailW / 2;
-    xSplits.push([panelXMin, midRailPos - railHalf]);
-    xSplits.push([midRailPos + railHalf, panelXMax]);
-  } else {
-    xSplits.push([panelXMin, panelXMax]);
-  }
-
-  // Horizontal splits (mid-stile splits width into left/right)
-  const ySplits: [number, number][] = [];
-  if (hasMidStile) {
-    const stileHalf = midStileW / 2;
-    ySplits.push([panelYMin, midStilePos - stileHalf]);
-    ySplits.push([midStilePos + stileHalf, panelYMax]);
-  } else {
-    ySplits.push([panelYMin, panelYMax]);
-  }
-
-  // Build sub-panel toolpath rectangles (grid of xSplits × ySplits)
+  // Build sub-panel toolpath rectangles from flattened leaves
   const subPanelPaths: ToolPathNodeData[][] = [];
-  for (const [xMin, xMax] of xSplits) {
-    for (const [yMin, yMax] of ySplits) {
-      subPanelPaths.push([
-        { X: xMin, Y: yMax, DepthOR: -9999, PtType: 0, Data: 0 },
-        { X: xMin, Y: yMin, DepthOR: -9999, PtType: 0, Data: 0 },
-        { X: xMax, Y: yMin, DepthOR: -9999, PtType: 0, Data: 0 },
-        { X: xMax, Y: yMax, DepthOR: -9999, PtType: 0, Data: 0 },
-      ]);
-    }
+  for (const pb of panelBounds) {
+    subPanelPaths.push([
+      { X: pb.xMin, Y: pb.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMin, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMax, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMax, Y: pb.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+    ]);
   }
 
   // Build operations — one per sub-panel per face
@@ -126,7 +106,13 @@ export function buildGenericDoor(
   }
 
   // MainSection metadata
-  const isSplit = hasMidRail || hasMidStile;
+  const splits = enumerateSplits(panelTree);
+  const hsplits = splits.filter((s) => s.type === 'hsplit');
+  const isSplit = splits.length > 0;
+
+  // Collect first-level divider widths for CenterRailW / CenterStileW
+  const firstVsplit = splits.find((s) => s.type === 'vsplit');
+  const firstHsplit = hsplits[0];
 
   const door: DoorData = {
     Name: 'Generic Door',
@@ -140,8 +126,8 @@ export function buildGenericDoor(
     TopRailW: topRailW,
     BottomRailW: bottomRailW,
     LeftRightStileW: leftStileW,
-    CenterStileW: midStileW,
-    CenterRailW: midRailW,
+    CenterStileW: firstVsplit?.width ?? 0,
+    CenterRailW: firstHsplit?.width ?? 0,
     PanelRecess: frontDepth,
     MainSection: {
       IsSplitSection: isSplit,
@@ -149,15 +135,16 @@ export function buildGenericDoor(
       Y: bottomRailW,
       DX: doorW - leftStileW - rightStileW,
       DY: doorH - topRailW - bottomRailW,
-      SplitType: hasMidRail ? 1 : undefined,
-      Dividers: hasMidRail
-        ? { Divider: [{ DB: midRailW, DBStart: midRailPos - midRailW / 2 }] }
+      SplitType: hsplits.length > 0 ? 1 : undefined,
+      Dividers: hsplits.length > 0
+        ? { Divider: hsplits.map((s) => ({ DB: s.width, DBStart: s.pos - s.width / 2 })) }
         : undefined,
-      SubPanels: isSplit ? buildSubPanels(xSplits, ySplits) : undefined,
+      SubPanels: isSplit ? buildSubPanelsFromBounds(panelBounds) : undefined,
     },
     RoutedLockedShape: {
       Operations: {
         OperationPocket: operations,
+        ...(holes.length > 0 ? { OperationHole: holes } : {}),
       },
     },
   };
@@ -169,24 +156,21 @@ export function buildGenericDoor(
     operations: graphOperations,
   };
 
-  return { door, graph };
+  return { door, graph, panelBounds };
 }
 
-/** Build SubPanels metadata from splits. */
-function buildSubPanels(
-  xSplits: [number, number][],
-  ySplits: [number, number][],
+/** Build SubPanels metadata from flattened panel bounds. */
+function buildSubPanelsFromBounds(
+  bounds: PanelBounds[],
 ): { SubPanel: import('../types.js').SubPanelData[] } {
   const panels: import('../types.js').SubPanelData[] = [];
-  for (const [xMin, xMax] of xSplits) {
-    for (const [yMin, yMax] of ySplits) {
-      const h = xMax - xMin;
-      const w = yMax - yMin;
-      panels.push({
-        DA: h,
-        Panel: { X: yMin, Y: xMin, DX: w, DY: h },
-      });
-    }
+  for (const pb of bounds) {
+    const h = pb.xMax - pb.xMin;
+    const w = pb.yMax - pb.yMin;
+    panels.push({
+      DA: h,
+      Panel: { X: pb.yMin, Y: pb.xMin, DX: w, DY: h },
+    });
   }
   return { SubPanel: panels };
 }

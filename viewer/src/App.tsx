@@ -9,8 +9,11 @@ import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ElevationViewer } from './components/ElevationViewer.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
-import type { OperationVisibility, ToolVisibility, PanelType, UnitSystem } from './types.js';
-import { MATERIAL_THICKNESS, formatUnit } from './types.js';
+import type { PanelTree } from './utils/panelTree.js';
+import { addSplitAtLeaf, enumerateSplits, removeSplit, updateSplit, libraryDoorToTree } from './utils/panelTree.js';
+import type { OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, HingeConfig, HandleConfig, HingeSide, HandlePlacement, HandleElevationRef } from './types.js';
+import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
+import { computeAllHoles } from './utils/hardware.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
 
@@ -34,18 +37,25 @@ export default function App() {
   const [topRailW, setTopRailW] = useState(63.5);        // 2.5"
   const [bottomRailW, setBottomRailW] = useState(63.5);  // 2.5"
   const [units, setUnits] = useState<UnitSystem>('mm');
-  const [hasMidRail, setHasMidRail] = useState(false);
-  const [midRailPos, setMidRailPos] = useState(381);       // mm from bottom to center
-  const [midRailW, setMidRailW] = useState(76.2);           // 3" bar width
-  const [hasMidStile, setHasMidStile] = useState(false);
-  const [midStilePos, setMidStilePos] = useState(254);     // mm from left to center
-  const [midStileW, setMidStileW] = useState(76.2);         // 3" bar width
-  const [selectedPanelIdx, setSelectedPanelIdx] = useState<number | null>(null);
+  const [doorPartType, setDoorPartType] = useState<DoorPartType>('door');
+  const [doorW, setDoorW] = useState(508);       // 20"
+  const [doorH, setDoorH] = useState(762);       // 30"
+  const [hingeConfig, setHingeConfig] = useState<HingeConfig>({ ...DEFAULT_HINGE_CONFIG });
+  const [handleConfig, setHandleConfig] = useState<HandleConfig>({ ...DEFAULT_HANDLE_CONFIG });
+  const [showHingeAdvanced, setShowHingeAdvanced] = useState(false);
+  const [showHandleAdvanced, setShowHandleAdvanced] = useState(false);
+  const [panelTree, setPanelTree] = useState<PanelTree>({ type: 'leaf' });
+  const [selectedLeafIdx, setSelectedLeafIdx] = useState<number | null>(null);
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
   const [libraries, setLibraries] = useState<string[]>([]);
   const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
+
+  // Unit conversion helpers for number inputs (internal state always mm)
+  const toDisplay = useCallback((mm: number) => units === 'in' ? parseFloat((mm / 25.4).toFixed(4)) : mm, [units]);
+  const fromDisplay = useCallback((val: number) => units === 'in' ? val * 25.4 : val, [units]);
+  const inputStep = units === 'in' ? 0.125 : 0.5;  // 1/8" or 0.5mm
 
   // Fetch library list + selected library on mount and after data reloads
   useEffect(() => {
@@ -66,15 +76,27 @@ export default function App() {
     [toolGroups],
   );
 
-  // Reset visibility when door changes
   const handleDoorChange = useCallback((value: string) => {
-    setOperationVisibility({});
     setToolVisibility({});
     if (value === GENERIC_DOOR_VALUE) {
       setIsGenericDoor(true);
     } else {
       setIsGenericDoor(false);
       setSelectedIndex(Number(value));
+    }
+  }, []);
+
+  const handleDoorPartTypeChange = useCallback((type: DoorPartType) => {
+    setDoorPartType(type);
+    switch (type) {
+      case 'door': setDoorH(762); break;
+      case 'drawer': setDoorH(203.2); break;
+      case 'reduced-rail': setDoorH(152.4); break;
+      case 'slab': setDoorH(762); break;
+    }
+    if (type === 'slab') {
+      setFrontGroupId(null);
+      setBackGroupId(null);
     }
   }, []);
 
@@ -92,7 +114,6 @@ export default function App() {
         setDataVersion((v) => v + 1);
         setSelectedIndex(0);
         setIsGenericDoor(false);
-        setOperationVisibility({});
         setToolVisibility({});
       }
     } catch {
@@ -133,29 +154,49 @@ export default function App() {
     [frontPanelType, backPanelType, frontDepth, backDepth],
   );
 
+  // Compute hardware holes for generic door
+  const holes = useMemo(() => {
+    if (!isGenericDoor) return [];
+    return computeAllHoles(hingeConfig, handleConfig, doorPartType, doorW, doorH);
+  }, [isGenericDoor, hingeConfig, handleConfig, doorPartType, doorW, doorH]);
+
   // Compute active door + graph (either real door or generic)
-  const { activeDoor, activeGraph } = useMemo(() => {
-    if (isGenericDoor && frontGroupId !== null) {
-      const { door, graph } = buildGenericDoor(
-        toolGroups, tools, frontGroupId, backGroupId,
-        effectiveFrontDepth, effectiveBackDepth,
-        508, 762,
-        leftStileW, rightStileW, topRailW, bottomRailW,
-        hasMidRail, midRailPos, midRailW,
-        hasMidStile, midStilePos, midStileW,
-      );
-      return { activeDoor: door, activeGraph: graph };
+  const { activeDoor, activeGraph, panelBounds } = useMemo(() => {
+    if (isGenericDoor) {
+      const isSlab = doorPartType === 'slab';
+      const effFrontId = isSlab ? null : frontGroupId;
+      const effBackId = isSlab ? null : backGroupId;
+      if (effFrontId !== null || isSlab) {
+        const result = buildGenericDoor(
+          toolGroups, tools, effFrontId, effBackId,
+          effectiveFrontDepth, effectiveBackDepth,
+          doorW, doorH,
+          isSlab ? 0 : leftStileW, isSlab ? 0 : rightStileW,
+          isSlab ? 0 : topRailW, isSlab ? 0 : bottomRailW,
+          panelTree, holes,
+        );
+        return { activeDoor: result.door, activeGraph: result.graph, panelBounds: result.panelBounds };
+      }
     }
     if (doors.length > 0) {
       const door = doors[selectedIndex];
       const graph = graphs.find((g) => g.doorName === door?.Name);
-      return { activeDoor: door, activeGraph: graph };
+      return { activeDoor: door, activeGraph: graph, panelBounds: undefined };
     }
-    return { activeDoor: undefined, activeGraph: undefined };
+    return { activeDoor: undefined, activeGraph: undefined, panelBounds: undefined };
   }, [isGenericDoor, frontGroupId, backGroupId, effectiveFrontDepth, effectiveBackDepth,
-      leftStileW, rightStileW, topRailW, bottomRailW,
-      hasMidRail, midRailPos, midRailW, hasMidStile, midStilePos, midStileW,
-      toolGroups, tools, doors, selectedIndex, graphs]);
+      leftStileW, rightStileW, topRailW, bottomRailW, panelTree, holes,
+      toolGroups, tools, doors, selectedIndex, graphs, doorW, doorH, doorPartType]);
+
+  // Auto-enable all operations when the active graph changes
+  useEffect(() => {
+    if (!activeGraph) return;
+    const vis: OperationVisibility = {};
+    for (const op of activeGraph.operations) {
+      vis[op.operationId] = true;
+    }
+    setOperationVisibility(vis);
+  }, [activeGraph]);
 
   // Export the current door to Mozaik optimizer XML
   const handleExport = useCallback(() => {
@@ -214,26 +255,16 @@ export default function App() {
 
   // --- Tab: Elevation ---
   if (currentTab === 'elevation' && activeDoor) {
-    // For library doors, extract mid-rail info from MainSection data
-    const libHasMidRail = !isGenericDoor && activeDoor.MainSection.IsSplitSection;
-    const libMidRailPos = libHasMidRail && activeDoor.MainSection.Dividers?.Divider?.[0]
-      ? activeDoor.MainSection.Dividers.Divider[0].DBStart + activeDoor.MainSection.Dividers.Divider[0].DB / 2
-      : 0;
-    const libMidRailW = libHasMidRail && activeDoor.MainSection.Dividers?.Divider?.[0]
-      ? activeDoor.MainSection.Dividers.Divider[0].DB
-      : 0;
+    const elevationTree = isGenericDoor
+      ? panelTree
+      : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider);
     return (
       <div style={styles.container}>
         <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
         <ElevationViewer
           door={activeDoor}
           units={units}
-          hasMidRail={isGenericDoor ? hasMidRail : libHasMidRail}
-          midRailPos={isGenericDoor ? midRailPos : libMidRailPos}
-          midRailW={isGenericDoor ? midRailW : libMidRailW}
-          hasMidStile={isGenericDoor ? hasMidStile : false}
-          midStilePos={isGenericDoor ? midStilePos : 0}
-          midStileW={isGenericDoor ? midStileW : 0}
+          panelTree={elevationTree}
         />
       </div>
     );
@@ -256,7 +287,7 @@ export default function App() {
           far: 50000,
         }}
         style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
-        onPointerMissed={() => setSelectedPanelIdx(null)}
+        onPointerMissed={() => setSelectedLeafIdx(null)}
       >
         <color attach="background" args={['#1a1a2e']} />
 
@@ -276,8 +307,8 @@ export default function App() {
             frontPanelType={isGenericDoor ? frontPanelType : undefined}
             backPanelType={isGenericDoor ? backPanelType : undefined}
             hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-            selectedPanelIdx={isGenericDoor ? selectedPanelIdx : undefined}
-            onPanelSelect={isGenericDoor ? setSelectedPanelIdx : undefined}
+            selectedPanelIdx={isGenericDoor ? selectedLeafIdx : undefined}
+            onPanelSelect={isGenericDoor ? setSelectedLeafIdx : undefined}
           />
         )}
 
@@ -371,7 +402,35 @@ export default function App() {
         {/* Generic Door Controls */}
         {isGenericDoor && (
           <div style={styles.toolGroupSelectors}>
+            {/* Door Type + Size */}
+            <div style={styles.sideRow}>
+              <label style={styles.label}>Type:</label>
+              <select
+                value={doorPartType}
+                onChange={(e) => handleDoorPartTypeChange(e.target.value as DoorPartType)}
+                style={{ ...styles.typeSelect, width: 120 }}
+              >
+                <option value="door">Door</option>
+                <option value="drawer">Drawer</option>
+                <option value="reduced-rail">Reduced Rail</option>
+                <option value="slab">Slab</option>
+              </select>
+            </div>
+            <div style={styles.sideRow}>
+              <label style={styles.label}>Width:</label>
+              <input type="number" value={toDisplay(doorW)} step={inputStep} min={0}
+                onChange={(e) => setDoorW(fromDisplay(Number(e.target.value)))}
+                style={styles.numberInput} />
+              <label style={{ ...styles.label, minWidth: 50 }}>Height:</label>
+              <input type="number" value={toDisplay(doorH)} step={inputStep} min={0}
+                onChange={(e) => setDoorH(fromDisplay(Number(e.target.value)))}
+                style={styles.numberInput} />
+            </div>
+
+            {/* Routing controls — hidden for slab */}
+            {doorPartType !== 'slab' && (<>
             {/* Front: type + depth + tool group */}
+            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
             <div style={styles.sideRow}>
               <label style={styles.label}>Front:</label>
               <select
@@ -388,7 +447,6 @@ export default function App() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setFrontGroupId(val ? Number(val) : null);
-                  setOperationVisibility({});
                   setToolVisibility({});
                 }}
                 style={styles.groupSelect}
@@ -415,14 +473,13 @@ export default function App() {
               <label style={styles.label}>Front Depth:</label>
               <input
                 type="number"
-                value={frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth}
-                step={0.5}
+                value={toDisplay(frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth)}
+                step={inputStep}
                 min={0}
-                onChange={(e) => setFrontDepth(Number(e.target.value))}
+                onChange={(e) => setFrontDepth(fromDisplay(Number(e.target.value)))}
                 disabled={frontPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(frontPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>{formatUnit(frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth, units)}</span>
             </div>
 
             {/* Back: type + depth + tool group */}
@@ -442,7 +499,6 @@ export default function App() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setBackGroupId(val ? Number(val) : null);
-                  setOperationVisibility({});
                   setToolVisibility({});
                 }}
                 style={styles.groupSelect}
@@ -459,117 +515,296 @@ export default function App() {
               <label style={styles.label}>Back Depth:</label>
               <input
                 type="number"
-                value={backPanelType === 'pocket' ? backDepth : effectiveBackDepth}
-                step={0.5}
+                value={toDisplay(backPanelType === 'pocket' ? backDepth : effectiveBackDepth)}
+                step={inputStep}
                 min={0}
-                onChange={(e) => setBackDepth(Number(e.target.value))}
+                onChange={(e) => setBackDepth(fromDisplay(Number(e.target.value)))}
                 disabled={backPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>{formatUnit(backPanelType === 'pocket' ? backDepth : effectiveBackDepth, units)}</span>
             </div>
 
             {/* Stile & Rail Widths */}
             <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
               <div style={styles.selector}>
                 <label style={styles.label}>Left Stile:</label>
-                <input type="number" value={leftStileW} step={0.5} min={0}
-                  onChange={(e) => setLeftStileW(Number(e.target.value))}
+                <input type="number" value={toDisplay(leftStileW)} step={inputStep} min={0}
+                  onChange={(e) => setLeftStileW(fromDisplay(Number(e.target.value)))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>{formatUnit(leftStileW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Right Stile:</label>
-                <input type="number" value={rightStileW} step={0.5} min={0}
-                  onChange={(e) => setRightStileW(Number(e.target.value))}
+                <input type="number" value={toDisplay(rightStileW)} step={inputStep} min={0}
+                  onChange={(e) => setRightStileW(fromDisplay(Number(e.target.value)))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>{formatUnit(rightStileW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Top Rail:</label>
-                <input type="number" value={topRailW} step={0.5} min={0}
-                  onChange={(e) => setTopRailW(Number(e.target.value))}
+                <input type="number" value={toDisplay(topRailW)} step={inputStep} min={0}
+                  onChange={(e) => setTopRailW(fromDisplay(Number(e.target.value)))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>{formatUnit(topRailW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Bot Rail:</label>
-                <input type="number" value={bottomRailW} step={0.5} min={0}
-                  onChange={(e) => setBottomRailW(Number(e.target.value))}
+                <input type="number" value={toDisplay(bottomRailW)} step={inputStep} min={0}
+                  onChange={(e) => setBottomRailW(fromDisplay(Number(e.target.value)))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>{formatUnit(bottomRailW, units)}</span>
               </div>
             </div>
 
-            {/* Mid Rail / Mid Stile */}
+            {/* Panel Splitting */}
             <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
               <div style={{ fontSize: '11px', color: '#8888aa', marginBottom: 6 }}>
-                {selectedPanelIdx !== null
-                  ? `Panel ${selectedPanelIdx + 1} selected`
+                {selectedLeafIdx !== null
+                  ? `Panel ${selectedLeafIdx + 1} selected`
                   : 'Click a panel in the 3D view to select it'}
               </div>
-              {selectedPanelIdx !== null && (
+              {selectedLeafIdx !== null && panelBounds && (
                 <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                  {!hasMidRail && (
-                    <button
-                      style={styles.bulkBtn}
-                      onClick={() => { setHasMidRail(true); setSelectedPanelIdx(null); setOperationVisibility({}); setToolVisibility({}); }}
-                    >
-                      Add Mid Rail
-                    </button>
+                  <button
+                    style={styles.bulkBtn}
+                    onClick={() => {
+                      if (selectedLeafIdx === null || !panelBounds) return;
+                      const pb = panelBounds[selectedLeafIdx];
+                      setPanelTree((prev) => addSplitAtLeaf(prev, selectedLeafIdx, 'hsplit',
+                        (pb.xMin + pb.xMax) / 2, 76.2));
+                      setSelectedLeafIdx(null);
+                    }}
+                  >
+                    Add Mid Rail
+                  </button>
+                  <button
+                    style={styles.bulkBtn}
+                    onClick={() => {
+                      if (selectedLeafIdx === null || !panelBounds) return;
+                      const pb = panelBounds[selectedLeafIdx];
+                      setPanelTree((prev) => addSplitAtLeaf(prev, selectedLeafIdx, 'vsplit',
+                        (pb.yMin + pb.yMax) / 2, 76.2));
+                      setSelectedLeafIdx(null);
+                    }}
+                  >
+                    Add Mid Stile
+                  </button>
+                </div>
+              )}
+              {enumerateSplits(panelTree).map((split, si) => {
+                const label = split.type === 'hsplit' ? 'Rail' : 'Stile';
+                return (
+                  <div key={si} style={{ marginBottom: 4, paddingLeft: split.depth * 12 }}>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>{label} {si + 1} Pos:</label>
+                      <input type="number" value={toDisplay(split.pos)} step={inputStep} min={0}
+                        onChange={(e) => setPanelTree((prev) =>
+                          updateSplit(prev, split.path, fromDisplay(Number(e.target.value)), split.width))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>{label} {si + 1} W:</label>
+                      <input type="number" value={toDisplay(split.width)} step={inputStep} min={0}
+                        onChange={(e) => setPanelTree((prev) =>
+                          updateSplit(prev, split.path, split.pos, fromDisplay(Number(e.target.value))))}
+                        style={styles.numberInput} />
+                      <button style={styles.removeBtn}
+                        onClick={() => setPanelTree((prev) => removeSplit(prev, split.path))}>
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            </div>
+            </>)}
+
+            {/* Hinge Configuration — hidden for drawers */}
+            {doorPartType !== 'drawer' && (
+              <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ ...styles.label, minWidth: 0, fontWeight: 700 }}>Hinges</span>
+                  <input type="checkbox" checked={hingeConfig.enabled}
+                    onChange={(e) => setHingeConfig(prev => ({ ...prev, enabled: e.target.checked }))} />
+                </div>
+                {hingeConfig.enabled && (<>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Side:</label>
+                    <select value={hingeConfig.side}
+                      onChange={(e) => setHingeConfig(prev => ({ ...prev, side: e.target.value as HingeSide }))}
+                      style={{ ...styles.select, flex: 'none', width: 80 }}>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                      <option value="top">Top</option>
+                      <option value="bottom">Bottom</option>
+                    </select>
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Count:</label>
+                    <input type="number" value={hingeConfig.count} min={2} max={5}
+                      onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(5, Number(e.target.value))) }))}
+                      style={{ ...styles.numberInput, width: 50 }} />
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Edge Dist:</label>
+                    <input type="number" value={toDisplay(hingeConfig.edgeDistance)} step={inputStep}
+                      onChange={(e) => setHingeConfig(prev => ({ ...prev, edgeDistance: fromDisplay(Number(e.target.value)) }))}
+                      style={styles.numberInput} />
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Equidistant:</label>
+                    <input type="checkbox" checked={hingeConfig.equidistant}
+                      onChange={(e) => setHingeConfig(prev => ({ ...prev, equidistant: e.target.checked }))} />
+                  </div>
+                  {!hingeConfig.equidistant && (
+                    Array.from({ length: hingeConfig.count }).map((_, i) => (
+                      <div key={i} style={styles.selector}>
+                        <label style={styles.label}>Hinge {i + 1}:</label>
+                        <input type="number" value={toDisplay(hingeConfig.positions[i] ?? 0)} step={inputStep}
+                          onChange={(e) => {
+                            const newPos = [...hingeConfig.positions];
+                            newPos[i] = fromDisplay(Number(e.target.value));
+                            setHingeConfig(prev => ({ ...prev, positions: newPos }));
+                          }}
+                          style={styles.numberInput} />
+                      </div>
+                    ))
                   )}
-                  {!hasMidStile && (
-                    <button
-                      style={styles.bulkBtn}
-                      onClick={() => { setHasMidStile(true); setSelectedPanelIdx(null); setOperationVisibility({}); setToolVisibility({}); }}
-                    >
-                      Add Mid Stile
-                    </button>
+                  <button style={{ ...styles.bulkBtn, marginTop: 4, marginBottom: 4 }}
+                    onClick={() => setShowHingeAdvanced(prev => !prev)}>
+                    {showHingeAdvanced ? 'Hide' : 'Show'} Advanced
+                  </button>
+                  {showHingeAdvanced && (<>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Cup Dia:</label>
+                      <input type="number" value={toDisplay(hingeConfig.cupDia)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, cupDia: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Cup Depth:</label>
+                      <input type="number" value={toDisplay(hingeConfig.cupDepth)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, cupDepth: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Boring Dist:</label>
+                      <input type="number" value={toDisplay(hingeConfig.cupBoringDist)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, cupBoringDist: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Mount Dia:</label>
+                      <input type="number" value={toDisplay(hingeConfig.mountDia)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountDia: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Mount Depth:</label>
+                      <input type="number" value={toDisplay(hingeConfig.mountDepth)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountDepth: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Mt Spacing:</label>
+                      <input type="number" value={toDisplay(hingeConfig.mountSeparation)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountSeparation: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Mt Inset:</label>
+                      <input type="number" value={toDisplay(hingeConfig.mountInset)} step={inputStep}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountInset: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Mt on Front:</label>
+                      <input type="checkbox" checked={hingeConfig.mountOnFront}
+                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountOnFront: e.target.checked }))} />
+                    </div>
+                  </>)}
+                </>)}
+              </div>
+            )}
+
+            {/* Handle Configuration */}
+            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ ...styles.label, minWidth: 0, fontWeight: 700 }}>Handle</span>
+                <input type="checkbox" checked={handleConfig.enabled}
+                  onChange={(e) => setHandleConfig(prev => ({ ...prev, enabled: e.target.checked }))} />
+              </div>
+              {handleConfig.enabled && (<>
+                <div style={styles.selector}>
+                  <label style={styles.label}>Separation:</label>
+                  <input type="number" value={toDisplay(handleConfig.holeSeparation)} step={inputStep} min={0}
+                    onChange={(e) => setHandleConfig(prev => ({ ...prev, holeSeparation: fromDisplay(Number(e.target.value)) }))}
+                    style={styles.numberInput} />
+                  <span style={styles.unitLabel}>{handleConfig.holeSeparation === 0 ? 'Knob' : 'Handle'}</span>
+                </div>
+                <div style={styles.selector}>
+                  <label style={styles.label}>Inset:</label>
+                  <input type="number" value={toDisplay(handleConfig.insetFromEdge)} step={inputStep}
+                    onChange={(e) => setHandleConfig(prev => ({ ...prev, insetFromEdge: fromDisplay(Number(e.target.value)) }))}
+                    style={styles.numberInput} />
+                </div>
+                {doorPartType !== 'drawer' ? (<>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Elevation:</label>
+                    <input type="number" value={toDisplay(handleConfig.elevation)} step={inputStep}
+                      onChange={(e) => setHandleConfig(prev => ({ ...prev, elevation: fromDisplay(Number(e.target.value)) }))}
+                      style={styles.numberInput} />
+                  </div>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>From:</label>
+                    <select value={handleConfig.elevationRef}
+                      onChange={(e) => setHandleConfig(prev => ({ ...prev, elevationRef: e.target.value as HandleElevationRef }))}
+                      style={{ ...styles.select, flex: 'none', width: 100 }}>
+                      <option value="from-top">Top</option>
+                      <option value="from-bottom">Bottom</option>
+                    </select>
+                  </div>
+                </>) : (<>
+                  <div style={styles.selector}>
+                    <label style={styles.label}>Placement:</label>
+                    <select value={handleConfig.placement}
+                      onChange={(e) => setHandleConfig(prev => ({ ...prev, placement: e.target.value as HandlePlacement }))}
+                      style={{ ...styles.select, flex: 'none', width: 140 }}>
+                      <option value="center">Center</option>
+                      <option value="top-rail">Top Rail</option>
+                      <option value="two-equidistant">Two Equidistant</option>
+                    </select>
+                  </div>
+                  {handleConfig.placement === 'two-equidistant' && (
+                    <div style={styles.selector}>
+                      <label style={styles.label}>Edge Dist:</label>
+                      <input type="number" value={toDisplay(handleConfig.twoHandleEdgeDist)} step={inputStep}
+                        onChange={(e) => setHandleConfig(prev => ({ ...prev, twoHandleEdgeDist: fromDisplay(Number(e.target.value)) }))}
+                        style={styles.numberInput} />
+                    </div>
                   )}
+                </>)}
+                <div style={styles.selector}>
+                  <label style={styles.label}>On Front:</label>
+                  <input type="checkbox" checked={handleConfig.onFront}
+                    onChange={(e) => setHandleConfig(prev => ({ ...prev, onFront: e.target.checked }))} />
                 </div>
-              )}
-              {hasMidRail && (
-                <div style={{ marginBottom: 4 }}>
+                <button style={{ ...styles.bulkBtn, marginTop: 4, marginBottom: 4 }}
+                  onClick={() => setShowHandleAdvanced(prev => !prev)}>
+                  {showHandleAdvanced ? 'Hide' : 'Show'} Advanced
+                </button>
+                {showHandleAdvanced && (<>
                   <div style={styles.selector}>
-                    <label style={styles.label}>Mid Rail Pos:</label>
-                    <input type="number" value={midRailPos} step={0.5} min={0}
-                      onChange={(e) => { setMidRailPos(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                    <label style={styles.label}>Hole Dia:</label>
+                    <input type="number" value={toDisplay(handleConfig.holeDia)} step={inputStep}
+                      onChange={(e) => setHandleConfig(prev => ({ ...prev, holeDia: fromDisplay(Number(e.target.value)) }))}
                       style={styles.numberInput} />
-                    <span style={styles.unitLabel}>{formatUnit(midRailPos, units)}</span>
                   </div>
                   <div style={styles.selector}>
-                    <label style={styles.label}>Mid Rail W:</label>
-                    <input type="number" value={midRailW} step={0.5} min={0}
-                      onChange={(e) => { setMidRailW(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
+                    <label style={styles.label}>Hole Depth:</label>
+                    <input type="number" value={toDisplay(handleConfig.holeDepth)} step={inputStep}
+                      onChange={(e) => setHandleConfig(prev => ({ ...prev, holeDepth: fromDisplay(Number(e.target.value)) }))}
                       style={styles.numberInput} />
-                    <span style={styles.unitLabel}>{formatUnit(midRailW, units)}</span>
-                    <button style={styles.removeBtn} onClick={() => { setHasMidRail(false); setOperationVisibility({}); setToolVisibility({}); }}>
-                      Remove
-                    </button>
                   </div>
-                </div>
-              )}
-              {hasMidStile && (
-                <div style={{ marginBottom: 4 }}>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Mid Stile Pos:</label>
-                    <input type="number" value={midStilePos} step={0.5} min={0}
-                      onChange={(e) => { setMidStilePos(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
-                      style={styles.numberInput} />
-                    <span style={styles.unitLabel}>{formatUnit(midStilePos, units)}</span>
-                  </div>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Mid Stile W:</label>
-                    <input type="number" value={midStileW} step={0.5} min={0}
-                      onChange={(e) => { setMidStileW(Number(e.target.value)); setOperationVisibility({}); setToolVisibility({}); }}
-                      style={styles.numberInput} />
-                    <span style={styles.unitLabel}>{formatUnit(midStileW, units)}</span>
-                    <button style={styles.removeBtn} onClick={() => { setHasMidStile(false); setOperationVisibility({}); setToolVisibility({}); }}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              )}
+                </>)}
+              </>)}
             </div>
           </div>
         )}
@@ -788,7 +1023,9 @@ function buildOptimizerXml(
 
   // Operations
   const ops = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
-  if (ops.length > 0) {
+  const holeOps = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
+  const hasOps = ops.length > 0 || holeOps.length > 0;
+  if (hasOps) {
     xml += '      <Operations Version="2">\n';
     let panelIndex = 1;
     for (let oi = 0; oi < ops.length; oi++) {
@@ -825,6 +1062,44 @@ function buildOptimizerXml(
       }
       xml += useToolPath ? '        </OperationToolPath>\n' : '        </OperationPocket>\n';
     }
+
+    // Hardware holes — OperationHole elements
+    let hingeIndex = 0;
+    let mountCount = 0; // counts mounts per hinge (0 or 1)
+    let handleHoleIndex = 0;
+    for (const hole of holeOps) {
+      const exportY = w - hole.Y;
+      let typeCode: number;
+      let legacyNum: number;
+      let tagContent = '';
+
+      if (hole.holeType === 'hinge-cup') {
+        hingeIndex++;
+        mountCount = 0;
+        typeCode = 12;
+        legacyNum = 8000 + (hingeIndex - 1) * 6;
+        tagContent = `            <OpIdTagReference Key="Hinge Index" Value="${hingeIndex}" />\n`;
+      } else if (hole.holeType === 'hinge-mount') {
+        typeCode = 13;
+        legacyNum = 8000 + (hingeIndex - 1) * 6 + 1 + mountCount;
+        const isTop = mountCount === 1;
+        tagContent = `            <OpIdTagReference Key="Hinge Index" Value="${hingeIndex}" />\n`;
+        tagContent += `            <OpIdTagReference Key="Is Top" Value="${B(isTop)}" />\n`;
+        mountCount++;
+      } else {
+        handleHoleIndex++;
+        typeCode = 14;
+        legacyNum = 8010 + (handleHoleIndex - 1) * 10;
+        tagContent = `            <OpIdTagReference Key="Hole Index" Value="${handleHoleIndex}" />\n`;
+      }
+
+      xml += `        <OperationHole Diameter="${hole.Diameter}" Diameter_Eq="" ID="1" X="${hole.X}" Y="${exportY}" Depth="${hole.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(hole.FlipSideOp)}">\n`;
+      xml += `          <OpIdTag TypeCode="${typeCode}" LegacyNumber="${legacyNum}">\n`;
+      xml += tagContent;
+      xml += `          </OpIdTag>\n`;
+      xml += `        </OperationHole>\n`;
+    }
+
     xml += '      </Operations>\n';
   }
 

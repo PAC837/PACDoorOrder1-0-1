@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType } from '../types.js';
+import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
 import { GLASS_THICKNESS } from '../types.js';
 import { toolPathToRect } from '../utils/geometry.js';
 import { buildCarvedDoor } from '../utils/cuttingBodies.js';
@@ -35,6 +35,7 @@ interface CNCDoorSlabProps {
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
   hasBackRabbit?: boolean;
+  holes?: HoleData[];
 }
 
 /**
@@ -57,6 +58,7 @@ export function CNCDoorSlab({
   frontPanelType,
   backPanelType,
   hasBackRabbit,
+  holes = [],
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
   const meshKey = useMemo(() => {
@@ -65,8 +67,8 @@ export function CNCDoorSlab({
       .map(([k]) => k)
       .sort()
       .join(',');
-    return `slab-${frontVisible}-${backPocketVisible}-${hidden}`;
-  }, [toolVisibility, frontVisible, backPocketVisible]);
+    return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}`;
+  }, [toolVisibility, frontVisible, backPocketVisible, holes]);
 
   const carvedGeo = useMemo(() => {
     // Build toolpath rects + associated tool entries from graph
@@ -115,20 +117,20 @@ export function CNCDoorSlab({
       };
     }
 
-    if (toolpathRects.length === 0 && !backPocket) {
+    if (toolpathRects.length === 0 && !backPocket && holes.length === 0) {
       console.log('[CNCDoorSlab] No visible tools — returning plain slab');
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
 
     try {
-      const geo = buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPocket);
+      const geo = buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPocket, holes);
       console.log(`[CNCDoorSlab] Carved geometry: ${geo.attributes.position.count} vertices`);
       return geo;
     } catch (e) {
       console.error('[CNCDoorSlab] CSG FAILED:', e);
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
-  }, [doorW, doorH, thickness, frontOps, backPocketOp, graph, profiles, frontVisible, backPocketVisible, toolVisibility]);
+  }, [doorW, doorH, thickness, frontOps, backPocketOp, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes]);
 
   // Glass pane — shown when either panel type is 'glass'
   const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';

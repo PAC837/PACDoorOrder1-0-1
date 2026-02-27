@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import { profileToLinePoints } from './profileShape.js';
-import { expandRect } from './geometry.js';
-import type { ToolProfileData, ProfilePointData, DoorGraphData } from '../types.js';
+import { expandRect, mozaikToScene } from './geometry.js';
+import type { ToolProfileData, ProfilePointData, DoorGraphData, HoleData } from '../types.js';
 import type { SceneRect } from './geometry.js';
 
 // ---------------------------------------------------------------------------
@@ -353,6 +353,7 @@ export function buildCarvedDoor(
   toolpathRects: { rect: SceneRect; tools: GraphToolEntry[]; depth?: number }[],
   profiles: ToolProfileData[],
   backPocket?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] } | null,
+  holes?: HoleData[],
 ): THREE.BufferGeometry {
   console.time('[CNCDoorSlab] CSG carving');
   const evaluator = new Evaluator();
@@ -537,6 +538,35 @@ export function buildCarvedDoor(
             `[CNCDoorSlab] CSG subtract failed for back tool "${tool.toolName}", skipping`, e,
           );
         }
+      }
+    }
+  }
+
+  // Hardware holes — subtract cylinders for hinge cups, mounting holes, handles
+  if (holes && holes.length > 0) {
+    for (const hole of holes) {
+      const holeRadius = hole.Diameter / 2;
+      const holeDepth = hole.Depth + SURFACE_OVERSHOOT;
+      const cylGeo = new THREE.CylinderGeometry(holeRadius, holeRadius, holeDepth, 24);
+      // CylinderGeometry is Y-up; rotate to Z-axis (drilling into door face)
+      cylGeo.rotateX(Math.PI / 2);
+
+      const { x: sceneX, y: sceneY } = mozaikToScene(hole.X, hole.Y, slabW, slabH);
+      const holeBrush = new Brush(cylGeo);
+      if (hole.FlipSideOp) {
+        // Back face: drill from -thickness/2 inward
+        holeBrush.position.set(sceneX, sceneY, -thickness / 2 + hole.Depth / 2 - SURFACE_OVERSHOOT / 2);
+      } else {
+        // Front face: drill from +thickness/2 inward
+        holeBrush.position.set(sceneX, sceneY, thickness / 2 - hole.Depth / 2 + SURFACE_OVERSHOOT / 2);
+      }
+      holeBrush.updateMatrixWorld(true);
+      try {
+        slabBrush = evaluator.evaluate(slabBrush, holeBrush, SUBTRACTION);
+        opCount++;
+      } catch (e) {
+        failedOps++;
+        console.warn(`[CNCDoorSlab] CSG subtract failed for ${hole.holeType} hole, skipping`, e);
       }
     }
   }

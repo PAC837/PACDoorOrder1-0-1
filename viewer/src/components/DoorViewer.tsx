@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType } from '../types.js';
+import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
 import { MATERIAL_THICKNESS } from '../types.js';
 import { CNCDoorSlab } from './CNCDoorSlab.js';
 import { toolPathToRect } from '../utils/geometry.js';
@@ -19,6 +19,7 @@ interface DoorViewerProps {
 
 export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIdx, onPanelSelect }: DoorViewerProps) {
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
+  const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
   // Separate front profile ops from back pocket ops
   const frontOps = operations.filter((op) => !op.FlipSideOp);
@@ -52,6 +53,7 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
         frontPanelType={frontPanelType}
         backPanelType={backPanelType}
         hasBackRabbit={hasBackRabbit}
+        holes={holes}
       />
 
       {/* Clickable panel overlays for mid-rail/stile interaction */}

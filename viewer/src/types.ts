@@ -18,6 +18,7 @@ export interface DoorData {
   RoutedLockedShape?: {
     Operations?: {
       OperationPocket: OperationData[];
+      OperationHole?: HoleData[];
     };
   };
 }
@@ -173,3 +174,84 @@ export interface RawTool {
   SharpCornerAngle: number;
   AppCNCDoor: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Hardware types (hinges, handles, bore holes)
+// ---------------------------------------------------------------------------
+
+/** Part type for generic door configuration. */
+export type DoorPartType = 'door' | 'drawer' | 'reduced-rail' | 'slab';
+
+export type HingeSide = 'left' | 'right' | 'top' | 'bottom';
+export type HandlePlacement = 'center' | 'top-rail' | 'two-equidistant';
+export type HandleElevationRef = 'from-top' | 'from-bottom';
+
+/** A single bore hole operation (hinge cup, mounting hole, or handle hole). */
+export interface HoleData {
+  X: number;           // Mozaik X (height axis), mm
+  Y: number;           // Mozaik Y (width axis), mm
+  Diameter: number;    // mm
+  Depth: number;       // mm
+  FlipSideOp: boolean; // true = drilled from back face
+  holeType: 'hinge-cup' | 'hinge-mount' | 'handle';
+}
+
+export interface HingeConfig {
+  enabled: boolean;
+  side: HingeSide;
+  count: number;           // 2–5
+  equidistant: boolean;    // true = auto-space, false = manual positions
+  positions: number[];     // manual hinge positions (mm from bottom/left edge)
+  edgeDistance: number;     // mm from door top/bottom to first/last hinge center
+  cupDia: number;          // default 35mm
+  cupDepth: number;        // default 15mm
+  cupBoringDist: number;   // cup center to door edge, default 22.5mm
+  mountDia: number;        // default 8mm
+  mountDepth: number;      // default 13mm
+  mountSeparation: number; // vertical distance between mounting holes, default 45mm
+  mountInset: number;      // mounting holes inward from cup center, default 9.5mm
+  mountOnFront: boolean;   // false = back (default)
+}
+
+export interface HandleConfig {
+  enabled: boolean;
+  holeDia: number;         // default 5mm
+  holeDepth: number;       // default 19mm
+  holeSeparation: number;  // default 101.6mm (4"); 0 = knob (single hole)
+  insetFromEdge: number;   // default 28.575mm
+  elevation: number;       // mm from reference edge
+  elevationRef: HandleElevationRef;
+  placement: HandlePlacement; // for drawers
+  twoHandleEdgeDist: number; // mm from door left/right to handle center (two-equidistant)
+  onFront: boolean;        // true = front (default)
+}
+
+export const DEFAULT_HINGE_CONFIG: HingeConfig = {
+  enabled: true,
+  side: 'left',
+  count: 2,
+  equidistant: true,
+  positions: [],
+  edgeDistance: 85.6,      // ~3.37"
+  cupDia: 35,
+  cupDepth: 15,
+  cupBoringDist: 22.5,
+  mountDia: 8,
+  mountDepth: 13,
+  mountSeparation: 45,
+  mountInset: 9.5,
+  mountOnFront: false,
+};
+
+export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
+  enabled: true,
+  holeDia: 5,
+  holeDepth: 19,
+  holeSeparation: 101.6,   // 4"
+  insetFromEdge: 28.575,
+  elevation: 114.3,        // ~4.5" from top
+  elevationRef: 'from-top',
+  placement: 'center',
+  twoHandleEdgeDist: 127,  // 5" from each edge
+  onFront: true,
+};

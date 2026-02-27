@@ -1,22 +1,17 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import type { DoorData, UnitSystem } from '../types.js';
+import type { DoorData, UnitSystem, HoleData } from '../types.js';
 import { formatUnit } from '../types.js';
+import type { PanelTree, PanelBounds } from '../utils/panelTree.js';
+import { flattenTree, enumerateSplits } from '../utils/panelTree.js';
 
 interface ElevationViewerProps {
   door: DoorData;
   units: UnitSystem;
-  hasMidRail: boolean;
-  midRailPos: number;    // mm from bottom to center
-  midRailW: number;      // mm bar width
-  hasMidStile: boolean;
-  midStilePos: number;   // mm from left to center
-  midStileW: number;     // mm bar width
+  panelTree: PanelTree;
 }
 
 export function ElevationViewer({
-  door, units,
-  hasMidRail, midRailPos, midRailW,
-  hasMidStile, midStilePos, midStileW,
+  door, units, panelTree,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,6 +25,9 @@ export function ElevationViewer({
   const lastPinchDist = useRef(0);
   const [showDimensions, setShowDimensions] = useState(true);
   const [showHatching, setShowHatching] = useState(true);
+  const [showHardware, setShowHardware] = useState(true);
+
+  const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
   const doorW = door.DefaultW;
   const doorH = door.DefaultH;
@@ -120,9 +118,7 @@ export function ElevationViewer({
   // DXF export
   const handleExportDxf = useCallback(() => {
     const dxf = buildElevationDxf(
-      doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      hasMidRail, midRailPos, midRailW,
-      hasMidStile, midStilePos, midStileW,
+      doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, panelTree, holes,
     );
     const blob = new Blob([dxf], { type: 'application/dxf' });
     const url = URL.createObjectURL(blob);
@@ -131,8 +127,7 @@ export function ElevationViewer({
     a.download = `${door.Name.replace(/\s+/g, '_')}_elevation.dxf`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [door.Name, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      hasMidRail, midRailPos, midRailW, hasMidStile, midStilePos, midStileW]);
+  }, [door.Name, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, panelTree, holes]);
 
   // Draw
   useEffect(() => {
@@ -197,36 +192,20 @@ export function ElevationViewer({
       ctx.restore();
     };
 
+    // Compute panel bounds from tree
+    const rootBounds: PanelBounds = {
+      xMin: bottomRailW,
+      xMax: doorH - topRailW,
+      yMin: leftStileW,
+      yMax: doorW - rightStileW,
+    };
+    const leaves = flattenTree(panelTree, rootBounds);
+
     // Panel areas (light gray fill with hatching)
-    const panelXMin = bottomRailW;
-    const panelXMax = doorH - topRailW;
-    const panelYMin = leftStileW;
-    const panelYMax = doorW - rightStileW;
-
-    // Compute sub-panel rects
-    const xSplits: [number, number][] = [];
-    if (hasMidRail) {
-      xSplits.push([panelXMin, midRailPos - midRailW / 2]);
-      xSplits.push([midRailPos + midRailW / 2, panelXMax]);
-    } else {
-      xSplits.push([panelXMin, panelXMax]);
-    }
-    const ySplits: [number, number][] = [];
-    if (hasMidStile) {
-      ySplits.push([panelYMin, midStilePos - midStileW / 2]);
-      ySplits.push([midStilePos + midStileW / 2, panelYMax]);
-    } else {
-      ySplits.push([panelYMin, panelYMax]);
-    }
-
-    // Draw panel areas
     ctx.fillStyle = '#f0f0f0';
-    for (const [xMin, xMax] of xSplits) {
-      for (const [yMin, yMax] of ySplits) {
-        // Note: model x maps to screen Y (height), model y maps to screen X (width)
-        drawRect(yMin, xMin, yMax, xMax);
-        drawHatch(yMin, xMin, yMax, xMax);
-      }
+    for (const pb of leaves) {
+      drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+      drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
     }
 
     // Frame members (stile/rail fill)
@@ -241,14 +220,23 @@ export function ElevationViewer({
     // Top rail
     drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
 
-    // Mid-rail
-    if (hasMidRail) {
-      drawRect(leftStileW, midRailPos - midRailW / 2, doorW - rightStileW, midRailPos + midRailW / 2);
+    // Divider bars — recursive
+    function drawDividers(tree: PanelTree, bounds: PanelBounds) {
+      if (tree.type === 'leaf') return;
+      const half = tree.width / 2;
+      if (tree.type === 'hsplit') {
+        // Horizontal mid-rail bar within this node's Y bounds
+        drawRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
+        drawDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+        drawDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+      } else {
+        // Vertical mid-stile bar within this node's X bounds
+        drawRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
+        drawDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+        drawDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+      }
     }
-    // Mid-stile
-    if (hasMidStile) {
-      drawRect(midStilePos - midStileW / 2, bottomRailW, midStilePos + midStileW / 2, doorH - topRailW);
-    }
+    drawDividers(panelTree, rootBounds);
 
     // Outlines
     ctx.strokeStyle = '#333333';
@@ -260,30 +248,32 @@ export function ElevationViewer({
     // Frame member outlines
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#555555';
-    // Left stile inner edge
     strokeRect(0, 0, leftStileW, doorH);
-    // Right stile
     strokeRect(doorW - rightStileW, 0, doorW, doorH);
-    // Bottom rail
     strokeRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
-    // Top rail
     strokeRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
-    // Mid-rail
-    if (hasMidRail) {
-      strokeRect(leftStileW, midRailPos - midRailW / 2, doorW - rightStileW, midRailPos + midRailW / 2);
+
+    // Divider bar outlines — recursive
+    function strokeDividers(tree: PanelTree, bounds: PanelBounds) {
+      if (tree.type === 'leaf') return;
+      const half = tree.width / 2;
+      if (tree.type === 'hsplit') {
+        strokeRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
+        strokeDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+        strokeDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+      } else {
+        strokeRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
+        strokeDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+        strokeDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+      }
     }
-    // Mid-stile
-    if (hasMidStile) {
-      strokeRect(midStilePos - midStileW / 2, bottomRailW, midStilePos + midStileW / 2, doorH - topRailW);
-    }
+    strokeDividers(panelTree, rootBounds);
 
     // Panel outlines
     ctx.strokeStyle = '#999999';
     ctx.lineWidth = 0.5;
-    for (const [xMin, xMax] of xSplits) {
-      for (const [yMin, yMax] of ySplits) {
-        strokeRect(yMin, xMin, yMax, xMax);
-      }
+    for (const pb of leaves) {
+      strokeRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
     }
 
     // Dimensions
@@ -302,44 +292,81 @@ export function ElevationViewer({
       // Bottom rail width (inside, at right)
       drawLinearDim(ctx, 0, 0, 0, bottomRailW, fmtDim(bottomRailW), 15, 'left', toX, toY);
 
-      // Mid-rail position from bottom (left side)
-      if (hasMidRail) {
-        drawLinearDim(ctx, 0, 0, 0, midRailPos, fmtDim(midRailPos), 55, 'left', toX, toY);
-        drawLinearDim(ctx, doorW, midRailPos - midRailW / 2, doorW, midRailPos + midRailW / 2,
-          fmtDim(midRailW), 15, 'right', toX, toY);
-      }
-      // Mid-stile position from left (bottom)
-      if (hasMidStile) {
-        drawLinearDim(ctx, 0, 0, midStilePos, 0, fmtDim(midStilePos), 55, 'below', toX, toY);
-        drawLinearDim(ctx, midStilePos - midStileW / 2, doorH, midStilePos + midStileW / 2, doorH,
-          fmtDim(midStileW), 15, 'above', toX, toY);
+      // Split dims — position from origin and width for each split
+      const splits = enumerateSplits(panelTree);
+      for (const split of splits) {
+        if (split.type === 'hsplit') {
+          // Rail position from bottom (left side)
+          drawLinearDim(ctx, 0, 0, 0, split.pos, fmtDim(split.pos), 55 + split.depth * 20, 'left', toX, toY);
+          // Rail width (right side)
+          drawLinearDim(ctx, doorW, split.pos - split.width / 2, doorW, split.pos + split.width / 2,
+            fmtDim(split.width), 15 + split.depth * 20, 'right', toX, toY);
+        } else {
+          // Stile position from left (bottom)
+          drawLinearDim(ctx, 0, 0, split.pos, 0, fmtDim(split.pos), 55 + split.depth * 20, 'below', toX, toY);
+          // Stile width (top)
+          drawLinearDim(ctx, split.pos - split.width / 2, doorH, split.pos + split.width / 2, doorH,
+            fmtDim(split.width), 15 + split.depth * 20, 'above', toX, toY);
+        }
       }
 
-      // Sub-panel heights (left side, between rails/dividers)
-      if (hasMidRail) {
-        const bottomPanelH = (midRailPos - midRailW / 2) - bottomRailW;
-        const topPanelH = (doorH - topRailW) - (midRailPos + midRailW / 2);
-        drawLinearDim(ctx, leftStileW, bottomRailW, leftStileW, midRailPos - midRailW / 2,
-          fmtDim(bottomPanelH), 15, 'left', toX, toY);
-        drawLinearDim(ctx, leftStileW, midRailPos + midRailW / 2, leftStileW, doorH - topRailW,
-          fmtDim(topPanelH), 15, 'left', toX, toY);
+      // Sub-panel dimensions (drawn inside each panel)
+      for (const pb of leaves) {
+        const panelH = pb.xMax - pb.xMin;
+        const panelW = pb.yMax - pb.yMin;
+        const pcx = (pb.yMin + pb.yMax) / 2;
+        const pcy = (pb.xMin + pb.xMax) / 2;
+        drawLinearDim(ctx, pcx, pb.xMin, pcx, pb.xMax,
+          fmtDim(panelH), 0, 'right', toX, toY);
+        drawLinearDim(ctx, pb.yMin, pcy, pb.yMax, pcy,
+          fmtDim(panelW), 0, 'above', toX, toY);
       }
-      // Sub-panel widths (bottom, between stiles)
-      if (hasMidStile) {
-        const leftPanelW = (midStilePos - midStileW / 2) - leftStileW;
-        const rightPanelW = (doorW - rightStileW) - (midStilePos + midStileW / 2);
-        drawLinearDim(ctx, leftStileW, bottomRailW, midStilePos - midStileW / 2, bottomRailW,
-          fmtDim(leftPanelW), 15, 'below', toX, toY);
-        drawLinearDim(ctx, midStilePos + midStileW / 2, bottomRailW, doorW - rightStileW, bottomRailW,
-          fmtDim(rightPanelW), 15, 'below', toX, toY);
+    }
+
+    // Hardware holes
+    if (showHardware && holes.length > 0) {
+      for (const hole of holes) {
+        // Hole position in model coords: X=height(y-axis), Y=width(x-axis)
+        const sx = toX(hole.Y);
+        const sy = toY(hole.X);
+        const sr = (hole.Diameter / 2) * scale;
+
+        // Color by type
+        if (hole.holeType === 'hinge-cup') {
+          ctx.fillStyle = 'rgba(180, 120, 60, 0.5)';
+          ctx.strokeStyle = '#8B6914';
+        } else if (hole.holeType === 'hinge-mount') {
+          ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+          ctx.strokeStyle = '#444444';
+        } else {
+          ctx.fillStyle = 'rgba(60, 120, 200, 0.5)';
+          ctx.strokeStyle = '#2255aa';
+        }
+
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Cross-hair for center
+        ctx.strokeStyle = hole.holeType === 'handle' ? '#2255aa' : '#666666';
+        ctx.lineWidth = 0.5;
+        const ch2 = Math.max(sr * 0.3, 2);
+        ctx.beginPath();
+        ctx.moveTo(sx - ch2, sy); ctx.lineTo(sx + ch2, sy);
+        ctx.moveTo(sx, sy - ch2); ctx.lineTo(sx, sy + ch2);
+        ctx.stroke();
       }
     }
 
   }, [cw, ch, zoom, panX, panY, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      hasMidRail, midRailPos, midRailW, hasMidStile, midStilePos, midStileW,
-      showDimensions, showHatching, fmtDim]);
+      panelTree, showDimensions, showHatching, showHardware, holes, fmtDim]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
+
+  // Sidebar data
+  const splits = enumerateSplits(panelTree);
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
@@ -358,18 +385,14 @@ export function ElevationViewer({
           <span style={sidebarStyles.label}>T/B Rail:</span>
           <span>{fmtDim(topRailW)} / {fmtDim(bottomRailW)}</span>
         </div>
-        {hasMidRail && (
-          <div style={sidebarStyles.row}>
-            <span style={sidebarStyles.label}>Mid Rail:</span>
-            <span>{fmtDim(midRailW)} @ {fmtDim(midRailPos)}</span>
+        {splits.map((s, i) => (
+          <div key={i} style={sidebarStyles.row}>
+            <span style={sidebarStyles.label}>
+              {s.type === 'hsplit' ? 'Rail' : 'Stile'} {i + 1}:
+            </span>
+            <span>{fmtDim(s.width)} @ {fmtDim(s.pos)}</span>
           </div>
-        )}
-        {hasMidStile && (
-          <div style={sidebarStyles.row}>
-            <span style={sidebarStyles.label}>Mid Stile:</span>
-            <span>{fmtDim(midStileW)} @ {fmtDim(midStilePos)}</span>
-          </div>
-        )}
+        ))}
 
         <div style={{ borderTop: '1px solid #333355', marginTop: 8, paddingTop: 8 }}>
           <div style={sidebarStyles.label}>Layers</div>
@@ -380,6 +403,10 @@ export function ElevationViewer({
           <label style={sidebarStyles.checkLabel}>
             <input type="checkbox" checked={showHatching} onChange={(e) => setShowHatching(e.target.checked)} />
             Panel Hatching
+          </label>
+          <label style={sidebarStyles.checkLabel}>
+            <input type="checkbox" checked={showHardware} onChange={(e) => setShowHardware(e.target.checked)} />
+            Hardware ({holes.length})
           </label>
         </div>
 
@@ -524,8 +551,8 @@ function buildElevationDxf(
   doorW: number, doorH: number,
   leftStileW: number, rightStileW: number,
   topRailW: number, bottomRailW: number,
-  hasMidRail: boolean, midRailPos: number, midRailW: number,
-  hasMidStile: boolean, midStilePos: number, midStileW: number,
+  panelTree: PanelTree,
+  holes: HoleData[] = [],
 ): string {
   const lines: string[] = [];
   const addLine = (layer: string, x1: number, y1: number, x2: number, y2: number) => {
@@ -539,6 +566,11 @@ function buildElevationDxf(
     addLine(layer, x2, y2, x1, y2);
     addLine(layer, x1, y2, x1, y1);
   };
+  const addCircle = (layer: string, cx: number, cy: number, radius: number) => {
+    lines.push('0', 'CIRCLE', '8', layer,
+      '10', cx.toFixed(4), '20', cy.toFixed(4), '30', '0.0',
+      '40', radius.toFixed(4));
+  };
 
   // Header
   const dxf: string[] = [
@@ -548,13 +580,14 @@ function buildElevationDxf(
     '0', 'ENDSEC',
     // Tables — layers
     '0', 'SECTION', '2', 'TABLES',
-    '0', 'TABLE', '2', 'LAYER', '70', '4',
+    '0', 'TABLE', '2', 'LAYER', '70', '5',
   ];
   const layers = [
     ['OUTLINE', '7'],   // white
     ['FRAME', '3'],     // green
     ['PANELS', '8'],    // gray
     ['DIVIDERS', '1'],  // red
+    ['HARDWARE', '5'],  // blue
   ];
   for (const [name, color] of layers) {
     dxf.push('0', 'LAYER', '2', name, '70', '0', '62', color, '6', 'CONTINUOUS');
@@ -573,32 +606,39 @@ function buildElevationDxf(
   addRect('FRAME', leftStileW, 0, doorW - rightStileW, bottomRailW);
   addRect('FRAME', leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
 
-  // Mid-rail
-  if (hasMidRail) {
-    addRect('DIVIDERS', leftStileW, midRailPos - midRailW / 2,
-      doorW - rightStileW, midRailPos + midRailW / 2);
+  // Root panel bounds
+  const rootBounds: PanelBounds = {
+    xMin: bottomRailW,
+    xMax: doorH - topRailW,
+    yMin: leftStileW,
+    yMax: doorW - rightStileW,
+  };
+
+  // Divider bars — recursive
+  function dxfDividers(tree: PanelTree, bounds: PanelBounds) {
+    if (tree.type === 'leaf') return;
+    const half = tree.width / 2;
+    if (tree.type === 'hsplit') {
+      addRect('DIVIDERS', bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
+      dxfDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+      dxfDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+    } else {
+      addRect('DIVIDERS', tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
+      dxfDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+      dxfDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+    }
   }
-  // Mid-stile
-  if (hasMidStile) {
-    addRect('DIVIDERS', midStilePos - midStileW / 2, bottomRailW,
-      midStilePos + midStileW / 2, doorH - topRailW);
-  }
+  dxfDividers(panelTree, rootBounds);
 
   // Panel areas
-  const panelXMin = bottomRailW;
-  const panelXMax = doorH - topRailW;
-  const panelYMin = leftStileW;
-  const panelYMax = doorW - rightStileW;
-  const xSplits: [number, number][] = hasMidRail
-    ? [[panelXMin, midRailPos - midRailW / 2], [midRailPos + midRailW / 2, panelXMax]]
-    : [[panelXMin, panelXMax]];
-  const ySplits: [number, number][] = hasMidStile
-    ? [[panelYMin, midStilePos - midStileW / 2], [midStilePos + midStileW / 2, panelYMax]]
-    : [[panelYMin, panelYMax]];
-  for (const [hMin, hMax] of xSplits) {
-    for (const [wMin, wMax] of ySplits) {
-      addRect('PANELS', wMin, hMin, wMax, hMax);
-    }
+  const leaves = flattenTree(panelTree, rootBounds);
+  for (const pb of leaves) {
+    addRect('PANELS', pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+  }
+
+  // Hardware holes (DXF coords: X=width=hole.Y, Y=height=hole.X)
+  for (const hole of holes) {
+    addCircle('HARDWARE', hole.Y, hole.X, hole.Diameter / 2);
   }
 
   dxf.push(...lines);
