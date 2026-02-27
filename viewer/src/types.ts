@@ -133,6 +133,15 @@ export type PanelType = 'pocket' | 'raised' | 'glass';
 /** Glass pane thickness: 1/8" = 3.175 mm. */
 export const GLASS_THICKNESS = 3.175;
 
+/** Unit system for display. */
+export type UnitSystem = 'mm' | 'in';
+
+/** Format a mm value in the active unit system. */
+export function formatUnit(mm: number, units: UnitSystem, decimals?: number): string {
+  if (units === 'in') return `${(mm / 25.4).toFixed(decimals ?? 3)}"`;
+  return `${mm.toFixed(decimals ?? 2)} mm`;
+}
+
 // ---------------------------------------------------------------------------
 // Raw tool library types (loaded from toolGroups.json / tools.json)
 // ---------------------------------------------------------------------------

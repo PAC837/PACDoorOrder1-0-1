@@ -8,8 +8,8 @@ import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
-import type { OperationVisibility, ToolVisibility, PanelType } from './types.js';
-import { MATERIAL_THICKNESS } from './types.js';
+import type { OperationVisibility, ToolVisibility, PanelType, UnitSystem } from './types.js';
+import { MATERIAL_THICKNESS, formatUnit } from './types.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'admin';
 
@@ -32,6 +32,7 @@ export default function App() {
   const [rightStileW, setRightStileW] = useState(63.5);  // 2.5"
   const [topRailW, setTopRailW] = useState(63.5);        // 2.5"
   const [bottomRailW, setBottomRailW] = useState(63.5);  // 2.5"
+  const [units, setUnits] = useState<UnitSystem>('mm');
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
   const [libraries, setLibraries] = useState<string[]>([]);
@@ -166,8 +167,8 @@ export default function App() {
   if (currentTab === 'tools') {
     return (
       <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
-        <ToolShapeViewer />
+        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
+        <ToolShapeViewer units={units} />
       </div>
     );
   }
@@ -176,7 +177,7 @@ export default function App() {
   if (currentTab === 'admin') {
     return (
       <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
+        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
         <AdminPanel onDataReloaded={() => setDataVersion((v) => v + 1)} />
       </div>
     );
@@ -186,7 +187,7 @@ export default function App() {
   if (currentTab === 'cross-section' && activeDoor) {
     return (
       <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
+        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
         <CrossSectionViewer
           door={activeDoor}
           graph={activeGraph}
@@ -194,6 +195,7 @@ export default function App() {
           frontPanelType={isGenericDoor ? frontPanelType : undefined}
           backPanelType={isGenericDoor ? backPanelType : undefined}
           hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
+          units={units}
         />
       </div>
     );
@@ -205,7 +207,7 @@ export default function App() {
 
   return (
     <div style={styles.container}>
-      <TabBar currentTab={currentTab} onTabChange={setCurrentTab} />
+      <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
 
       {/* 3D Canvas — always mounted to prevent WebGL context loss */}
       <Canvas
@@ -379,7 +381,7 @@ export default function App() {
                 disabled={frontPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(frontPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>mm ({((frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth) / 25.4).toFixed(3)}")</span>
+              <span style={styles.unitLabel}>{formatUnit(frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth, units)}</span>
             </div>
 
             {/* Back: type + depth + tool group */}
@@ -423,7 +425,7 @@ export default function App() {
                 disabled={backPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
-              <span style={styles.unitLabel}>mm ({((backPanelType === 'pocket' ? backDepth : effectiveBackDepth) / 25.4).toFixed(3)}")</span>
+              <span style={styles.unitLabel}>{formatUnit(backPanelType === 'pocket' ? backDepth : effectiveBackDepth, units)}</span>
             </div>
 
             {/* Stile & Rail Widths */}
@@ -433,28 +435,28 @@ export default function App() {
                 <input type="number" value={leftStileW} step={0.5} min={0}
                   onChange={(e) => setLeftStileW(Number(e.target.value))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>mm ({(leftStileW / 25.4).toFixed(3)}")</span>
+                <span style={styles.unitLabel}>{formatUnit(leftStileW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Right Stile:</label>
                 <input type="number" value={rightStileW} step={0.5} min={0}
                   onChange={(e) => setRightStileW(Number(e.target.value))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>mm ({(rightStileW / 25.4).toFixed(3)}")</span>
+                <span style={styles.unitLabel}>{formatUnit(rightStileW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Top Rail:</label>
                 <input type="number" value={topRailW} step={0.5} min={0}
                   onChange={(e) => setTopRailW(Number(e.target.value))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>mm ({(topRailW / 25.4).toFixed(3)}")</span>
+                <span style={styles.unitLabel}>{formatUnit(topRailW, units)}</span>
               </div>
               <div style={styles.selector}>
                 <label style={styles.label}>Bot Rail:</label>
                 <input type="number" value={bottomRailW} step={0.5} min={0}
                   onChange={(e) => setBottomRailW(Number(e.target.value))}
                   style={styles.numberInput} />
-                <span style={styles.unitLabel}>mm ({(bottomRailW / 25.4).toFixed(3)}")</span>
+                <span style={styles.unitLabel}>{formatUnit(bottomRailW, units)}</span>
               </div>
             </div>
           </div>
@@ -465,38 +467,34 @@ export default function App() {
           <div style={styles.info}>
             <div style={styles.infoRow}>
               <span style={styles.infoLabel}>Size:</span>
-              <span>{activeDoor.DefaultW.toFixed(1)} x {activeDoor.DefaultH.toFixed(1)} mm</span>
-            </div>
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Size (in):</span>
-              <span>{(activeDoor.DefaultW / 25.4).toFixed(2)}" x {(activeDoor.DefaultH / 25.4).toFixed(2)}"</span>
+              <span>{formatUnit(activeDoor.DefaultW, units)} x {formatUnit(activeDoor.DefaultH, units)}</span>
             </div>
             {isGenericDoor ? (
               <>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>L/R Stile:</span>
-                  <span>{leftStileW.toFixed(2)} / {rightStileW.toFixed(2)} mm</span>
+                  <span>{formatUnit(leftStileW, units)} / {formatUnit(rightStileW, units)}</span>
                 </div>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>T/B Rail:</span>
-                  <span>{topRailW.toFixed(2)} / {bottomRailW.toFixed(2)} mm</span>
+                  <span>{formatUnit(topRailW, units)} / {formatUnit(bottomRailW, units)}</span>
                 </div>
               </>
             ) : (
               <>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>Rail W:</span>
-                  <span>{activeDoor.TopRailW.toFixed(2)} mm ({(activeDoor.TopRailW / 25.4).toFixed(3)}")</span>
+                  <span>{formatUnit(activeDoor.TopRailW, units)}</span>
                 </div>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>Stile W:</span>
-                  <span>{activeDoor.LeftRightStileW.toFixed(2)} mm ({(activeDoor.LeftRightStileW / 25.4).toFixed(3)}")</span>
+                  <span>{formatUnit(activeDoor.LeftRightStileW, units)}</span>
                 </div>
               </>
             )}
             <div style={styles.infoRow}>
               <span style={styles.infoLabel}>Recess:</span>
-              <span>{activeDoor.PanelRecess.toFixed(2)} mm ({(activeDoor.PanelRecess / 25.4).toFixed(3)}")</span>
+              <span>{formatUnit(activeDoor.PanelRecess, units)}</span>
             </div>
             <div style={styles.infoRow}>
               <span style={styles.infoLabel}>Split:</span>
@@ -532,6 +530,7 @@ export default function App() {
           toolVisibility={toolVisibility}
           onToggleTool={toggleTool}
           onSetAllTools={setAllTools}
+          units={units}
         />
       )}
     </div>
@@ -550,7 +549,10 @@ function computeEffectiveDepths(
   return { effectiveFrontDepth: eFront, effectiveBackDepth: eBack };
 }
 
-function TabBar({ currentTab, onTabChange }: { currentTab: Tab; onTabChange: (tab: Tab) => void }) {
+function TabBar({ currentTab, onTabChange, units, onUnitsChange }: {
+  currentTab: Tab; onTabChange: (tab: Tab) => void;
+  units: UnitSystem; onUnitsChange: (u: UnitSystem) => void;
+}) {
   return (
     <div style={tabStyles.bar}>
       <button
@@ -588,6 +590,13 @@ function TabBar({ currentTab, onTabChange }: { currentTab: Tab; onTabChange: (ta
         onClick={() => onTabChange('admin')}
       >
         Admin
+      </button>
+      <button
+        style={{ ...tabStyles.tab, marginLeft: 8, fontWeight: 'bold', minWidth: 36 }}
+        onClick={() => onUnitsChange(units === 'mm' ? 'in' : 'mm')}
+        title="Toggle units"
+      >
+        {units === 'mm' ? 'mm' : 'in'}
       </button>
     </div>
   );

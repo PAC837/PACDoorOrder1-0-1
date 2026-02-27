@@ -4,8 +4,10 @@ import {
   profileToStraightLines,
   type ToolProfile,
 } from '../utils/profileShape.js';
+import type { UnitSystem } from '../types.js';
+import { formatUnit } from '../types.js';
 
-export function ToolShapeViewer() {
+export function ToolShapeViewer({ units }: { units: UnitSystem }) {
   const [profiles, setProfiles] = useState<ToolProfile[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export function ToolShapeViewer() {
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Diameter:</span>
-            <span>{selected.diameter_mm.toFixed(3)} mm ({selected.diameter_in.toFixed(4)}")</span>
+            <span>{formatUnit(selected.diameter_mm, units)}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Points:</span>
@@ -89,7 +91,7 @@ export function ToolShapeViewer() {
             <div key={i} style={styles.pointRow}>
               <span style={styles.pointIndex}>{i}</span>
               <span style={styles.pointCoord}>
-                ({pt.x_mm.toFixed(3)}, {pt.y_mm.toFixed(3)})
+                ({units === 'in' ? pt.x_in.toFixed(4) : pt.x_mm.toFixed(3)}, {units === 'in' ? pt.y_in.toFixed(4) : pt.y_mm.toFixed(3)})
               </span>
               <span style={styles.pointType}>
                 {pt.ptType === 0
@@ -128,6 +130,20 @@ function ToolCanvas({
   showStraight: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const dragRef = useRef<{ dragging: boolean; lastX: number; lastY: number }>({
+    dragging: false, lastX: 0, lastY: 0,
+  });
+  const pinchRef = useRef<{ dist: number; zoom: number }>({ dist: 0, zoom: 1 });
+
+  // Reset zoom when tool changes
+  useEffect(() => {
+    setZoom(1);
+    setPanX(0);
+    setPanY(0);
+  }, [profile]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -184,15 +200,16 @@ function ToolCanvas({
     const pad = 40;
     const scaleX = (w - pad * 2) / pw;
     const scaleY = (h - pad * 2) / ph;
-    const scale = Math.min(scaleX, scaleY);
+    const baseScale = Math.min(scaleX, scaleY);
+    const scale = baseScale * zoom;
 
     const cx = w / 2;
     const cy = h / 2;
     const pcx = (minX + maxX) / 2;
     const pcy = (minY + maxY) / 2;
 
-    const toX = (px: number) => cx + (px - pcx) * scale;
-    const toY = (py: number) => cy - (py - pcy) * scale;
+    const toX = (px: number) => cx + (px - pcx) * scale + panX;
+    const toY = (py: number) => cy - (py - pcy) * scale + panY;
 
     // Grid
     ctx.strokeStyle = '#2a2a44';
@@ -269,7 +286,15 @@ function ToolCanvas({
     ctx.strokeStyle = '#ffdd88';
     ctx.lineWidth = 2;
     ctx.stroke();
-  }, [profile, showStraight]);
+
+    // Zoom indicator
+    if (zoom !== 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${zoom.toFixed(1)}x`, w - 10, h - 10);
+    }
+  }, [profile, showStraight, zoom, panX, panY]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -279,7 +304,111 @@ function ToolCanvas({
     return () => window.removeEventListener('resize', handleResize);
   }, [draw]);
 
-  return <canvas ref={canvasRef} style={styles.canvas} />;
+  // Wheel zoom (center-anchored)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.max(0.1, Math.min(50, z * factor)));
+    };
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Mouse drag for pan
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onDown = (e: MouseEvent) => {
+      dragRef.current = { dragging: true, lastX: e.clientX, lastY: e.clientY };
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current.dragging) return;
+      const dx = e.clientX - dragRef.current.lastX;
+      const dy = e.clientY - dragRef.current.lastY;
+      dragRef.current.lastX = e.clientX;
+      dragRef.current.lastY = e.clientY;
+      setPanX(px => px + dx);
+      setPanY(py => py + dy);
+    };
+    const onUp = () => { dragRef.current.dragging = false; };
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  // Touch pinch zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const getTouchDist = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchRef.current = { dist: getTouchDist(e.touches), zoom };
+      } else if (e.touches.length === 1) {
+        dragRef.current = { dragging: true, lastX: e.touches[0].clientX, lastY: e.touches[0].clientY };
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const newDist = getTouchDist(e.touches);
+        const scale = newDist / pinchRef.current.dist;
+        setZoom(Math.max(0.1, Math.min(50, pinchRef.current.zoom * scale)));
+      } else if (e.touches.length === 1 && dragRef.current.dragging) {
+        const dx = e.touches[0].clientX - dragRef.current.lastX;
+        const dy = e.touches[0].clientY - dragRef.current.lastY;
+        dragRef.current.lastX = e.touches[0].clientX;
+        dragRef.current.lastY = e.touches[0].clientY;
+        setPanX(px => px + dx);
+        setPanY(py => py + dy);
+      }
+    };
+    const onTouchEnd = () => { dragRef.current.dragging = false; };
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd);
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [zoom]);
+
+  const handleReset = useCallback(() => {
+    setZoom(1); setPanX(0); setPanY(0);
+  }, []);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas ref={canvasRef} style={styles.canvas} />
+      {zoom !== 1 && (
+        <button
+          onClick={handleReset}
+          style={{
+            position: 'absolute', top: 8, right: 8,
+            padding: '4px 10px', fontSize: '11px',
+            background: 'rgba(40,40,70,0.85)', color: '#ccc',
+            border: '1px solid #555', borderRadius: 4, cursor: 'pointer',
+          }}
+        >
+          Reset Zoom
+        </button>
+      )}
+    </div>
+  );
 }
 
 function findGridStep(maxDim: number): number {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { DoorGraphData, OperationVisibility, ToolVisibility } from '../types.js';
+import type { DoorGraphData, OperationVisibility, ToolVisibility, UnitSystem } from '../types.js';
+import { formatUnit } from '../types.js';
 
 interface OperationOverlayProps {
   graph?: DoorGraphData;
@@ -8,13 +9,14 @@ interface OperationOverlayProps {
   toolVisibility: ToolVisibility;
   onToggleTool: (operationId: number, toolIndex: number) => void;
   onSetAllTools: (operationId: number, toolCount: number, visible: boolean) => void;
+  units: UnitSystem;
 }
 
 /**
  * Right-side overlay panel listing all CNC operations on the selected door.
  * Each operation has a checkbox to toggle 3D visibility.
  */
-export function OperationOverlay({ graph, visibility, onToggle, toolVisibility, onToggleTool, onSetAllTools }: OperationOverlayProps) {
+export function OperationOverlay({ graph, visibility, onToggle, toolVisibility, onToggleTool, onSetAllTools, units }: OperationOverlayProps) {
   const [expandedOps, setExpandedOps] = useState<Record<number, boolean>>({});
 
   if (!graph || graph.operations.length === 0) return null;
@@ -65,9 +67,7 @@ export function OperationOverlay({ graph, visibility, onToggle, toolVisibility, 
               </div>
               <div style={styles.opRow}>
                 <span style={styles.opLabel}>Depth:</span>
-                <span>
-                  {op.depth.toFixed(3)} mm ({(op.depth / 25.4).toFixed(4)}")
-                </span>
+                <span>{formatUnit(op.depth, units)}</span>
               </div>
               <div style={styles.opRow}>
                 <span style={styles.opLabel}>Tools:</span>
@@ -120,7 +120,7 @@ export function OperationOverlay({ graph, visibility, onToggle, toolVisibility, 
                         </span>
                       </label>
                       <span style={styles.toolDetail}>
-                        D: {t.entryDepth.toFixed(2)} / O: {t.entryOffset.toFixed(3)}
+                        D: {formatUnit(t.entryDepth, units)} / O: {formatUnit(t.entryOffset, units)}
                       </span>
                     </div>
                   );

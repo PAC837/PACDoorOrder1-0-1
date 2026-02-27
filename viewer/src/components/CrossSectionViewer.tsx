@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { buildCrossSectionPoints } from '../utils/cuttingBodies.js';
-import type { DoorData, DoorGraphData, ToolProfileData, PanelType } from '../types.js';
-import { MATERIAL_THICKNESS, GLASS_THICKNESS } from '../types.js';
+import type { DoorData, DoorGraphData, ToolProfileData, PanelType, UnitSystem } from '../types.js';
+import { MATERIAL_THICKNESS, GLASS_THICKNESS, formatUnit } from '../types.js';
 
 /** Extract the back rabbet depth (min back-face flat tool depth, excluding through-cuts). */
 function getBackRabbetDepth(graph: DoorGraphData | undefined, thickness: number): number {
@@ -29,6 +29,7 @@ interface CrossSectionViewerProps {
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
   hasBackRabbit?: boolean;
+  units: UnitSystem;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -39,7 +40,6 @@ type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
 
 const VIEW_WIDTH = 152.4; // 6 inches in mm
 const VIEW_HALF = VIEW_WIDTH / 2;
-const MM_PER_INCH = 25.4;
 
 // ---------------------------------------------------------------------------
 // Composite depth profile — sample the deepest cut at each X position
@@ -401,10 +401,6 @@ function drawDiagonalHatch(
 // DXF export
 // ---------------------------------------------------------------------------
 
-function formatDim(mm: number): string {
-  return `${mm.toFixed(2)} (${(mm / MM_PER_INCH).toFixed(3)}")`;
-}
-
 function generateDxf(
   composite: CompositeProfile,
   thickness: number,
@@ -575,8 +571,19 @@ function CrossSectionCanvas({
   hasBackRabbit,
   showHatching,
   showDimensions,
-}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean }) {
+  units,
+  showGlass,
+}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showGlass: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
+  const lastPinchDist = useRef<number | null>(null);
+
+  // Reset zoom when door changes
+  useEffect(() => { setZoom(1); setPanX(0); setPanY(0); }, [door.Name]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -593,6 +600,7 @@ function CrossSectionCanvas({
     ctx.scale(dpr, dpr);
 
     const thickness = MATERIAL_THICKNESS;
+    const fmtDim = (mm: number) => formatUnit(mm, units);
 
     // --- Gather data ---
     const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
@@ -624,19 +632,20 @@ function CrossSectionCanvas({
     const outline = composite.frontOutline;
     const backProfile = composite.backProfile;
 
-    // --- Coordinate transform ---
+    // --- Coordinate transform (with zoom + pan) ---
     const dimSpace = showDimensions ? 50 : 0;
     const pad = 60 + dimSpace;
     const scaleX = (cw - 2 * pad) / VIEW_WIDTH;
     const scaleY = (ch - 2 * pad) / thickness;
-    const scale = Math.min(scaleX, scaleY);
+    const baseScale = Math.min(scaleX, scaleY);
+    const scale = baseScale * zoom;
 
     const cx = cw / 2;
     const cy = ch / 2;
     const viewCY = thickness / 2;
 
-    const toX = (x: number) => cx + x * scale;
-    const toY = (y: number) => cy + (y - viewCY) * scale;
+    const toX = (x: number) => cx + x * scale + panX;
+    const toY = (y: number) => cy + (y - viewCY) * scale + panY;
 
     const slabLeft = toX(-VIEW_HALF);
     const slabRight = toX(stileW);
@@ -742,24 +751,24 @@ function CrossSectionCanvas({
     if (showDimensions) {
       // Material thickness (right side, at door edge)
       drawLinearDim(ctx, stileW, 0, stileW, thickness,
-        formatDim(thickness), 30, 'right', toX, toY);
+        fmtDim(thickness), 30, 'right', toX, toY);
 
       // Front pocket depth (left side) — skip for glass (redundant with thickness)
       if (frontPocketDepth > 0 && frontPanelType !== 'glass') {
         drawLinearDim(ctx, -VIEW_HALF, 0, -VIEW_HALF, frontPocketDepth,
-          formatDim(frontPocketDepth), 30, 'left', toX, toY);
+          fmtDim(frontPocketDepth), 30, 'left', toX, toY);
       }
 
       // Back pocket depth (left side, from back face) — skip for glass
       if (backPocketDepth > 0 && backPanelType !== 'glass') {
         drawLinearDim(ctx, -VIEW_HALF, thickness - backPocketDepth, -VIEW_HALF, thickness,
-          formatDim(backPocketDepth), 55, 'left', toX, toY);
+          fmtDim(backPocketDepth), 55, 'left', toX, toY);
       }
 
-      // Stile width (bottom, from toolpath x=0 to outer edge)
+      // Stile width (top, from toolpath x=0 to outer edge)
       if (stileW > 0) {
-        drawLinearDim(ctx, 0, thickness, stileW, thickness,
-          formatDim(stileW), 20, 'below', toX, toY);
+        drawLinearDim(ctx, 0, 0, stileW, 0,
+          fmtDim(stileW), 20, 'above', toX, toY);
       }
 
       // V-bit angle annotation
@@ -793,30 +802,29 @@ function CrossSectionCanvas({
             const arcCx = toX(offset - toolR);
             const arcCy = toY(d);
             const rScreen = r * scale;
-            // Leader points upper-right (toward stile surface, clear of profile)
+            // Leader points upper-left (toward panel area, clear of profile)
             drawRadiusDim(ctx, arcCx, arcCy, rScreen,
-              -Math.PI / 4,
-              `R${r.toFixed(2)} (${(r / MM_PER_INCH).toFixed(3)}")`);
+              -3 * Math.PI / 4,
+              `R${fmtDim(r)}`);
           }
         }
       }
 
-      // Profile tool entry depth
+      // Profile tool entry depth (at stile edge, outside profile area)
       if (tools.length > 0) {
         // Find the deepest profile/vbit tool
         const profileTools = tools.filter((t) => t.isCNCDoor || t.sharpCornerAngle > 0);
         if (profileTools.length > 0) {
           const deepest = profileTools.reduce((a, b) => a.entryDepth > b.entryDepth ? a : b);
-          const offset = -deepest.entryOffset;
-          drawLinearDim(ctx, offset, 0, offset, deepest.entryDepth,
-            formatDim(deepest.entryDepth), 15, 'right', toX, toY);
+          drawLinearDim(ctx, stileW, 0, stileW, deepest.entryDepth,
+            fmtDim(deepest.entryDepth), 55, 'right', toX, toY);
         }
       }
     }
 
     // --- 4b. Glass pane ---
-    const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';
-    if (showGlass) {
+    const glassVisible = showGlass && (frontPanelType === 'glass' || backPanelType === 'glass');
+    if (glassVisible) {
       // Glass sits in the back rabbet groove, extending 3/8" into stile/rail
       const backRabbet = hasBackRabbit !== false ? getBackRabbetDepth(graph, thickness) : 0;
       const glassLip = hasBackRabbit !== false ? 9.525 : 0; // 3/8" lip only with back rabbit
@@ -838,7 +846,7 @@ function CrossSectionCanvas({
 
       if (showDimensions) {
         drawLinearDim(ctx, -VIEW_HALF, glassTopY, -VIEW_HALF, glassBotY,
-          formatDim(GLASS_THICKNESS), 80, 'left', toX, toY);
+          fmtDim(GLASS_THICKNESS), 80, 'left', toX, toY);
       }
     }
 
@@ -846,15 +854,15 @@ function CrossSectionCanvas({
     ctx.fillStyle = '#666666';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Front Face', cx, slabTop - 8);
-    ctx.fillText('Back Face', cx, slabBot + 16);
+    ctx.fillText('Front Face', cx + panX, slabTop - 8);
+    ctx.fillText('Back Face', cx + panX, slabBot + 16);
 
     ctx.fillStyle = '#888888';
     ctx.font = '10px sans-serif';
     ctx.fillText('Stile / Rail', toX(VIEW_HALF * 0.5), slabBot + 30);
     ctx.fillText('Panel Area', toX(-VIEW_HALF * 0.5), slabBot + 30);
 
-  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType, hasBackRabbit]);
+  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -863,16 +871,102 @@ function CrossSectionCanvas({
     return () => window.removeEventListener('resize', handleResize);
   }, [draw]);
 
-  return <canvas ref={canvasRef} style={canvasStyle} />;
+  // Wheel zoom (center-anchored)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.max(0.1, Math.min(20, z * factor)));
+    };
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Mouse drag for pan
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+  }, []);
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastMouse.current.x;
+    const dy = e.clientY - lastMouse.current.y;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+    setPanX(px => px + dx);
+    setPanY(py => py + dy);
+  }, [isDragging]);
+  const handleMouseUp = useCallback(() => setIsDragging(false), []);
+
+  // Touch pinch zoom + single-finger pan
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastPinchDist.current = Math.hypot(dx, dy);
+    } else if (e.touches.length === 1) {
+      setIsDragging(true);
+      lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  }, []);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastPinchDist.current !== null) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const factor = dist / lastPinchDist.current;
+      setZoom(z => Math.max(0.1, Math.min(20, z * factor)));
+      lastPinchDist.current = dist;
+    } else if (e.touches.length === 1 && isDragging) {
+      const tdx = e.touches[0].clientX - lastMouse.current.x;
+      const tdy = e.touches[0].clientY - lastMouse.current.y;
+      lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setPanX(px => px + tdx);
+      setPanY(py => py + tdy);
+    }
+  }, [isDragging]);
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+    lastPinchDist.current = null;
+  }, []);
+
+  const handleReset = useCallback(() => { setZoom(1); setPanX(0); setPanY(0); }, []);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas
+        ref={canvasRef}
+        style={{ ...canvasStyle, cursor: isDragging ? 'grabbing' : 'grab' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      />
+      {zoom !== 1 && (
+        <button onClick={handleReset} style={resetBtnStyle}>Reset</button>
+      )}
+      {zoom !== 1 && (
+        <div style={zoomIndicatorStyle}>{(zoom * 100).toFixed(0)}%</div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit }: CrossSectionViewerProps) {
+export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units }: CrossSectionViewerProps) {
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
+  const [showGlass, setShowGlass] = useState(true);
+
+  const isGlass = frontPanelType === 'glass' || backPanelType === 'glass';
 
   const handleExportDxf = useCallback(() => {
     const thickness = MATERIAL_THICKNESS;
@@ -926,23 +1020,23 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Size:</span>
-            <span>{door.DefaultW.toFixed(1)} x {door.DefaultH.toFixed(1)} mm</span>
+            <span>{formatUnit(door.DefaultW, units)} x {formatUnit(door.DefaultH, units)}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Thickness:</span>
-            <span>{MATERIAL_THICKNESS.toFixed(2)} mm ({(MATERIAL_THICKNESS / MM_PER_INCH).toFixed(3)}")</span>
+            <span>{formatUnit(MATERIAL_THICKNESS, units)}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Rail W:</span>
-            <span>{door.TopRailW.toFixed(2)} mm ({(door.TopRailW / MM_PER_INCH).toFixed(3)}")</span>
+            <span>{formatUnit(door.TopRailW, units)}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Stile W:</span>
-            <span>{door.LeftRightStileW.toFixed(2)} mm ({(door.LeftRightStileW / MM_PER_INCH).toFixed(3)}")</span>
+            <span>{formatUnit(door.LeftRightStileW, units)}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Recess:</span>
-            <span>{door.PanelRecess.toFixed(2)} mm ({(door.PanelRecess / MM_PER_INCH).toFixed(3)}")</span>
+            <span>{formatUnit(door.PanelRecess, units)}</span>
           </div>
         </div>
 
@@ -960,7 +1054,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
                   <div key={i} style={styles.toolRow}>
                     <span style={styles.toolName}>{t.toolName}</span>
                     <span style={styles.toolDetail}>
-                      {type} | offset {offset.toFixed(2)} | depth {t.entryDepth.toFixed(2)}
+                      {type} | offset {formatUnit(offset, units)} | depth {formatUnit(t.entryDepth, units)}
                     </span>
                   </div>
                 );
@@ -981,6 +1075,13 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
               onChange={(e) => setShowDimensions(e.target.checked)} />
             Dimensions
           </label>
+          {isGlass && (
+            <label style={styles.toggleLabel}>
+              <input type="checkbox" checked={showGlass}
+                onChange={(e) => setShowGlass(e.target.checked)} />
+              Glass Pane
+            </label>
+          )}
         </div>
 
         {/* Export */}
@@ -989,7 +1090,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
         </button>
 
         <div style={styles.hint}>
-          6" (152.4 mm) slice through the door edge,<br />
+          {units === 'mm' ? '152.4 mm' : '6"'} slice through the door edge,<br />
           centered on the toolpath boundary.
         </div>
       </div>
@@ -1000,6 +1101,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           door={door} graph={graph} profiles={profiles}
           frontPanelType={frontPanelType} backPanelType={backPanelType} hasBackRabbit={hasBackRabbit}
           showHatching={showHatching} showDimensions={showDimensions}
+          units={units} showGlass={showGlass}
         />
       </div>
     </div>
@@ -1014,6 +1116,29 @@ const canvasStyle: React.CSSProperties = {
   width: '100%',
   height: '100%',
   display: 'block',
+};
+
+const resetBtnStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 8,
+  right: 8,
+  padding: '4px 12px',
+  borderRadius: 4,
+  border: '1px solid #999',
+  background: '#fff',
+  color: '#333',
+  fontSize: '11px',
+  cursor: 'pointer',
+  zIndex: 10,
+};
+
+const zoomIndicatorStyle: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 8,
+  right: 8,
+  fontSize: '11px',
+  color: '#666',
+  zIndex: 10,
 };
 
 const styles: Record<string, React.CSSProperties> = {
