@@ -25,6 +25,7 @@ export default function App() {
   const [backGroupId, setBackGroupId] = useState<number | null>(null);
   const [frontPanelType, setFrontPanelType] = useState<PanelType>('pocket');
   const [backPanelType, setBackPanelType] = useState<PanelType>('pocket');
+  const [hasBackRabbit, setHasBackRabbit] = useState(true);
   const [frontDepth, setFrontDepth] = useState(6.35);    // 1/4"
   const [backDepth, setBackDepth] = useState(3.175);     // 1/8"
   const [leftStileW, setLeftStileW] = useState(63.5);    // 2.5"
@@ -147,7 +148,11 @@ export default function App() {
   // Export the current door to Mozaik optimizer XML
   const handleExport = useCallback(() => {
     if (!activeDoor) return;
-    const xml = buildOptimizerXml(activeDoor);
+    const xml = buildOptimizerXml(
+      activeDoor,
+      isGenericDoor ? frontPanelType : 'pocket',
+      isGenericDoor ? backPanelType : 'pocket',
+    );
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -155,7 +160,7 @@ export default function App() {
     a.download = `${activeDoor.Name.replace(/\s+/g, '_')}_optimizer.xml`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [activeDoor]);
+  }, [activeDoor, isGenericDoor, frontPanelType, backPanelType]);
 
   // --- Tab: Tool Shapes ---
   if (currentTab === 'tools') {
@@ -188,6 +193,7 @@ export default function App() {
           profiles={profiles}
           frontPanelType={isGenericDoor ? frontPanelType : undefined}
           backPanelType={isGenericDoor ? backPanelType : undefined}
+          hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
         />
       </div>
     );
@@ -228,6 +234,7 @@ export default function App() {
             toolVisibility={toolVisibility}
             frontPanelType={isGenericDoor ? frontPanelType : undefined}
             backPanelType={isGenericDoor ? backPanelType : undefined}
+            hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
           />
         )}
 
@@ -350,6 +357,16 @@ export default function App() {
                   </option>
                 ))}
               </select>
+              {frontPanelType === 'glass' && (
+                <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={hasBackRabbit}
+                    onChange={(e) => setHasBackRabbit(e.target.checked)}
+                  />
+                  Back Rabbit
+                </label>
+              )}
             </div>
             <div style={styles.selector}>
               <label style={styles.label}>Front Depth:</label>
@@ -614,7 +631,11 @@ const tabStyles: Record<string, React.CSSProperties> = {
  * Build Mozaik optimizer XML for a single door.
  * Matches the format in `3-4 MDF sample 1.xml`.
  */
-function buildOptimizerXml(door: any): string {
+function buildOptimizerXml(
+  door: any,
+  frontPanelType: PanelType = 'pocket',
+  backPanelType: PanelType = 'pocket',
+): string {
   const B = (v: boolean) => v ? 'True' : 'False';
   const w = door.DefaultW;
   const h = door.DefaultH;
@@ -643,10 +664,23 @@ function buildOptimizerXml(door: any): string {
     for (let oi = 0; oi < ops.length; oi++) {
       const op = ops[oi];
       const legacyNum = 54000 + oi * 2;
-      xml += `        <OperationPocket CCW="${B(op.CCW ?? false)}" InsideOut="${B(op.InsideOut ?? true)}" PocketingToolID="-3" ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="${B(op.ClosedShape ?? true)}" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="${op.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
+      const panelType = op.FlipSideOp ? backPanelType : frontPanelType;
+      const useToolPath = panelType === 'raised' || panelType === 'glass';
+
+      if (useToolPath) {
+        // Raised panel (one-piece): OperationToolPath — no pocket, closed toolpath at depth 0
+        xml += `        <OperationToolPath ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="True" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="0" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="True" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
+      } else {
+        // Pocket or glass: OperationPocket
+        xml += `        <OperationPocket CCW="${B(op.CCW ?? false)}" InsideOut="${B(op.InsideOut ?? true)}" PocketingToolID="-3" ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="${B(op.ClosedShape ?? true)}" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="${op.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
+      }
+
       if (!op.FlipSideOp) {
         xml += `          <OpIdTag TypeCode="29" LegacyNumber="${legacyNum}">\n`;
         xml += `            <OpIdTagReference Key="Panel Index" Value="${panelIndex}" />\n`;
+        if (useToolPath) {
+          xml += `            <OpIdTagReference Key="Count" Value="1" />\n`;
+        }
         xml += `          </OpIdTag>\n`;
         panelIndex++;
       } else {
@@ -659,7 +693,7 @@ function buildOptimizerXml(door: any): string {
         const exportY = w - node.Y;
         xml += `          <OperationToolPathNode X="${node.X}" Y="${exportY}" DepthOR="${node.DepthOR ?? -9999}" PtType="${node.PtType ?? 0}" Data="${node.Data ?? 0}" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />\n`;
       }
-      xml += '        </OperationPocket>\n';
+      xml += useToolPath ? '        </OperationToolPath>\n' : '        </OperationPocket>\n';
     }
     xml += '      </Operations>\n';
   }

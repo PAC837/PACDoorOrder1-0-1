@@ -34,6 +34,7 @@ interface CNCDoorSlabProps {
   color?: string;
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
+  hasBackRabbit?: boolean;
 }
 
 /**
@@ -55,6 +56,7 @@ export function CNCDoorSlab({
   color = '#B8834A',
   frontPanelType,
   backPanelType,
+  hasBackRabbit,
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
   const meshKey = useMemo(() => {
@@ -136,8 +138,8 @@ export function CNCDoorSlab({
     if (!firstOp?.OperationToolPathNode || firstOp.OperationToolPathNode.length < 3) return null;
     const rect = toolPathToRect(firstOp.OperationToolPathNode, doorW, doorH);
     // Glass sits in the back rabbet groove, extending 3/8" into stile/rail
-    const backRabbet = getBackRabbetDepth(graph, thickness);
-    const glassLip = 9.525; // 3/8" overlap into stile/rail frame
+    const backRabbet = hasBackRabbit !== false ? getBackRabbetDepth(graph, thickness) : 0;
+    const glassLip = hasBackRabbit !== false ? 9.525 : 0; // 3/8" lip only with back rabbit
     const glassZ = backRabbet > 0
       ? -thickness / 2 + backRabbet - GLASS_THICKNESS / 2
       : 0;
@@ -145,7 +147,7 @@ export function CNCDoorSlab({
       geometry: new THREE.BoxGeometry(rect.width + 2 * glassLip, rect.height + 2 * glassLip, GLASS_THICKNESS),
       position: [rect.x, rect.y, glassZ] as [number, number, number],
     };
-  }, [showGlass, frontOps, doorW, doorH, graph, thickness]);
+  }, [showGlass, frontOps, doorW, doorH, graph, thickness, hasBackRabbit]);
 
   return (
     <>

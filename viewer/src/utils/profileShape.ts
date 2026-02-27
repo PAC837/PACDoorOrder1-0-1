@@ -4,6 +4,7 @@ import * as THREE from 'three';
  * A single profile shape point from profiles.json.
  * ptType: 0 = straight line vertex
  * ptType: 1 = filleted corner (data = fillet radius in mm, sign = convex/concave)
+ * ptType: -1 = filleted corner (same as ptType 1, data = fillet radius in mm)
  * ptType: 2 = Mozaik sagitta arc (data = sagitta in mm from this vertex to the next;
  *             sagitta = perpendicular distance from chord midpoint to arc midpoint,
  *             positive = arc curves left of travel direction, negative = right)
@@ -161,11 +162,19 @@ function filletPolygon(
     // Arc center distance from vertex along bisector
     const centerDist = r / Math.sin(half);
 
-    // Positive data → center in bisector direction (convex fillet)
-    // Negative data → center opposite (concave fillet)
-    const sign = dataSign[i] >= 0 ? 1 : -1;
-    const cx = curr.x + sign * bis.x * centerDist;
-    const cy = curr.y + sign * bis.y * centerDist;
+    // Always compute convex center first (along bisector)
+    let cx = curr.x + bis.x * centerDist;
+    let cy = curr.y + bis.y * centerDist;
+
+    // For concave fillets (ptType=-1), reflect center across T1-T2 chord.
+    // The convex and concave centers are the two circle-circle intersections
+    // of radius r around T1 and T2. Reflecting gives the correct concave arc.
+    if (dataSign[i] < 0) {
+      const mx = (T1.x + T2.x) / 2;
+      const my = (T1.y + T2.y) / 2;
+      cx = 2 * mx - cx;
+      cy = 2 * my - cy;
+    }
 
     // Tessellate arc from T1 to T2
     const startAngle = Math.atan2(T1.y - cy, T1.x - cx);
@@ -347,11 +356,12 @@ export function profileToLinePoints(
         expandedSigns.push(1);
       }
     } else {
-      // Straight vertex (ptType=0 or ptType=1)
+      // Straight vertex (ptType=0) or filleted corner (ptType=1)
       expanded.push(curr);
-      if (points[i].ptType === 1 && Math.abs(points[i].data) > 1e-10) {
+      if ((points[i].ptType === 1 || points[i].ptType === -1) && Math.abs(points[i].data) > 1e-10) {
         expandedRadii.push(Math.abs(points[i].data));
-        expandedSigns.push(points[i].data >= 0 ? 1 : -1);
+        const baseSign = points[i].data >= 0 ? 1 : -1;
+        expandedSigns.push(points[i].ptType === -1 ? -baseSign : baseSign);
       } else {
         expandedRadii.push(0);
         expandedSigns.push(1);

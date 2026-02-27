@@ -22,7 +22,7 @@ Data flows one-way: `src/cli.ts` writes JSON to `output/`, which is copied to `v
 ```bash
 npm run build          # tsc → dist/
 npm run analyze        # tsx src/cli.ts — runs full parse/graph/export pipeline
-npm run test           # vitest run
+npm run test           # vitest run (no test files currently exist)
 npm run test:watch     # vitest (watch mode)
 npm run lint           # tsc --noEmit
 npm run viewer         # cd viewer && npm run dev
@@ -115,10 +115,12 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 
 The viewer includes a Vite plugin (`api-plugin.ts`) that adds server-side API routes:
 
-- **`/api/config`** (GET/POST) — persists two folder paths (CNC tools folder, door libraries folder) to `viewer/server/config.json`
-- **`/api/libraries`** (GET) — scans the door libraries folder for subdirectories containing `Doors.dat`
+- **`/api/config`** (GET/POST) — persists two folder paths (CNC tools folder, door libraries folder) to `.pac-config.json`
+- **`/api/validate-tools`** (POST) — checks for `ToolGroups.dat` + `ToolLib.dat` in CNC tools folder
+- **`/api/validate-libraries`** (POST) — scans folder for subdirectories containing `Doors.dat`
+- **`/api/libraries`** (GET) — lists available door libraries
 - **`/api/load`** (POST) — dynamically parses a selected door library using the root package's compiled `dist/` parsers, writes JSON to `viewer/public/data/`, and returns the parsed data
-- **`/api/browse`** (POST) — opens a native Windows folder picker dialog via PowerShell
+- **`/api/browse-folder`** (POST) — opens a native Windows folder picker dialog via PowerShell
 
 The pipeline (`pipeline.ts`) uses dynamic `import()` with cache-busting (`?t=${Date.now()}`) to load from `dist/` so that recompiled parsers take effect without restarting Vite.
 
@@ -130,9 +132,30 @@ The Admin panel UI (`AdminPanel.tsx`) provides folder configuration and a librar
 
 ### Generic Door feature
 
-`genericDoor.ts` → `buildGenericDoor()` creates doors with independently configurable front/back tool groups, depths, and stile/rail widths. Generates both `DoorData` (for rendering) and `DoorGraphData` (relational graph) from raw tool group/tool data.
+`viewer/src/utils/genericDoor.ts` → `buildGenericDoor()` creates doors with independently configurable front/back tool groups, depths, and stile/rail widths. Generates both `DoorData` (for rendering) and `DoorGraphData` (relational graph) from raw tool group/tool data. This is a viewer-side utility, not part of the root data pipeline.
 
 The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) to convert from internal convention (Y=0 = left edge) to Mozaik convention (Y=0 = right edge). This applies to all operations uniformly (both front and back).
+
+### Panel types (pocket / raised / glass)
+
+`PanelType = 'pocket' | 'raised' | 'glass'` in `types.ts` controls front/back panel behavior in Generic Door mode:
+
+- **Pocket** — standard recessed panel (user-specified depth)
+- **Raised** — no pocket cut (effective depth = 0)
+- **Glass** — full through-cut (effective depth = material thickness), renders a translucent glass pane
+
+`computeEffectiveDepths()` in `App.tsx` maps panel types to depths. `GLASS_THICKNESS = 3.175` mm (1/8") in `types.ts`.
+
+**3D rendering** (`CNCDoorSlab.tsx`): Glass pane is a translucent `BoxGeometry` positioned in the back rabbet groove (computed by `getBackRabbetDepth()` — minimum back-face flat tool depth). The pane extends 3/8" (9.525 mm) into the stile/rail frame as a lip.
+
+**2D cross-section** (`CrossSectionViewer.tsx`): Glass pane drawn as a cyan-tinted rectangle at the rabbet position. Front+back depth capping prevents the clip path from self-intersecting where cuts overlap. DXF export includes a GLASS layer (cyan) with the glass pane outline.
+
+**Props flow:** `App.tsx` → `frontPanelType`/`backPanelType` → `DoorViewer` → `CNCDoorSlab`, and `App.tsx` → `CrossSectionViewer`.
+
+### Viewer components
+
+- **`ToolShapeViewer.tsx`** — standalone tab rendering tool profile shapes from `profiles.json` for visual inspection of CNC cutter geometry
+- **`OperationOverlay.tsx`** — right-side panel with per-operation expand/collapse and per-tool visibility checkboxes, controlling `OperationVisibility` and `ToolVisibility` state in `App.tsx`
 
 ## Key Dependencies
 

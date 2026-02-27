@@ -28,6 +28,7 @@ interface CrossSectionViewerProps {
   profiles: ToolProfileData[];
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
+  hasBackRabbit?: boolean;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -571,6 +572,7 @@ function CrossSectionCanvas({
   profiles,
   frontPanelType,
   backPanelType,
+  hasBackRabbit,
   showHatching,
   showDimensions,
 }: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean }) {
@@ -816,8 +818,8 @@ function CrossSectionCanvas({
     const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';
     if (showGlass) {
       // Glass sits in the back rabbet groove, extending 3/8" into stile/rail
-      const backRabbet = getBackRabbetDepth(graph, thickness);
-      const glassLip = 9.525; // 3/8" overlap into stile/rail
+      const backRabbet = hasBackRabbit !== false ? getBackRabbetDepth(graph, thickness) : 0;
+      const glassLip = hasBackRabbit !== false ? 9.525 : 0; // 3/8" lip only with back rabbit
       const glassTopY = backRabbet > 0
         ? thickness - backRabbet  // glass front face at back rabbet floor
         : thickness / 2 - GLASS_THICKNESS / 2;
@@ -852,7 +854,7 @@ function CrossSectionCanvas({
     ctx.fillText('Stile / Rail', toX(VIEW_HALF * 0.5), slabBot + 30);
     ctx.fillText('Panel Area', toX(-VIEW_HALF * 0.5), slabBot + 30);
 
-  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType]);
+  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType, hasBackRabbit]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -868,7 +870,7 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType }: CrossSectionViewerProps) {
+export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit }: CrossSectionViewerProps) {
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
 
@@ -996,7 +998,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
       <div style={styles.canvasArea}>
         <CrossSectionCanvas
           door={door} graph={graph} profiles={profiles}
-          frontPanelType={frontPanelType} backPanelType={backPanelType}
+          frontPanelType={frontPanelType} backPanelType={backPanelType} hasBackRabbit={hasBackRabbit}
           showHatching={showHatching} showDimensions={showDimensions}
         />
       </div>

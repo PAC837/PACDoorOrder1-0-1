@@ -10,9 +10,10 @@ interface DoorViewerProps {
   toolVisibility: ToolVisibility;
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
+  hasBackRabbit?: boolean;
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit }: DoorViewerProps) {
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
 
   // Separate front profile ops (TG 70) from back pocket op (TG 58)
@@ -41,6 +42,7 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
       toolVisibility={toolVisibility}
       frontPanelType={frontPanelType}
       backPanelType={backPanelType}
+      hasBackRabbit={hasBackRabbit}
     />
   );
 }
