@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, type CSSProperties } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import { useDoorData } from './hooks/useDoorData.js';
@@ -8,38 +8,20 @@ import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ElevationViewer } from './components/ElevationViewer.js';
+import { CommitNumberInput } from './components/CommitNumberInput.js';
+import { HingePanel } from './components/HingePanel.js';
+import { HandlePanel } from './components/HandlePanel.js';
+import { PanelSplitControls } from './components/PanelSplitControls.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import type { PanelTree } from './utils/panelTree.js';
-import { addSplitAtLeaf, enumerateSplits, removeSplit, updateSplit, libraryDoorToTree, pathsEqual } from './utils/panelTree.js';
-import type { OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, HingeSide, HandlePlacement, DoorHandlePlacement } from './types.js';
+import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual } from './utils/panelTree.js';
+import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig } from './types.js';
 import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
 
 const GENERIC_DOOR_VALUE = 'generic';
-
-/** Number input that only commits its value on blur or Enter — avoids expensive re-renders per keystroke. */
-function CommitNumberInput({ value, onCommit, style, ...props }: {
-  value: number;
-  onCommit: (v: number) => void;
-  style?: CSSProperties;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'onKeyDown' | 'type' | 'style'>) {
-  const [local, setLocal] = useState(String(value));
-  useEffect(() => setLocal(String(value)), [value]);
-  const commit = () => { const n = Number(local); if (!isNaN(n)) onCommit(n); };
-  return (
-    <input
-      type="number"
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); } }}
-      style={style}
-      {...props}
-    />
-  );
-}
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<Tab>('door');
@@ -664,291 +646,35 @@ export default function App() {
             </div>
 
             {/* Panel Splitting */}
-            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
-              <div style={{ fontSize: '11px', color: '#8888aa', marginBottom: 6 }}>
-                {selectedPanels.size > 0
-                  ? `Panel${selectedPanels.size > 1 ? 's' : ''} ${Array.from(selectedPanels).map(i => i + 1).sort((a, b) => a - b).join(', ')} selected`
-                  : 'Click a panel (Ctrl+click to multi-select)'}
-              </div>
-              {selectedPanels.size === 1 && panelBounds && (() => {
-                const idx = Array.from(selectedPanels)[0];
-                const pb = panelBounds[idx];
-                if (!pb) return null;
-                return (
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                    <button
-                      style={styles.bulkBtn}
-                      onClick={() => {
-                        setPanelTree((prev) => addSplitAtLeaf(prev, idx, 'hsplit',
-                          (pb.xMin + pb.xMax) / 2, 76.2));
-                        setSelectedPanels(new Set());
-                      }}
-                    >
-                      Add Mid Rail
-                    </button>
-                    <button
-                      style={styles.bulkBtn}
-                      onClick={() => {
-                        setPanelTree((prev) => addSplitAtLeaf(prev, idx, 'vsplit',
-                          (pb.yMin + pb.yMax) / 2, 76.2));
-                        setSelectedPanels(new Set());
-                      }}
-                    >
-                      Add Mid Stile
-                    </button>
-                  </div>
-                );
-              })()}
-              {enumerateSplits(panelTree).map((split, si) => {
-                const label = split.type === 'hsplit' ? 'Rail' : 'Stile';
-                const isSplitSelected = selectedSplitPath !== null && pathsEqual(split.path, selectedSplitPath);
-                return (
-                  <div key={si} style={{
-                    marginBottom: 4,
-                    paddingLeft: split.depth * 12 + 4,
-                    borderLeft: isSplitSelected ? '3px solid #ff8800' : '3px solid transparent',
-                    background: isSplitSelected ? 'rgba(255, 136, 0, 0.15)' : undefined,
-                    cursor: 'pointer',
-                  }} onClick={() => handleSplitSelect(split.path)}>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>{label} {si + 1} Pos:</label>
-                      <CommitNumberInput value={toDisplay(split.pos)} step={inputStep} min={0}
-                        onCommit={(v) => setPanelTree((prev) =>
-                          updateSplit(prev, split.path, fromDisplay(v), split.width))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>{label} {si + 1} W:</label>
-                      <CommitNumberInput value={toDisplay(split.width)} step={inputStep} min={0}
-                        onCommit={(v) => setPanelTree((prev) =>
-                          updateSplit(prev, split.path, split.pos, fromDisplay(v)))}
-                        style={styles.numberInput} />
-                      <button style={styles.removeBtn}
-                        onClick={() => setPanelTree((prev) => removeSplit(prev, split.path))}>
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <PanelSplitControls
+              panelTree={panelTree} setPanelTree={setPanelTree}
+              selectedPanels={selectedPanels} setSelectedPanels={setSelectedPanels}
+              selectedSplitPath={selectedSplitPath} onSplitSelect={handleSplitSelect}
+              panelBounds={panelBounds}
+              toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
+              styles={styles}
+            />
             </div>
             </>)}
 
             {/* Hinge Configuration — only for doors */}
             {doorPartType === 'door' && (
-              <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ ...styles.label, minWidth: 0, fontWeight: 700 }}>Hinges</span>
-                  <input type="checkbox" checked={hingeConfig.enabled}
-                    onChange={(e) => setHingeConfig(prev => ({ ...prev, enabled: e.target.checked }))} />
-                </div>
-                {hingeConfig.enabled && (<>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Side:</label>
-                    <select value={hingeConfig.side}
-                      onChange={(e) => setHingeConfig(prev => ({ ...prev, side: e.target.value as HingeSide }))}
-                      style={{ ...styles.select, flex: 'none', width: 80 }}>
-                      <option value="left">Left</option>
-                      <option value="right">Right</option>
-                      <option value="top">Top</option>
-                      <option value="bottom">Bottom</option>
-                    </select>
-                  </div>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Count:</label>
-                    <input type="number" value={hingeConfig.count} min={2} max={5}
-                      onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(5, Number(e.target.value))) }))}
-                      style={{ ...styles.numberInput, width: 50 }} />
-                  </div>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Edge Dist:</label>
-                    <CommitNumberInput value={toDisplay(hingeConfig.edgeDistance)} step={inputStep}
-                      onCommit={(v) => setHingeConfig(prev => ({ ...prev, edgeDistance: fromDisplay(v) }))}
-                      style={styles.numberInput} />
-                  </div>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Equidistant:</label>
-                    <input type="checkbox" checked={hingeConfig.equidistant}
-                      onChange={(e) => setHingeConfig(prev => ({ ...prev, equidistant: e.target.checked }))} />
-                  </div>
-                  {!hingeConfig.equidistant && (
-                    Array.from({ length: hingeConfig.count }).map((_, i) => (
-                      <div key={i} style={styles.selector}>
-                        <label style={styles.label}>Hinge {i + 1}:</label>
-                        <CommitNumberInput value={toDisplay(hingeConfig.positions[i] ?? 0)} step={inputStep}
-                          onCommit={(v) => {
-                            const newPos = [...hingeConfig.positions];
-                            newPos[i] = fromDisplay(v);
-                            setHingeConfig(prev => ({ ...prev, positions: newPos }));
-                          }}
-                          style={styles.numberInput} />
-                      </div>
-                    ))
-                  )}
-                  <button style={{ ...styles.bulkBtn, marginTop: 4, marginBottom: 4 }}
-                    onClick={() => setShowHingeAdvanced(prev => !prev)}>
-                    {showHingeAdvanced ? 'Hide' : 'Show'} Advanced
-                  </button>
-                  {showHingeAdvanced && (<>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Cup Dia:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.cupDia)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, cupDia: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Cup Depth:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.cupDepth)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, cupDepth: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Boring Dist:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.cupBoringDist)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, cupBoringDist: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Mount Dia:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.mountDia)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountDia: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Mount Depth:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.mountDepth)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountDepth: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Mt Spacing:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.mountSeparation)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountSeparation: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Mt Inset:</label>
-                      <CommitNumberInput value={toDisplay(hingeConfig.mountInset)} step={inputStep}
-                        onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountInset: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Mt on Front:</label>
-                      <input type="checkbox" checked={hingeConfig.mountOnFront}
-                        onChange={(e) => setHingeConfig(prev => ({ ...prev, mountOnFront: e.target.checked }))} />
-                    </div>
-                  </>)}
-                </>)}
-              </div>
+              <HingePanel
+                hingeConfig={hingeConfig} setHingeConfig={setHingeConfig}
+                showAdvanced={showHingeAdvanced} setShowAdvanced={setShowHingeAdvanced}
+                toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
+                styles={styles}
+              />
             )}
 
             {/* Handle Configuration */}
-            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ ...styles.label, minWidth: 0, fontWeight: 700 }}>Handle</span>
-                <input type="checkbox" checked={handleConfig.enabled}
-                  onChange={(e) => setHandleConfig(prev => ({ ...prev, enabled: e.target.checked }))} />
-              </div>
-              {handleConfig.enabled && (<>
-                <div style={styles.selector}>
-                  <label style={styles.label}>Type:</label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      style={{ ...styles.bulkBtn, ...(handleConfig.holeSeparation > 0 ? { background: '#2a4a6e', color: '#fff' } : {}) }}
-                      onClick={() => setHandleConfig(prev => ({ ...prev, holeSeparation: savedSep || 101.6 }))}
-                    >Handle</button>
-                    <button
-                      style={{ ...styles.bulkBtn, ...(handleConfig.holeSeparation === 0 ? { background: '#2a4a6e', color: '#fff' } : {}) }}
-                      onClick={() => {
-                        if (handleConfig.holeSeparation > 0) setSavedSep(handleConfig.holeSeparation);
-                        setHandleConfig(prev => ({ ...prev, holeSeparation: 0 }));
-                      }}
-                    >Knob</button>
-                  </div>
-                </div>
-                {handleConfig.holeSeparation > 0 && (
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Separation:</label>
-                    <CommitNumberInput value={toDisplay(handleConfig.holeSeparation)} step={inputStep} min={0}
-                      onCommit={(v) => {
-                        const mm = fromDisplay(v);
-                        setHandleConfig(prev => ({ ...prev, holeSeparation: mm }));
-                        if (mm > 0) setSavedSep(mm);
-                      }}
-                      style={styles.numberInput} />
-                  </div>
-                )}
-                <div style={styles.selector}>
-                  <label style={styles.label}>Inset:</label>
-                  <CommitNumberInput value={toDisplay(handleConfig.insetFromEdge)} step={inputStep}
-                    onCommit={(v) => setHandleConfig(prev => ({ ...prev, insetFromEdge: fromDisplay(v) }))}
-                    style={styles.numberInput} />
-                </div>
-                {doorPartType === 'door' ? (<>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Position:</label>
-                    <select value={handleConfig.doorPlacement}
-                      onChange={(e) => setHandleConfig(prev => ({ ...prev, doorPlacement: e.target.value as DoorHandlePlacement }))}
-                      style={{ ...styles.select, flex: 'none', width: 100 }}>
-                      <option value="top">Top</option>
-                      <option value="middle">Middle</option>
-                      <option value="bottom">Bottom</option>
-                    </select>
-                  </div>
-                  {handleConfig.doorPlacement !== 'middle' && (
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Elevation:</label>
-                      <CommitNumberInput value={toDisplay(handleConfig.elevation)} step={inputStep}
-                        onCommit={(v) => setHandleConfig(prev => ({ ...prev, elevation: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                  )}
-                </>) : (<>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Placement:</label>
-                    <select value={handleConfig.placement}
-                      onChange={(e) => setHandleConfig(prev => ({ ...prev, placement: e.target.value as HandlePlacement }))}
-                      style={{ ...styles.select, flex: 'none', width: 140 }}>
-                      <option value="center">Center</option>
-                      <option value="top-rail">Top Rail</option>
-                      <option value="two-equidistant">Two Equidistant</option>
-                    </select>
-                  </div>
-                  {handleConfig.placement === 'two-equidistant' && (
-                    <div style={styles.selector}>
-                      <label style={styles.label}>Edge Dist:</label>
-                      <CommitNumberInput value={toDisplay(handleConfig.twoHandleEdgeDist)} step={inputStep}
-                        onCommit={(v) => setHandleConfig(prev => ({ ...prev, twoHandleEdgeDist: fromDisplay(v) }))}
-                        style={styles.numberInput} />
-                    </div>
-                  )}
-                </>)}
-                <div style={styles.selector}>
-                  <label style={styles.label}>On Front:</label>
-                  <input type="checkbox" checked={handleConfig.onFront}
-                    onChange={(e) => setHandleConfig(prev => ({ ...prev, onFront: e.target.checked }))} />
-                </div>
-                <button style={{ ...styles.bulkBtn, marginTop: 4, marginBottom: 4 }}
-                  onClick={() => setShowHandleAdvanced(prev => !prev)}>
-                  {showHandleAdvanced ? 'Hide' : 'Show'} Advanced
-                </button>
-                {showHandleAdvanced && (<>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Hole Dia:</label>
-                    <CommitNumberInput value={toDisplay(handleConfig.holeDia)} step={inputStep}
-                      onCommit={(v) => setHandleConfig(prev => ({ ...prev, holeDia: fromDisplay(v) }))}
-                      style={styles.numberInput} />
-                  </div>
-                  <div style={styles.selector}>
-                    <label style={styles.label}>Hole Depth:</label>
-                    <CommitNumberInput value={toDisplay(handleConfig.holeDepth)} step={inputStep}
-                      onCommit={(v) => setHandleConfig(prev => ({ ...prev, holeDepth: fromDisplay(v) }))}
-                      style={styles.numberInput} />
-                  </div>
-                </>)}
-              </>)}
-            </div>
+            <HandlePanel
+              handleConfig={handleConfig} setHandleConfig={setHandleConfig}
+              showAdvanced={showHandleAdvanced} setShowAdvanced={setShowHandleAdvanced}
+              doorPartType={doorPartType} savedSep={savedSep} setSavedSep={setSavedSep}
+              toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
+              styles={styles}
+            />
           </div>
         )}
 
@@ -1154,7 +880,7 @@ const tabStyles: Record<string, React.CSSProperties> = {
  * Matches the format in `3-4 MDF sample 1.xml`.
  */
 function buildOptimizerXml(
-  door: any,
+  door: DoorData,
   frontPanelType: PanelType = 'pocket',
   backPanelType: PanelType = 'pocket',
 ): string {

@@ -3,6 +3,7 @@ import type { DoorData, UnitSystem, HoleData } from '../types.js';
 import { formatUnit } from '../types.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
 import { flattenTree, enumerateSplits, enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
+import { drawArrowHead, drawLinearDim } from '../utils/canvasDrawing.js';
 
 interface ElevationViewerProps {
   door: DoorData;
@@ -678,108 +679,6 @@ export function ElevationViewer({
       </div>
     </div>
   );
-}
-
-// --- Dimension drawing helpers (same pattern as CrossSectionViewer) ---
-
-function drawArrowHead(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number,
-  angle: number, size: number,
-) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-size, -size * 0.35);
-  ctx.lineTo(-size, size * 0.35);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawLinearDim(
-  ctx: CanvasRenderingContext2D,
-  mx1: number, my1: number,
-  mx2: number, my2: number,
-  label: string,
-  offset: number,
-  side: 'left' | 'right' | 'above' | 'below',
-  toX: (x: number) => number,
-  toY: (y: number) => number,
-) {
-  const sx1 = toX(mx1), sy1 = toY(my1);
-  const sx2 = toX(mx2), sy2 = toY(my2);
-
-  const gap = 3;
-  const ext = 4;
-  const arrowSize = 6;
-
-  let dx = 0, dy = 0;
-  if (side === 'left') dx = -offset;
-  else if (side === 'right') dx = offset;
-  else if (side === 'above') dy = -offset;
-  else dy = offset;
-
-  const d1x = sx1 + dx, d1y = sy1 + dy;
-  const d2x = sx2 + dx, d2y = sy2 + dy;
-
-  ctx.save();
-  ctx.strokeStyle = '#000000';
-  ctx.fillStyle = '#000000';
-  ctx.lineWidth = 0.75;
-  ctx.font = '10px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Extension lines
-  if (side === 'left' || side === 'right') {
-    ctx.beginPath();
-    ctx.moveTo(sx1 + (dx > 0 ? gap : -gap), sy1);
-    ctx.lineTo(d1x + (dx > 0 ? ext : -ext), d1y);
-    ctx.moveTo(sx2 + (dx > 0 ? gap : -gap), sy2);
-    ctx.lineTo(d2x + (dx > 0 ? ext : -ext), d2y);
-    ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.moveTo(sx1, sy1 + (dy > 0 ? gap : -gap));
-    ctx.lineTo(d1x, d1y + (dy > 0 ? ext : -ext));
-    ctx.moveTo(sx2, sy2 + (dy > 0 ? gap : -gap));
-    ctx.lineTo(d2x, d2y + (dy > 0 ? ext : -ext));
-    ctx.stroke();
-  }
-
-  // Dimension line
-  ctx.beginPath();
-  ctx.moveTo(d1x, d1y);
-  ctx.lineTo(d2x, d2y);
-  ctx.stroke();
-
-  // Arrows
-  const angle = Math.atan2(d2y - d1y, d2x - d1x);
-  drawArrowHead(ctx, d1x, d1y, angle, arrowSize);
-  drawArrowHead(ctx, d2x, d2y, angle + Math.PI, arrowSize);
-
-  // Label
-  const midX = (d1x + d2x) / 2;
-  const midY = (d1y + d2y) / 2;
-  const metrics = ctx.measureText(label);
-  const tw = metrics.width + 6;
-  const th = 12;
-  ctx.fillStyle = '#ffffff';
-  if (side === 'left' || side === 'right') {
-    ctx.fillRect(midX - 3, midY - th / 2 - 1, tw, th);
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'left';
-    ctx.fillText(label, midX, midY);
-  } else {
-    ctx.fillRect(midX - tw / 2, midY - th / 2 - 1, tw, th);
-    ctx.fillStyle = '#000000';
-    ctx.fillText(label, midX, midY);
-  }
-
-  ctx.restore();
 }
 
 // --- DXF Export ---

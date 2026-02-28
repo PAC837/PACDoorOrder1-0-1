@@ -6,6 +6,25 @@ import type { ToolProfileData, ProfilePointData, DoorGraphData, HoleData } from 
 import type { SceneRect } from './geometry.js';
 
 // ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/** Extract the back rabbet depth (min back-face flat tool depth, excluding through-cuts). */
+export function getBackRabbetDepth(graph: DoorGraphData | undefined, thickness: number): number {
+  if (!graph) return 0;
+  let minDepth = Infinity;
+  for (const op of graph.operations) {
+    for (const tool of op.tools) {
+      const effectiveBack = op.flipSideOp !== (tool.flipSide ?? false);
+      if (effectiveBack && !tool.isCNCDoor && tool.sharpCornerAngle === 0 && tool.entryDepth < thickness) {
+        minDepth = Math.min(minDepth, tool.entryDepth);
+      }
+    }
+  }
+  return minDepth === Infinity ? 0 : minDepth;
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -355,7 +374,6 @@ export function buildCarvedDoor(
   backPockets?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] }[],
   holes?: HoleData[],
 ): THREE.BufferGeometry {
-  console.time('[CNCDoorSlab] CSG carving');
   const evaluator = new Evaluator();
 
   // Start with the door slab
@@ -364,8 +382,6 @@ export function buildCarvedDoor(
   slabBrush.updateMatrixWorld(true);
 
   // Subtract each tool
-  let opCount = 0;
-  let failedOps = 0;
   for (const { rect, tools, depth: frontPocketDepth } of toolpathRects) {
     // Front pocket subtraction (panel recess) — simple box inside the toolpath rect
     if (frontPocketDepth && frontPocketDepth > 0) {
@@ -381,9 +397,7 @@ export function buildCarvedDoor(
       pocketBrush.updateMatrixWorld(true);
       try {
         slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-        opCount++;
       } catch (e) {
-        failedOps++;
         console.warn('[CNCDoorSlab] CSG subtract failed for front pocket, skipping', e);
       }
     }
@@ -402,13 +416,6 @@ export function buildCarvedDoor(
 
       const isProfile = tool.isCNCDoor;
       const isVBit = tool.sharpCornerAngle > 0;
-      const toolType = isProfile ? 'profile' : isVBit ? 'v-bit' : 'flat';
-
-      console.log(
-        `[CNCDoorSlab] Tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
-        `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
-        `surfaceZ=${surfaceZ.toFixed(2)}${effectiveFlipSide ? ' (FLIPPED to back)' : ''}`,
-      );
 
       if (!isProfile && !isVBit) {
         // FLAT TOOL — frame pocket (1 CSG op)
@@ -420,9 +427,9 @@ export function buildCarvedDoor(
         pocketBrush.updateMatrixWorld(true);
         try {
           slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-          opCount++;
+
         } catch (e) {
-          failedOps++;
+
           console.warn(
             `[CNCDoorSlab] CSG subtract failed for flat tool "${tool.toolName}" ` +
             `(offset=${offset.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}), skipping`,
@@ -442,9 +449,9 @@ export function buildCarvedDoor(
         sweepBrush.updateMatrixWorld(true);
         try {
           slabBrush = evaluator.evaluate(slabBrush, sweepBrush, SUBTRACTION);
-          opCount++;
+
         } catch (e) {
-          failedOps++;
+
           console.warn(
             `[CNCDoorSlab] CSG subtract failed for "${tool.toolName}", skipping`,
             e,
@@ -473,9 +480,9 @@ export function buildCarvedDoor(
         pocketBrush.updateMatrixWorld(true);
         try {
           slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-          opCount++;
+
         } catch (e) {
-          failedOps++;
+
           console.warn('[CNCDoorSlab] CSG subtract failed for back pocket, skipping', e);
         }
       }
@@ -495,13 +502,6 @@ export function buildCarvedDoor(
 
         const isProfile = tool.isCNCDoor;
         const isVBit = tool.sharpCornerAngle > 0;
-        const toolType = isProfile ? 'profile' : isVBit ? 'v-bit' : 'flat';
-
-        console.log(
-          `[CNCDoorSlab] Back tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
-          `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
-          `surfaceZ=${surfaceZ.toFixed(2)}${!effectiveFlipSide ? ' (FLIPPED to front)' : ''}`,
-        );
 
         if (!isProfile && !isVBit) {
           // FLAT TOOL — frame pocket; swap args for back face
@@ -512,9 +512,9 @@ export function buildCarvedDoor(
           pocketBrush.updateMatrixWorld(true);
           try {
             slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-            opCount++;
+  
           } catch (e) {
-            failedOps++;
+  
             console.warn(
               `[CNCDoorSlab] CSG subtract failed for back flat tool "${tool.toolName}", skipping`, e,
             );
@@ -532,9 +532,9 @@ export function buildCarvedDoor(
           sweepBrush.updateMatrixWorld(true);
           try {
             slabBrush = evaluator.evaluate(slabBrush, sweepBrush, SUBTRACTION);
-            opCount++;
+  
           } catch (e) {
-            failedOps++;
+  
             console.warn(
               `[CNCDoorSlab] CSG subtract failed for back tool "${tool.toolName}", skipping`, e,
             );
@@ -565,16 +565,11 @@ export function buildCarvedDoor(
       holeBrush.updateMatrixWorld(true);
       try {
         slabBrush = evaluator.evaluate(slabBrush, holeBrush, SUBTRACTION);
-        opCount++;
       } catch (e) {
-        failedOps++;
         console.warn(`[CNCDoorSlab] CSG subtract failed for ${hole.holeType} hole, skipping`, e);
       }
     }
   }
-
-  console.timeEnd('[CNCDoorSlab] CSG carving');
-  console.log(`[CNCDoorSlab] ${opCount} CSG operations completed${failedOps > 0 ? `, ${failedOps} failed` : ''}`);
 
   return slabBrush.geometry;
 }

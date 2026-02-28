@@ -3,22 +3,7 @@ import * as THREE from 'three';
 import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
 import { GLASS_THICKNESS } from '../types.js';
 import { toolPathToRect } from '../utils/geometry.js';
-import { buildCarvedDoor } from '../utils/cuttingBodies.js';
-
-/** Extract the back rabbet depth (min back-face flat tool depth, excluding through-cuts). */
-function getBackRabbetDepth(graph: DoorGraphData | undefined, thickness: number): number {
-  if (!graph) return 0;
-  let minDepth = Infinity;
-  for (const op of graph.operations) {
-    for (const tool of op.tools) {
-      const effectiveBack = op.flipSideOp !== (tool.flipSide ?? false);
-      if (effectiveBack && !tool.isCNCDoor && tool.sharpCornerAngle === 0 && tool.entryDepth < thickness) {
-        minDepth = Math.min(minDepth, tool.entryDepth);
-      }
-    }
-  }
-  return minDepth === Infinity ? 0 : minDepth;
-}
+import { buildCarvedDoor, getBackRabbetDepth } from '../utils/cuttingBodies.js';
 
 interface CNCDoorSlabProps {
   doorW: number;
@@ -87,11 +72,6 @@ export function CNCDoorSlab({
             return toolVisibility[key] !== false;
           });
 
-          console.log(
-            `[CNCDoorSlab] Op ${graphOp.operationId}: ${visibleTools.length}/${graphOp.tools.length} tools visible`,
-            visibleTools.map((t) => t.toolName),
-          );
-
           if (visibleTools.length > 0) {
             toolpathRects.push({ rect, tools: visibleTools, depth: op.Depth });
           }
@@ -121,14 +101,11 @@ export function CNCDoorSlab({
     }
 
     if (toolpathRects.length === 0 && backPockets.length === 0 && holes.length === 0) {
-      console.log('[CNCDoorSlab] No visible tools — returning plain slab');
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
 
     try {
-      const geo = buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPockets, holes);
-      console.log(`[CNCDoorSlab] Carved geometry: ${geo.attributes.position.count} vertices`);
-      return geo;
+      return buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPockets, holes);
     } catch (e) {
       console.error('[CNCDoorSlab] CSG FAILED:', e);
       return new THREE.BoxGeometry(doorW, doorH, thickness);
