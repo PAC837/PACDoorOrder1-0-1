@@ -1,6 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import type { TextureManifest } from '../types.js';
+import type { ToolsStatus, ScannedTextures, ParseResult } from '../utils/folderAccess.js';
+import {
+  pickFolder, saveHandle, getHandle, verifyPermission,
+  scanToolsFolder, scanLibrariesFolder, scanTexturesFolder,
+  revokeTextureUrls, loadLibraryData,
+} from '../utils/folderAccess.js';
 
 interface SelectedTextures {
   painted: string | null;
@@ -12,24 +18,8 @@ interface SelectedTextures {
 interface AdminPanelProps {
   onDataReloaded: () => void;
   selectedTextures: SelectedTextures;
-  onTextureSelected: (category: string, texturePath: string | null) => void;
-}
-
-interface PacConfig {
-  toolsFolderPath: string | null;
-  librariesFolderPath: string | null;
-  selectedLibrary: string | null;
-  texturesFolderPath: string | null;
-  selectedTextures: SelectedTextures;
-  activeTextureCategory: string;
-  lastLoadedAt: string | null;
-  lastLoadError: string | null;
-}
-
-interface ToolsStatus {
-  toolGroups: boolean;
-  toolLib: boolean;
-  allPresent: boolean;
+  onTextureSelected: (category: string, texturePath: string | null, blobUrl: string | null) => void;
+  onLibrariesChanged: (libraries: string[]) => void;
 }
 
 interface LoadStats {
@@ -40,269 +30,156 @@ interface LoadStats {
   profilesCount: number;
 }
 
-export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected }: AdminPanelProps) {
-  const [toolsPath, setToolsPath] = useState('');
-  const [librariesPath, setLibrariesPath] = useState('');
-  const [texturesPath, setTexturesPath] = useState('');
+export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged }: AdminPanelProps) {
+  // Folder handles (from IndexedDB or fresh pick)
+  const [toolsHandle, setToolsHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [librariesHandle, setLibrariesHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [texturesHandle, setTexturesHandle] = useState<FileSystemDirectoryHandle | null>(null);
+
+  // Folder display names
+  const [toolsName, setToolsName] = useState<string | null>(null);
+  const [librariesName, setLibrariesName] = useState<string | null>(null);
+  const [texturesName, setTexturesName] = useState<string | null>(null);
+
+  // Validation / scan results
   const [toolsStatus, setToolsStatus] = useState<ToolsStatus | null>(null);
   const [librariesList, setLibrariesList] = useState<string[]>([]);
-  const [texturesValid, setTexturesValid] = useState<boolean | null>(null);
+  const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
   const [textureManifest, setTextureManifest] = useState<TextureManifest | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const textureBlobUrlsRef = useRef<Map<string, string>>(new Map());
+
+  // Load state
   const [loadStats, setLoadStats] = useState<LoadStats | null>(null);
-  const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [browsingTools, setBrowsingTools] = useState(false);
-  const [browsingLibraries, setBrowsingLibraries] = useState(false);
-  const [browsingTextures, setBrowsingTextures] = useState(false);
 
-  // Load saved config on mount
+  // Restore saved handles from IndexedDB on mount
   useEffect(() => {
-    fetch('/api/config')
-      .then((r) => r.json())
-      .then((config: PacConfig) => {
-        if (config.toolsFolderPath) setToolsPath(config.toolsFolderPath);
-        if (config.librariesFolderPath) setLibrariesPath(config.librariesFolderPath);
-        if (config.texturesFolderPath) setTexturesPath(config.texturesFolderPath);
-        if (config.lastLoadedAt) setLastLoaded(config.lastLoadedAt);
-        if (config.lastLoadError) setError(config.lastLoadError);
-      })
-      .catch(() => {});
+    let cancelled = false;
+    (async () => {
+      // Tools
+      const tools = await getHandle('tools');
+      if (cancelled) return;
+      if (tools && (await tools.queryPermission({ mode: 'read' })) === 'granted') {
+        setToolsHandle(tools);
+        setToolsName(tools.name);
+        setToolsStatus(await scanToolsFolder(tools));
+      }
+
+      // Libraries
+      const libs = await getHandle('libraries');
+      if (cancelled) return;
+      if (libs && (await libs.queryPermission({ mode: 'read' })) === 'granted') {
+        setLibrariesHandle(libs);
+        setLibrariesName(libs.name);
+        const list = await scanLibrariesFolder(libs);
+        setLibrariesList(list);
+        onLibrariesChanged(list);
+      }
+
+      // Textures
+      const tex = await getHandle('textures');
+      if (cancelled) return;
+      if (tex && (await tex.queryPermission({ mode: 'read' })) === 'granted') {
+        setTexturesHandle(tex);
+        setTexturesName(tex.name);
+        const result = await scanTexturesFolder(tex);
+        if (result) {
+          setTextureManifest(result.manifest);
+          revokeTextureUrls(textureBlobUrlsRef.current);
+          textureBlobUrlsRef.current = result.blobUrls;
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Browse + scan: CNC Tools
+  const handleBrowseTools = useCallback(async () => {
+    setError(null);
+    const handle = await pickFolder();
+    if (!handle) return;
+    await saveHandle('tools', handle);
+    setToolsHandle(handle);
+    setToolsName(handle.name);
+    setToolsStatus(await scanToolsFolder(handle));
   }, []);
 
-  // Validate tools folder when path changes (debounced)
-  useEffect(() => {
-    if (!toolsPath.trim()) {
-      setToolsStatus(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      fetch('/api/validate-tools', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toolsFolderPath: toolsPath.trim() }),
-      })
-        .then((r) => r.json())
-        .then((result: ToolsStatus) => setToolsStatus(result))
-        .catch(() => {});
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [toolsPath]);
+  // Browse + scan: Libraries
+  const handleBrowseLibraries = useCallback(async () => {
+    setError(null);
+    const handle = await pickFolder();
+    if (!handle) return;
+    await saveHandle('libraries', handle);
+    setLibrariesHandle(handle);
+    setLibrariesName(handle.name);
+    const list = await scanLibrariesFolder(handle);
+    setLibrariesList(list);
+    onLibrariesChanged(list);
+    setSelectedLibrary(null);
+  }, [onLibrariesChanged]);
 
-  // Validate libraries folder when path changes (debounced)
-  useEffect(() => {
-    if (!librariesPath.trim()) {
-      setLibrariesList([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      fetch('/api/validate-libraries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ librariesFolderPath: librariesPath.trim() }),
-      })
-        .then((r) => r.json())
-        .then((result: { libraries: string[] }) => setLibrariesList(result.libraries))
-        .catch(() => {});
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [librariesPath]);
-
-  // Validate textures folder when path changes (debounced)
-  useEffect(() => {
-    if (!texturesPath.trim()) {
-      setTexturesValid(null);
-      setTextureManifest(null);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const valRes = await fetch('/api/validate-textures', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderPath: texturesPath.trim() }),
-        });
-        const val = await valRes.json();
-        setTexturesValid(val.valid);
-
-        if (val.valid) {
-          // Save path to config
-          await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ texturesFolderPath: texturesPath.trim() }),
-          });
-          // Fetch manifest
-          const manRes = await fetch('/api/textures');
-          const manifest: TextureManifest = await manRes.json();
-          setTextureManifest(manifest);
-        } else {
-          setTextureManifest(null);
-        }
-      } catch {
-        setTexturesValid(false);
-        setTextureManifest(null);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [texturesPath]);
-
+  // Browse + scan: Textures
   const handleBrowseTextures = useCallback(async () => {
-    setBrowsingTextures(true);
+    setError(null);
+    const handle = await pickFolder();
+    if (!handle) return;
+    await saveHandle('textures', handle);
+    setTexturesHandle(handle);
+    setTexturesName(handle.name);
+    const result = await scanTexturesFolder(handle);
+    if (result) {
+      setTextureManifest(result.manifest);
+      revokeTextureUrls(textureBlobUrlsRef.current);
+      textureBlobUrlsRef.current = result.blobUrls;
+    } else {
+      setTextureManifest(null);
+      setError('No "PAC Door Order" subfolder found in selected folder.');
+    }
+  }, []);
+
+  // Load selected library
+  const handleLoad = useCallback(async () => {
+    const lib = selectedLibrary || librariesList[0];
+    if (!lib) return;
+    setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/browse-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initialPath: texturesPath, description: 'Select Textures Folder' }),
-      });
-      const result = await res.json();
-      if (result.success && result.folderPath) {
-        setTexturesPath(result.folderPath);
-      } else if (result.error && result.error !== 'No folder selected') {
-        setError(result.error);
+      const result: ParseResult = await loadLibraryData(lib);
+      if (result.success) {
+        setLoadStats(result.stats!);
+        setSelectedLibrary(lib);
+        onDataReloaded();
+      } else {
+        setError(result.error || 'Load failed');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Browse request failed');
+      setError(e instanceof Error ? e.message : 'Load failed');
     } finally {
-      setBrowsingTextures(false);
+      setLoading(false);
     }
-  }, [texturesPath]);
+  }, [selectedLibrary, librariesList, onDataReloaded]);
 
-  const handleTextureSelect = useCallback(async (category: string, relPath: string) => {
+  // Texture selection
+  const handleTextureSelect = useCallback((category: string, relPath: string) => {
     const currentSelection = selectedTextures[category as keyof SelectedTextures];
-    const newValue = currentSelection === relPath ? null : relPath;
-    onTextureSelected(category, newValue);
-    // Persist to config
-    await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selectedTextures: { [category]: newValue } }),
-    }).catch(() => {});
+    if (currentSelection === relPath) {
+      onTextureSelected(category, null, null);
+    } else {
+      const blobUrl = textureBlobUrlsRef.current.get(relPath) ?? null;
+      onTextureSelected(category, relPath, blobUrl);
+    }
   }, [selectedTextures, onTextureSelected]);
 
   const toggleCategory = useCallback((key: string) => {
     setExpandedCategories(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const handleBrowseTools = useCallback(async () => {
-    setBrowsingTools(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/browse-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initialPath: toolsPath, description: 'Select CNC Tools Folder' }),
-      });
-      const result = await res.json();
-      if (result.success && result.folderPath) {
-        setToolsPath(result.folderPath);
-      } else if (result.error && result.error !== 'No folder selected') {
-        setError(result.error);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Browse request failed');
-    } finally {
-      setBrowsingTools(false);
-    }
-  }, [toolsPath]);
-
-  const handleBrowseLibraries = useCallback(async () => {
-    setBrowsingLibraries(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/browse-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initialPath: librariesPath, description: 'Select Door Libraries Folder' }),
-      });
-      const result = await res.json();
-      if (result.success && result.folderPath) {
-        setLibrariesPath(result.folderPath);
-      } else if (result.error && result.error !== 'No folder selected') {
-        setError(result.error);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Browse request failed');
-    } finally {
-      setBrowsingLibraries(false);
-    }
-  }, [librariesPath]);
-
-  const handleSaveAndLoad = useCallback(async () => {
-    const tools = toolsPath.trim();
-    const libs = librariesPath.trim();
-    if (!tools || !libs) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Save both folder paths
-      await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toolsFolderPath: tools, librariesFolderPath: libs }),
-      });
-
-      // Load with first available library
-      const firstLib = librariesList[0];
-      if (!firstLib) {
-        setError('No library subfolders with Doors.dat found.');
-        setLoading(false);
-        return;
-      }
-
-      const res = await fetch('/api/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ library: firstLib }),
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        setLoadStats(result.stats);
-        setLastLoaded(new Date().toISOString());
-        setError(null);
-        onDataReloaded();
-      } else {
-        setError(result.error || 'Load failed');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Request failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [toolsPath, librariesPath, librariesList, onDataReloaded]);
-
-  const handleReload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/load', { method: 'POST' });
-      const result = await res.json();
-      if (result.success) {
-        setLoadStats(result.stats);
-        setLastLoaded(new Date().toISOString());
-        setError(null);
-        onDataReloaded();
-      } else {
-        setError(result.error || 'Load failed');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Request failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [onDataReloaded]);
-
-  const canLoad = toolsPath.trim() && librariesPath.trim() && toolsStatus?.allPresent && librariesList.length > 0;
+  const canLoad = toolsStatus?.allPresent && librariesList.length > 0;
 
   const Dot = ({ ok }: { ok: boolean }) => (
-    <span style={{ color: ok ? '#4ade80' : '#f87171', marginRight: 6 }}>
-      {'\u25CF'}
-    </span>
+    <span style={{ color: ok ? '#4ade80' : '#f87171', marginRight: 6 }}>{'\u25CF'}</span>
   );
 
   return (
@@ -314,38 +191,23 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
         <div style={styles.section}>
           <label style={styles.label}>CNC Tools Folder</label>
           <div style={styles.pathRow}>
-            <input
-              type="text"
-              value={toolsPath}
-              onChange={(e) => setToolsPath(e.target.value)}
-              placeholder="Folder containing ToolGroups.dat and ToolLib.dat"
-              style={styles.pathInput}
-            />
-            <button
-              onClick={handleBrowseTools}
-              disabled={browsingTools}
-              style={styles.browseButton}
-            >
-              {browsingTools ? '...' : 'Browse'}
-            </button>
+            <div style={styles.folderDisplay}>
+              {toolsName || <span style={styles.placeholder}>No folder selected</span>}
+            </div>
+            <button onClick={handleBrowseTools} style={styles.browseButton}>Browse</button>
           </div>
         </div>
 
         {toolsStatus && (
           <div style={styles.section}>
-            <label style={styles.label}>File Status</label>
             <div style={styles.fileList}>
               <div style={styles.fileRow}>
                 <Dot ok={toolsStatus.toolGroups} />
-                <span style={{ color: toolsStatus.toolGroups ? '#e0e0e0' : '#f87171' }}>
-                  ToolGroups.dat
-                </span>
+                <span style={{ color: toolsStatus.toolGroups ? '#e0e0e0' : '#f87171' }}>ToolGroups.dat</span>
               </div>
               <div style={styles.fileRow}>
                 <Dot ok={toolsStatus.toolLib} />
-                <span style={{ color: toolsStatus.toolLib ? '#e0e0e0' : '#f87171' }}>
-                  ToolLib.dat
-                </span>
+                <span style={{ color: toolsStatus.toolLib ? '#e0e0e0' : '#f87171' }}>ToolLib.dat</span>
               </div>
             </div>
           </div>
@@ -355,41 +217,33 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
         <div style={styles.section}>
           <label style={styles.label}>Door Libraries Folder</label>
           <div style={styles.pathRow}>
-            <input
-              type="text"
-              value={librariesPath}
-              onChange={(e) => setLibrariesPath(e.target.value)}
-              placeholder="Folder containing library subfolders with Doors.dat"
-              style={styles.pathInput}
-            />
-            <button
-              onClick={handleBrowseLibraries}
-              disabled={browsingLibraries}
-              style={styles.browseButton}
-            >
-              {browsingLibraries ? '...' : 'Browse'}
-            </button>
+            <div style={styles.folderDisplay}>
+              {librariesName || <span style={styles.placeholder}>No folder selected</span>}
+            </div>
+            <button onClick={handleBrowseLibraries} style={styles.browseButton}>Browse</button>
           </div>
         </div>
 
-        {librariesPath.trim() && (
+        {librariesList.length > 0 && (
           <div style={styles.section}>
-            <label style={styles.label}>Libraries Found</label>
+            <label style={styles.label}>Library</label>
+            <select
+              value={selectedLibrary || ''}
+              onChange={(e) => setSelectedLibrary(e.target.value)}
+              style={styles.selectInput}
+            >
+              {!selectedLibrary && <option value="">-- Select Library --</option>}
+              {librariesList.map((lib) => (
+                <option key={lib} value={lib}>{lib}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {librariesName && librariesList.length === 0 && (
+          <div style={styles.section}>
             <div style={styles.fileList}>
-              {librariesList.length > 0 ? (
-                librariesList.map((lib) => (
-                  <div key={lib} style={styles.fileRow}>
-                    <Dot ok={true} />
-                    <span style={{ color: '#e0e0e0' }}>{lib}</span>
-                  </div>
-                ))
-              ) : (
-                <div style={styles.fileRow}>
-                  <span style={{ color: '#f87171', fontSize: '13px' }}>
-                    No subfolders with Doors.dat found
-                  </span>
-                </div>
-              )}
+              <span style={{ color: '#f87171', fontSize: '13px' }}>No subfolders with Doors.dat found</span>
             </div>
           </div>
         )}
@@ -398,32 +252,30 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
         <div style={styles.section}>
           <label style={styles.label}>Textures Folder</label>
           <div style={styles.pathRow}>
-            <input
-              type="text"
-              value={texturesPath}
-              onChange={(e) => setTexturesPath(e.target.value)}
-              placeholder="Folder containing PAC Door Order/ subfolder"
-              style={styles.pathInput}
-            />
-            <button
-              onClick={handleBrowseTextures}
-              disabled={browsingTextures}
-              style={styles.browseButton}
-            >
-              {browsingTextures ? '...' : 'Browse'}
-            </button>
+            <div style={styles.folderDisplay}>
+              {texturesName || <span style={styles.placeholder}>No folder selected</span>}
+            </div>
+            <button onClick={handleBrowseTextures} style={styles.browseButton}>Browse</button>
           </div>
         </div>
 
-        {texturesPath.trim() && texturesValid !== null && (
+        {texturesName && !textureManifest && (
           <div style={styles.section}>
-            <label style={styles.label}>Texture Status</label>
             <div style={styles.fileList}>
               <div style={styles.fileRow}>
-                <Dot ok={texturesValid} />
-                <span style={{ color: texturesValid ? '#e0e0e0' : '#f87171' }}>
-                  PAC Door Order/
-                </span>
+                <Dot ok={false} />
+                <span style={{ color: '#f87171' }}>PAC Door Order/</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {texturesName && textureManifest && (
+          <div style={styles.section}>
+            <div style={styles.fileList}>
+              <div style={styles.fileRow}>
+                <Dot ok={true} />
+                <span style={{ color: '#e0e0e0' }}>PAC Door Order/</span>
               </div>
             </div>
           </div>
@@ -443,13 +295,8 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
                   {Object.keys(textureManifest.painted).length > 0 ? (
                     Object.entries(textureManifest.painted).map(([brand, files]) => (
                       <div key={brand} style={{ marginLeft: 8 }}>
-                        <div
-                          style={styles.brandHeader}
-                          onClick={() => toggleCategory(`painted-${brand}`)}
-                        >
-                          <span style={{ marginRight: 6 }}>
-                            {expandedCategories[`painted-${brand}`] ? '\u25BC' : '\u25B6'}
-                          </span>
+                        <div style={styles.brandHeader} onClick={() => toggleCategory(`painted-${brand}`)}>
+                          <span style={{ marginRight: 6 }}>{expandedCategories[`painted-${brand}`] ? '\u25BC' : '\u25B6'}</span>
                           {brand}
                           <span style={styles.countBadge}>{files.length}</span>
                         </div>
@@ -461,7 +308,7 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
                                 return (
                                   <TextureSwatch
                                     key={relPath}
-                                    relPath={relPath}
+                                    blobUrl={textureBlobUrlsRef.current.get(relPath)}
                                     filename={f}
                                     selected={selectedTextures.painted === relPath}
                                     onClick={() => handleTextureSelect('painted', relPath)}
@@ -495,7 +342,7 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
                         return (
                           <TextureSwatch
                             key={relPath}
-                            relPath={relPath}
+                            blobUrl={textureBlobUrlsRef.current.get(relPath)}
                             filename={f}
                             selected={selectedTextures.primed === relPath}
                             onClick={() => handleTextureSelect('primed', relPath)}
@@ -523,7 +370,7 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
                         return (
                           <TextureSwatch
                             key={relPath}
-                            relPath={relPath}
+                            blobUrl={textureBlobUrlsRef.current.get(relPath)}
                             filename={f}
                             selected={selectedTextures.raw === relPath}
                             onClick={() => handleTextureSelect('raw', relPath)}
@@ -551,7 +398,7 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
                         return (
                           <TextureSwatch
                             key={relPath}
-                            relPath={relPath}
+                            blobUrl={textureBlobUrlsRef.current.get(relPath)}
                             filename={f}
                             selected={selectedTextures.sanded === relPath}
                             onClick={() => handleTextureSelect('sanded', relPath)}
@@ -571,7 +418,7 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
         {/* Action buttons */}
         <div style={styles.buttonRow}>
           <button
-            onClick={handleSaveAndLoad}
+            onClick={handleLoad}
             disabled={loading || !canLoad}
             style={{
               ...styles.button,
@@ -579,26 +426,12 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
               opacity: loading || !canLoad ? 0.5 : 1,
             }}
           >
-            {loading ? 'Loading...' : 'Save & Load Data'}
-          </button>
-          <button
-            onClick={handleReload}
-            disabled={loading || !lastLoaded}
-            style={{
-              ...styles.button,
-              opacity: loading || !lastLoaded ? 0.5 : 1,
-            }}
-          >
-            Reload
+            {loading ? 'Loading...' : 'Load Data'}
           </button>
         </div>
 
         {/* Error display */}
-        {error && (
-          <div style={styles.errorBox}>
-            {error}
-          </div>
-        )}
+        {error && <div style={styles.errorBox}>{error}</div>}
 
         {/* Load stats */}
         {loadStats && (
@@ -611,13 +444,6 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
               <StatRow label="Tools" value={loadStats.toolsCount} />
               <StatRow label="Profiles" value={loadStats.profilesCount} />
             </div>
-          </div>
-        )}
-
-        {/* Last loaded timestamp */}
-        {lastLoaded && (
-          <div style={styles.timestamp}>
-            Last loaded: {new Date(lastLoaded).toLocaleString()}
           </div>
         )}
       </div>
@@ -651,13 +477,12 @@ function TextureCategory({ label, expanded, onToggle, children }: {
   );
 }
 
-function TextureSwatch({ relPath, filename, selected, onClick }: {
-  relPath: string;
+function TextureSwatch({ blobUrl, filename, selected, onClick }: {
+  blobUrl: string | undefined;
   filename: string;
   selected: boolean;
   onClick: () => void;
 }) {
-  const imgUrl = `/api/texture-image?path=${encodeURIComponent(relPath)}`;
   const displayName = filename.replace(/\.jpe?g$/i, '');
   return (
     <div
@@ -671,7 +496,7 @@ function TextureSwatch({ relPath, filename, selected, onClick }: {
       <div
         style={{
           ...styles.swatchImage,
-          backgroundImage: `url(${imgUrl})`,
+          backgroundImage: blobUrl ? `url(${blobUrl})` : undefined,
         }}
       />
       <div style={styles.swatchLabel}>{displayName}</div>
@@ -718,7 +543,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 8,
   },
-  pathInput: {
+  folderDisplay: {
     flex: 1,
     padding: '10px 12px',
     borderRadius: 6,
@@ -728,6 +553,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     boxSizing: 'border-box' as const,
     minWidth: 0,
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  placeholder: {
+    color: '#666688',
+    fontStyle: 'italic' as const,
   },
   browseButton: {
     padding: '10px 16px',
@@ -740,6 +572,16 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     flexShrink: 0,
     whiteSpace: 'nowrap' as const,
+  },
+  selectInput: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: 6,
+    border: '1px solid #444466',
+    background: '#2a2a4e',
+    color: '#e0e0e0',
+    fontSize: '14px',
+    boxSizing: 'border-box' as const,
   },
   fileList: {
     background: '#252545',
@@ -799,12 +641,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statValue: {
     color: '#e0e0e0',
-  },
-  timestamp: {
-    fontSize: '11px',
-    color: '#666688',
-    fontStyle: 'italic' as const,
-    marginTop: 8,
   },
   textureCategories: {
     background: '#252545',

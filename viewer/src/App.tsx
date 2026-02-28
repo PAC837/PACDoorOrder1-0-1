@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
+import { Group as PanelGroup, Panel, Separator } from 'react-resizable-panels';
 import { useDoorData } from './hooks/useDoorData.js';
 import { DoorViewer } from './components/DoorViewer.js';
 import { OperationOverlay } from './components/OperationOverlay.js';
@@ -19,6 +20,7 @@ import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSyst
 import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
+import { restoreLibraries, loadLibraryData } from './utils/folderAccess.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
 
@@ -67,26 +69,19 @@ export default function App() {
     painted: string | null; primed: string | null; raw: string | null; sanded: string | null;
   }>({ painted: null, primed: null, raw: null, sanded: null });
   const [activeTextureCategory, setActiveTextureCategory] = useState<'painted' | 'primed' | 'raw' | 'sanded'>('raw');
+  const [textureBlobUrls, setTextureBlobUrls] = useState<Record<string, string>>({});
 
   // Unit conversion helpers for number inputs (internal state always mm)
   const toDisplay = useCallback((mm: number) => units === 'in' ? parseFloat((mm / 25.4).toFixed(4)) : mm, [units]);
   const fromDisplay = useCallback((val: number) => units === 'in' ? val * 25.4 : val, [units]);
   const inputStep = units === 'in' ? 0.125 : 0.5;  // 1/8" or 0.5mm
 
-  // Fetch library list + selected library on mount and after data reloads
+  // Restore library list from IndexedDB handles on mount
   useEffect(() => {
-    Promise.all([
-      fetch('/api/libraries').then((r) => r.json()),
-      fetch('/api/config').then((r) => r.json()),
-    ])
-      .then(([libData, config]) => {
-        setLibraries(libData.libraries || []);
-        if (config.selectedLibrary) setSelectedLibrary(config.selectedLibrary);
-        if (config.selectedTextures) setSelectedTextures(prev => ({ ...prev, ...config.selectedTextures }));
-        if (config.activeTextureCategory) setActiveTextureCategory(config.activeTextureCategory);
-      })
-      .catch(() => {});
-  }, [dataVersion]);
+    restoreLibraries().then((libs) => {
+      if (libs.length > 0) setLibraries(libs);
+    }).catch(() => {});
+  }, []);
 
   // Panel-type tool groups (Type=0), sorted by name
   const panelToolGroups = useMemo(
@@ -130,12 +125,7 @@ export default function App() {
     setSelectedLibrary(library);
     setLibraryLoading(true);
     try {
-      const res = await fetch('/api/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ library }),
-      });
-      const result = await res.json();
+      const result = await loadLibraryData(library);
       if (result.success) {
         setDataVersion((v) => v + 1);
         setSelectedIndex(0);
@@ -303,20 +293,18 @@ export default function App() {
     });
   }, []);
 
-  // Texture URL for 3D door — uses active category's selection
+  // Texture URL for 3D door — uses active category's blob URL
   const activeTexturePath = selectedTextures[activeTextureCategory];
-  const textureUrl = activeTexturePath
-    ? `/api/texture-image?path=${encodeURIComponent(activeTexturePath)}`
-    : undefined;
+  const textureUrl = activeTexturePath ? textureBlobUrls[activeTexturePath] : undefined;
 
-  const handleActiveTextureCategoryChange = useCallback(async (cat: 'painted' | 'primed' | 'raw' | 'sanded') => {
+  const handleActiveTextureCategoryChange = useCallback((cat: 'painted' | 'primed' | 'raw' | 'sanded') => {
     setActiveTextureCategory(cat);
-    await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ activeTextureCategory: cat }),
-    }).catch(() => {});
   }, []);
+
+  // Elevation tree — computed once, used by both standalone tab and embedded dashboard
+  const elevationTree = activeDoor
+    ? (isGenericDoor ? panelTree : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider))
+    : panelTree; // fallback for when no door is active
 
   // --- Tab: Tool Shapes ---
   if (currentTab === 'tools') {
@@ -336,9 +324,13 @@ export default function App() {
         <AdminPanel
           onDataReloaded={() => setDataVersion((v) => v + 1)}
           selectedTextures={selectedTextures}
-          onTextureSelected={(category, path) => {
+          onTextureSelected={(category, path, blobUrl) => {
             setSelectedTextures(prev => ({ ...prev, [category]: path }));
+            if (path && blobUrl) {
+              setTextureBlobUrls(prev => ({ ...prev, [path]: blobUrl }));
+            }
           }}
+          onLibrariesChanged={setLibraries}
         />
       </div>
     );
@@ -366,9 +358,6 @@ export default function App() {
 
   // --- Tab: Elevation ---
   if (currentTab === 'elevation' && activeDoor) {
-    const elevationTree = isGenericDoor
-      ? panelTree
-      : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider);
     return (
       <div style={styles.container}>
         <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
@@ -395,128 +384,127 @@ export default function App() {
     <div style={styles.container}>
       <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
 
-      {/* 3D Canvas — always mounted to prevent WebGL context loss */}
-      <Canvas
-        gl={{ logarithmicDepthBuffer: true }}
-        camera={{
-          position: [camDist * 0.3, camDist * 0.2, camDist],
-          fov: 40,
-          near: 1,
-          far: 50000,
-        }}
-        style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
-        onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
-      >
-        <color attach="background" args={['#ffffff']} />
-
-        {/* Lighting */}
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[500, 800, 1000]} intensity={0.8} />
-        <directionalLight position={[-300, 400, -500]} intensity={0.3} />
-
-        {/* Door */}
-        {activeDoor && (
-          <DoorViewer
-            door={activeDoor}
-            graph={activeGraph}
-            profiles={profiles}
-            operationVisibility={operationVisibility}
-            toolVisibility={toolVisibility}
-            frontPanelType={isGenericDoor ? frontPanelType : undefined}
-            backPanelType={isGenericDoor ? backPanelType : undefined}
-            hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-            selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
-            onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
-            selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
-            onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
-            panelTree={isGenericDoor ? panelTree : undefined}
-            thickness={thickness}
-            renderMode={doorRenderMode}
-            textureUrl={textureUrl}
-          />
-        )}
-
-        {/* Grid — below the door's bottom rail */}
-        {activeDoor && (
-          <Grid
-            args={[2000, 2000]}
-            position={[0, -activeDoor.DefaultH / 2 - 10, 0]}
-            cellSize={50}
-            cellColor="#e0e0e0"
-            sectionSize={100}
-            sectionColor="#cccccc"
-            fadeDistance={3000}
-            infiniteGrid
-          />
-        )}
-
-        {/* Controls */}
-        <OrbitControls
-          makeDefault
-          enableDamping
-          dampingFactor={0.1}
-          minDistance={100}
-          maxDistance={10000}
-        />
-      </Canvas>
-
-      {/* Status messages (shown when no door is active) */}
-      {!activeDoor && (
-        <div style={styles.loading}>
-          <p>
-            {loading
-              ? 'Loading door data...'
-              : error
-                ? <span style={{ color: '#ff6b6b' }}>Error: {error}</span>
-                : doors.length === 0
-                  ? 'No CNC doors in this library. Select a different library or use Generic Door.'
-                  : 'Select a door or configure the Generic Door.'}
-          </p>
-        </div>
-      )}
-
-      {/* Render mode toggle + texture category picker for 3D door view */}
-      {activeDoor && (
-        <div style={{ position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
-          <div style={{ display: 'flex', gap: 2 }}>
-            {(['painted', 'primed', 'raw', 'sanded'] as const).map((cat) => {
-              const hasTexture = selectedTextures[cat] !== null;
-              const isActive = activeTextureCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => handleActiveTextureCategoryChange(cat)}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 4,
-                    border: isActive ? '1px solid #5577aa' : '1px solid #444466',
-                    background: isActive ? 'rgba(42, 74, 110, 0.9)' : 'rgba(26, 26, 46, 0.7)',
-                    color: isActive ? '#ffffff' : hasTexture ? '#aaaacc' : '#666688',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textTransform: 'capitalize',
+      <PanelGroup orientation="vertical" style={{ position: 'absolute', inset: 0, top: 40 }}>
+        {/* Top row: 3D + Elevation */}
+        <Panel defaultSize="60%" minSize="20%">
+          <PanelGroup orientation="horizontal">
+            {/* 3D Canvas pane */}
+            <Panel defaultSize="55%" minSize="25%">
+              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                {/* 3D Canvas — always mounted to prevent WebGL context loss */}
+                <Canvas
+                  gl={{ logarithmicDepthBuffer: true }}
+                  camera={{
+                    position: [camDist * 0.3, camDist * 0.2, camDist],
+                    fov: 40,
+                    near: 1,
+                    far: 50000,
                   }}
-                  title={hasTexture ? selectedTextures[cat]! : `No ${cat} texture selected`}
+                  style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
+                  onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
                 >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  <color attach="background" args={['#ffffff']} />
+                  <ambientLight intensity={0.4} />
+                  <directionalLight position={[500, 800, 1000]} intensity={0.8} />
+                  <directionalLight position={[-300, 400, -500]} intensity={0.3} />
+                  {activeDoor && (
+                    <DoorViewer
+                      door={activeDoor}
+                      graph={activeGraph}
+                      profiles={profiles}
+                      operationVisibility={operationVisibility}
+                      toolVisibility={toolVisibility}
+                      frontPanelType={isGenericDoor ? frontPanelType : undefined}
+                      backPanelType={isGenericDoor ? backPanelType : undefined}
+                      hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
+                      selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
+                      onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
+                      selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
+                      onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
+                      panelTree={isGenericDoor ? panelTree : undefined}
+                      thickness={thickness}
+                      renderMode={doorRenderMode}
+                      textureUrl={textureUrl}
+                    />
+                  )}
+                  {activeDoor && (
+                    <Grid
+                      args={[2000, 2000]}
+                      position={[0, -activeDoor.DefaultH / 2 - 10, 0]}
+                      cellSize={50}
+                      cellColor="#e0e0e0"
+                      sectionSize={100}
+                      sectionColor="#cccccc"
+                      fadeDistance={3000}
+                      infiniteGrid
+                    />
+                  )}
+                  <OrbitControls
+                    makeDefault
+                    enableDamping
+                    dampingFactor={0.1}
+                    minDistance={100}
+                    maxDistance={10000}
+                  />
+                </Canvas>
 
-      {/* Loading overlay (shown during reload while door is visible) */}
-      {loading && activeDoor && (
-        <div style={styles.loadingOverlay}>
-          Loading...
-        </div>
-      )}
+                {/* Status messages (shown when no door is active) */}
+                {!activeDoor && (
+                  <div style={styles.loading}>
+                    <p>
+                      {loading
+                        ? 'Loading door data...'
+                        : error
+                          ? <span style={{ color: '#ff6b6b' }}>Error: {error}</span>
+                          : doors.length === 0
+                            ? 'No CNC doors in this library. Select a different library or use Generic Door.'
+                            : 'Select a door or configure the Generic Door.'}
+                    </p>
+                  </div>
+                )}
 
-      {/* Left UI Overlay */}
-      <div style={styles.overlay}>
+                {/* Render mode toggle + texture category picker */}
+                {activeDoor && (
+                  <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {(['painted', 'primed', 'raw', 'sanded'] as const).map((cat) => {
+                        const hasTexture = selectedTextures[cat] !== null;
+                        const isActive = activeTextureCategory === cat;
+                        return (
+                          <button
+                            key={cat}
+                            onClick={() => handleActiveTextureCategoryChange(cat)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 4,
+                              border: isActive ? '1px solid #5577aa' : '1px solid #444466',
+                              background: isActive ? 'rgba(42, 74, 110, 0.9)' : 'rgba(26, 26, 46, 0.7)',
+                              color: isActive ? '#ffffff' : hasTexture ? '#aaaacc' : '#666688',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textTransform: 'capitalize',
+                            }}
+                            title={hasTexture ? selectedTextures[cat]! : `No ${cat} texture selected`}
+                          >
+                            {cat}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Loading overlay */}
+                {loading && activeDoor && (
+                  <div style={styles.loadingOverlay}>
+                    Loading...
+                  </div>
+                )}
+
+                {/* Left UI Overlay */}
+                <div style={styles.overlay}>
         <h2 style={styles.title}>PAC Door Viewer</h2>
 
         {/* Library Selector */}
@@ -865,19 +853,59 @@ export default function App() {
           Drag to orbit / Scroll to zoom / Right-drag to pan
         </div>
       </div>
+              </div>{/* end 3D pane wrapper */}
+            </Panel>
 
-      {/* Right-side Operation Overlay */}
-      {activeDoor && (
-        <OperationOverlay
-          graph={activeGraph}
-          visibility={operationVisibility}
-          onToggle={toggleOperation}
-          toolVisibility={toolVisibility}
-          onToggleTool={toggleTool}
-          onSetAllTools={setAllTools}
-          units={units}
-        />
-      )}
+            <Separator className="resize-handle-h" />
+
+            {/* Elevation pane */}
+            <Panel defaultSize="45%" minSize="15%">
+              {activeDoor ? (
+                <ElevationViewer
+                  compact
+                  door={activeDoor}
+                  units={units}
+                  panelTree={elevationTree}
+                  handleConfig={isGenericDoor ? handleConfig : undefined}
+                  renderMode={elevationRenderMode}
+                  onRenderModeChange={setElevationRenderMode}
+                  selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
+                  onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
+                  onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
+                />
+              ) : (
+                <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+                  Elevation
+                </div>
+              )}
+            </Panel>
+          </PanelGroup>
+        </Panel>
+
+        <Separator className="resize-handle-v" />
+
+        {/* Bottom row: Cross Section */}
+        <Panel defaultSize="40%" minSize="15%">
+          {activeDoor ? (
+            <CrossSectionViewer
+              compact
+              door={activeDoor}
+              graph={activeGraph}
+              profiles={profiles}
+              frontPanelType={isGenericDoor ? frontPanelType : undefined}
+              backPanelType={isGenericDoor ? backPanelType : undefined}
+              hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
+              units={units}
+              edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
+              thickness={thickness}
+            />
+          ) : (
+            <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+              Cross Section
+            </div>
+          )}
+        </Panel>
+      </PanelGroup>
     </div>
   );
 }
