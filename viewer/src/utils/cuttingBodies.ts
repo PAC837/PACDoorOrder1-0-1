@@ -58,8 +58,15 @@ export function buildCrossSection(
   profiles: ToolProfileData[],
   thickness: number,
   flipSide = false,
+  alignment = 1,
 ): THREE.Shape | null {
-  const offset = -tool.entryOffset;
+  let offset = -tool.entryOffset;
+
+  // Edge-alignment adjustment: when alignment=0, offset measures to the tool's
+  // deepest-cutting edge. Shift center toward toolpath by one radius.
+  if (alignment === 0 && offset !== 0) {
+    offset += -Math.sign(offset) * (tool.toolDiameter / 2);
+  }
   const tipZ = flipSide
     ? -thickness / 2 + tool.entryDepth
     : thickness / 2 - tool.entryDepth;
@@ -93,8 +100,9 @@ export function buildCrossSectionPoints(
   tool: GraphToolEntry,
   profiles: ToolProfileData[],
   thickness: number,
+  alignment = 1,
 ): { x: number; y: number }[] | null {
-  const shape = buildCrossSection(tool, profiles, thickness);
+  const shape = buildCrossSection(tool, profiles, thickness, false, alignment);
   if (!shape) return null;
   const pts = shape.getPoints();
   // Remove closing duplicate (closePath creates one)
@@ -369,9 +377,9 @@ export function buildCarvedDoor(
   slabW: number,
   slabH: number,
   thickness: number,
-  toolpathRects: { rect: SceneRect; tools: GraphToolEntry[]; depth?: number }[],
+  toolpathRects: { rect: SceneRect; tools: GraphToolEntry[]; depth?: number; alignment?: number }[],
   profiles: ToolProfileData[],
-  backPockets?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] }[],
+  backPockets?: { rect: SceneRect; depth: number; tools: GraphToolEntry[]; alignment?: number }[],
   holes?: HoleData[],
 ): THREE.BufferGeometry {
   const evaluator = new Evaluator();
@@ -382,7 +390,7 @@ export function buildCarvedDoor(
   slabBrush.updateMatrixWorld(true);
 
   // Subtract each tool
-  for (const { rect, tools, depth: frontPocketDepth } of toolpathRects) {
+  for (const { rect, tools, depth: frontPocketDepth, alignment = 1 } of toolpathRects) {
     // Front pocket subtraction (panel recess) — simple box inside the toolpath rect
     if (frontPocketDepth && frontPocketDepth > 0) {
       const pocketGeo = new THREE.BoxGeometry(
@@ -405,7 +413,11 @@ export function buildCarvedDoor(
     for (const tool of tools) {
       // Per-tool flip: FlipSide tools in a front operation render on the back face
       const effectiveFlipSide = tool.flipSide ?? false;
-      const offset = -tool.entryOffset;
+      let offset = -tool.entryOffset;
+      // Edge-alignment adjustment (alignment=0)
+      if (alignment === 0 && offset !== 0) {
+        offset += -Math.sign(offset) * (tool.toolDiameter / 2);
+      }
       const radius = tool.toolDiameter / 2;
       const tipZ = effectiveFlipSide
         ? -thickness / 2 + tool.entryDepth
@@ -438,7 +450,7 @@ export function buildCarvedDoor(
         }
       } else {
         // PROFILE or V-BIT — sweep cross-section along rectangular toolpath
-        const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
+        const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide, alignment);
         if (!crossSection) {
           console.warn(`[CNCDoorSlab] No cross-section for "${tool.toolName}", skipping`);
           continue;
@@ -464,7 +476,7 @@ export function buildCarvedDoor(
   // Back pocket subtraction — box recess + tool profiles (mirrored to back face)
   if (backPockets && backPockets.length > 0) {
     for (const backPocket of backPockets) {
-      const { rect: backRect, depth: backPocketDepth, tools: backTools } = backPocket;
+      const { rect: backRect, depth: backPocketDepth, tools: backTools, alignment: backAlignment = 1 } = backPocket;
 
       // Back pocket box recess
       if (backPocketDepth > 0) {
@@ -491,7 +503,11 @@ export function buildCarvedDoor(
       // Per-tool flip: FlipSide tools in a back operation render on the front face (XOR)
       for (const tool of backTools) {
         const effectiveFlipSide = !(tool.flipSide ?? false);
-        const offset = -tool.entryOffset;
+        let offset = -tool.entryOffset;
+        // Edge-alignment adjustment (alignment=0)
+        if (backAlignment === 0 && offset !== 0) {
+          offset += -Math.sign(offset) * (tool.toolDiameter / 2);
+        }
         const radius = tool.toolDiameter / 2;
         const tipZ = effectiveFlipSide
           ? -thickness / 2 + tool.entryDepth
@@ -521,7 +537,7 @@ export function buildCarvedDoor(
           }
         } else {
           // PROFILE or V-BIT — sweep cross-section along back toolpath
-          const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
+          const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide, backAlignment);
           if (!crossSection) {
             console.warn(`[CNCDoorSlab] No back cross-section for "${tool.toolName}", skipping`);
             continue;

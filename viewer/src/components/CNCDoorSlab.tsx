@@ -57,7 +57,7 @@ export function CNCDoorSlab({
 
   const carvedGeo = useMemo(() => {
     // Build toolpath rects + associated tool entries from graph
-    const toolpathRects: { rect: ReturnType<typeof toolPathToRect>; tools: DoorGraphData['operations'][0]['tools']; depth?: number }[] = [];
+    const toolpathRects: { rect: ReturnType<typeof toolPathToRect>; tools: DoorGraphData['operations'][0]['tools']; depth?: number; alignment?: number }[] = [];
 
     if (frontVisible && graph) {
       for (const op of frontOps) {
@@ -73,14 +73,14 @@ export function CNCDoorSlab({
           });
 
           if (visibleTools.length > 0) {
-            toolpathRects.push({ rect, tools: visibleTools, depth: op.Depth });
+            toolpathRects.push({ rect, tools: visibleTools, depth: op.Depth, alignment: graphOp.alignment });
           }
         }
       }
     }
 
     // Back pockets — extract tools from graph for each back operation
-    const backPockets: { rect: ReturnType<typeof toolPathToRect>; depth: number; tools: DoorGraphData['operations'][0]['tools'] }[] = [];
+    const backPockets: { rect: ReturnType<typeof toolPathToRect>; depth: number; tools: DoorGraphData['operations'][0]['tools']; alignment?: number }[] = [];
     if (backPocketVisible) {
       for (const bop of backPocketOps) {
         if (!bop.OperationToolPathNode || bop.OperationToolPathNode.length < 3) continue;
@@ -96,6 +96,7 @@ export function CNCDoorSlab({
           rect: toolPathToRect(bop.OperationToolPathNode, doorW, doorH),
           depth: bop.Depth,
           tools: backTools,
+          alignment: graphBackOp?.alignment ?? 1,
         });
       }
     }

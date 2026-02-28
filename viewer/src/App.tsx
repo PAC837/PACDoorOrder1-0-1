@@ -51,6 +51,7 @@ export default function App() {
   const [showHingeAdvanced, setShowHingeAdvanced] = useState(false);
   const [showHandleAdvanced, setShowHandleAdvanced] = useState(false);
   const [savedSep, setSavedSep] = useState(101.6); // preserve last handle separation when switching to knob
+  const [thickness, setThickness] = useState(MATERIAL_THICKNESS);
   const [panelTree, setPanelTree] = useState<PanelTree>({ type: 'leaf' });
   const [selectedPanels, setSelectedPanels] = useState<Set<number>>(new Set());
   const [selectedSplitPath, setSelectedSplitPath] = useState<number[] | null>(null);
@@ -166,25 +167,46 @@ export default function App() {
 
   // Effective depths — computed once, used for both door building and display
   const { effectiveFrontDepth, effectiveBackDepth } = useMemo(
-    () => computeEffectiveDepths(frontPanelType, backPanelType, frontDepth, backDepth, MATERIAL_THICKNESS),
-    [frontPanelType, backPanelType, frontDepth, backDepth],
+    () => computeEffectiveDepths(frontPanelType, backPanelType, frontDepth, backDepth, thickness),
+    [frontPanelType, backPanelType, frontDepth, backDepth, thickness],
   );
 
   // Compute hardware holes for generic door
   const holes = useMemo(() => {
     if (!isGenericDoor) return [];
-    return computeAllHoles(hingeConfig, handleConfig, doorPartType, doorW, doorH);
-  }, [isGenericDoor, hingeConfig, handleConfig, doorPartType, doorW, doorH]);
+    return computeAllHoles(hingeConfig, handleConfig, doorPartType, doorW, doorH, thickness);
+  }, [isGenericDoor, hingeConfig, handleConfig, doorPartType, doorW, doorH, thickness]);
 
   // Validate hardware config
   const hardwareWarnings = useMemo(() => {
     if (!isGenericDoor || doorPartType === 'slab') return [];
     return validateHardware(
-      hingeConfig, handleConfig, doorPartType, doorW, doorH, MATERIAL_THICKNESS,
+      hingeConfig, handleConfig, doorPartType, doorW, doorH, thickness,
       leftStileW, rightStileW, topRailW, bottomRailW,
     );
   }, [isGenericDoor, hingeConfig, handleConfig, doorPartType, doorW, doorH,
       leftStileW, rightStileW, topRailW, bottomRailW]);
+
+  // Clamp all depths when thickness changes (prevents drilling deeper than material)
+  useEffect(() => {
+    setFrontDepth(prev => Math.min(prev, thickness));
+    setBackDepth(prev => Math.min(prev, thickness));
+    setHingeConfig(prev => {
+      const cupDepth = Math.min(prev.cupDepth, thickness);
+      const mountDepth = Math.min(prev.mountDepth, thickness);
+      if (cupDepth === prev.cupDepth && mountDepth === prev.mountDepth) return prev;
+      return { ...prev, cupDepth, mountDepth };
+    });
+    setHandleConfig(prev => {
+      if (prev.cutThrough) {
+        if (prev.holeDepth === thickness) return prev;
+        return { ...prev, holeDepth: thickness };
+      }
+      const holeDepth = Math.min(prev.holeDepth, thickness);
+      if (holeDepth === prev.holeDepth) return prev;
+      return { ...prev, holeDepth };
+    });
+  }, [thickness]);
 
   // Compute active door + graph (either real door or generic)
   const { activeDoor, activeGraph, panelBounds } = useMemo(() => {
@@ -234,6 +256,8 @@ export default function App() {
       activeDoor,
       isGenericDoor ? frontPanelType : 'pocket',
       isGenericDoor ? backPanelType : 'pocket',
+      thickness,
+      isGenericDoor ? edgeGroupId : undefined,
     );
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
@@ -242,7 +266,7 @@ export default function App() {
     a.download = `${activeDoor.Name.replace(/\s+/g, '_')}_optimizer.xml`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [activeDoor, isGenericDoor, frontPanelType, backPanelType]);
+  }, [activeDoor, isGenericDoor, frontPanelType, backPanelType, thickness, edgeGroupId]);
 
   const handlePanelSelect = useCallback((idx: number, event: { ctrlKey: boolean }) => {
     setSelectedSplitPath(null);
@@ -304,6 +328,7 @@ export default function App() {
           hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
           units={units}
           edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
+          thickness={thickness}
         />
       </div>
     );
@@ -321,6 +346,7 @@ export default function App() {
           door={activeDoor}
           units={units}
           panelTree={elevationTree}
+          handleConfig={isGenericDoor ? handleConfig : undefined}
           selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
           onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
           onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
@@ -371,13 +397,14 @@ export default function App() {
             selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
             onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
             panelTree={isGenericDoor ? panelTree : undefined}
+            thickness={thickness}
           />
         )}
 
         {/* Grid on the back plane */}
         <Grid
           args={[2000, 2000]}
-          position={[0, 0, -MATERIAL_THICKNESS]}
+          position={[0, 0, -thickness]}
           rotation={[0, 0, 0]}
           cellSize={50}
           cellColor="#333355"
@@ -488,6 +515,18 @@ export default function App() {
                 onCommit={(v) => setDoorH(fromDisplay(v))}
                 style={styles.numberInput} />
             </div>
+            <div style={styles.selector}>
+              <label style={styles.label}>Thickness:</label>
+              <select
+                value={String(thickness)}
+                onChange={(e) => setThickness(Number(e.target.value))}
+                style={styles.select}
+              >
+                <option value="19.05">3/4&quot;</option>
+                <option value="22.225">7/8&quot;</option>
+                <option value="25.4">1&quot;</option>
+              </select>
+            </div>
 
             {/* Routing controls — hidden for slab */}
             {doorPartType !== 'slab' && (<>
@@ -537,7 +576,7 @@ export default function App() {
                 value={toDisplay(frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth)}
                 step={inputStep}
                 min={0}
-                onCommit={(v) => setFrontDepth(fromDisplay(v))}
+                onCommit={(v) => setFrontDepth(Math.min(fromDisplay(v), thickness))}
                 disabled={frontPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(frontPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
@@ -590,7 +629,7 @@ export default function App() {
                 value={toDisplay(backPanelType === 'pocket' ? backDepth : effectiveBackDepth)}
                 step={inputStep}
                 min={0}
-                onCommit={(v) => setBackDepth(fromDisplay(v))}
+                onCommit={(v) => setBackDepth(Math.min(fromDisplay(v), thickness))}
                 disabled={backPanelType !== 'pocket'}
                 style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
               />
@@ -662,6 +701,7 @@ export default function App() {
               <HingePanel
                 hingeConfig={hingeConfig} setHingeConfig={setHingeConfig}
                 showAdvanced={showHingeAdvanced} setShowAdvanced={setShowHingeAdvanced}
+                thickness={thickness}
                 toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
                 styles={styles}
               />
@@ -672,6 +712,7 @@ export default function App() {
               handleConfig={handleConfig} setHandleConfig={setHandleConfig}
               showAdvanced={showHandleAdvanced} setShowAdvanced={setShowHandleAdvanced}
               doorPartType={doorPartType} savedSep={savedSep} setSavedSep={setSavedSep}
+              thickness={thickness}
               toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
               styles={styles}
             />
@@ -883,14 +924,19 @@ function buildOptimizerXml(
   door: DoorData,
   frontPanelType: PanelType = 'pocket',
   backPanelType: PanelType = 'pocket',
+  thickness = MATERIAL_THICKNESS,
+  edgeGroupId?: number | null,
 ): string {
   const B = (v: boolean) => v ? 'True' : 'False';
   const w = door.DefaultW;
   const h = door.DefaultH;
 
+  // Map thickness to material name
+  const thicknessName = thickness <= 19.05 ? '3/4' : thickness <= 22.225 ? '7/8' : '1';
+
   let xml = '8\n';
   xml += '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n';
-  xml += '<Parts MaterialName="3/4 MDF">\n';
+  xml += `<Parts MaterialName="${thicknessName} MDF">\n`;
 
   xml += `  <Part PartID="1" PartNumbers="1" Quan="1" Name="${door.Name}" Width="${w}" Length="${h}" EdgeBand="None" Color="None" AssyNo="R0N1" Comment="Cabinet Door" UserAdded="False" RemakeJobName="" AllowRotation="1" TextureName="">\n`;
 
@@ -914,36 +960,47 @@ function buildOptimizerXml(
     for (let oi = 0; oi < ops.length; oi++) {
       const op = ops[oi];
       const legacyNum = 54000 + oi * 2;
-      const panelType = op.FlipSideOp ? backPanelType : frontPanelType;
-      const useToolPath = panelType === 'raised' || panelType === 'glass';
+      const isEdgeOp = edgeGroupId != null && op.ToolGroupID === edgeGroupId;
+      let isToolPathElement = false;
 
-      if (useToolPath) {
-        // Raised panel (one-piece): OperationToolPath — no pocket, closed toolpath at depth 0
-        xml += `        <OperationToolPath ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="True" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="0" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="True" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
-      } else {
-        // Pocket or glass: OperationPocket
-        xml += `        <OperationPocket CCW="${B(op.CCW ?? false)}" InsideOut="${B(op.InsideOut ?? true)}" PocketingToolID="-3" ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="${B(op.ClosedShape ?? true)}" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="${op.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
-      }
-
-      if (!op.FlipSideOp) {
+      if (isEdgeOp) {
+        // Edge tool group: OperationToolPath with door perimeter, Depth=0, InsideOut=False
+        isToolPathElement = true;
+        xml += `        <OperationToolPath ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="True" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="0" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="True" Noneditable="False" Anchor="" FlipSideOp="False">\n`;
         xml += `          <OpIdTag TypeCode="29" LegacyNumber="${legacyNum}">\n`;
         xml += `            <OpIdTagReference Key="Panel Index" Value="${panelIndex}" />\n`;
-        if (useToolPath) {
-          xml += `            <OpIdTagReference Key="Count" Value="1" />\n`;
-        }
+        xml += `            <OpIdTagReference Key="Count" Value="1" />\n`;
         xml += `          </OpIdTag>\n`;
         panelIndex++;
       } else {
-        xml += `          <OpIdTag TypeCode="0" LegacyNumber="${legacyNum}" />\n`;
+        const panelType = op.FlipSideOp ? backPanelType : frontPanelType;
+        isToolPathElement = panelType === 'raised' || panelType === 'glass';
+
+        if (isToolPathElement) {
+          xml += `        <OperationToolPath ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="True" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="0" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="True" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
+        } else {
+          xml += `        <OperationPocket CCW="${B(op.CCW ?? false)}" InsideOut="${B(op.InsideOut ?? true)}" PocketingToolID="-3" ToolID="-1" ToolGroupID="${op.ToolGroupID}" DecorativeProfileID="-1" ClosedShape="${B(op.ClosedShape ?? true)}" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="${op.ID}" X="0" Y="0" Depth="${op.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(op.FlipSideOp)}">\n`;
+        }
+
+        if (!op.FlipSideOp) {
+          xml += `          <OpIdTag TypeCode="29" LegacyNumber="${legacyNum}">\n`;
+          xml += `            <OpIdTagReference Key="Panel Index" Value="${panelIndex}" />\n`;
+          if (isToolPathElement) {
+            xml += `            <OpIdTagReference Key="Count" Value="1" />\n`;
+          }
+          xml += `          </OpIdTag>\n`;
+          panelIndex++;
+        } else {
+          xml += `          <OpIdTag TypeCode="0" LegacyNumber="${legacyNum}" />\n`;
+        }
       }
+
       const nodes = op.OperationToolPathNode ?? [];
       for (const node of nodes) {
-        // Internal convention: Y=0 is LEFT. Mozaik convention: Y=0 is RIGHT.
-        // Mirror the Y coordinate for export.
         const exportY = w - node.Y;
         xml += `          <OperationToolPathNode X="${node.X}" Y="${exportY}" DepthOR="${node.DepthOR ?? -9999}" PtType="${node.PtType ?? 0}" Data="${node.Data ?? 0}" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />\n`;
       }
-      xml += useToolPath ? '        </OperationToolPath>\n' : '        </OperationPocket>\n';
+      xml += isToolPathElement ? '        </OperationToolPath>\n' : '        </OperationPocket>\n';
     }
 
     // Hardware holes — OperationHole elements
@@ -976,7 +1033,7 @@ function buildOptimizerXml(
         tagContent = `            <OpIdTagReference Key="Hole Index" Value="${handleHoleIndex}" />\n`;
       }
 
-      xml += `        <OperationHole Diameter="${hole.Diameter}" Diameter_Eq="" ID="1" X="${hole.X}" Y="${exportY}" Depth="${hole.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(hole.FlipSideOp)}">\n`;
+      xml += `        <OperationHole Diameter="${hole.Diameter}" Diameter_Eq="" ID="1" X="${hole.X}" Y="${exportY}" Depth="${hole.Depth}" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="${hole.depthEq ?? ''}" Hide_Eq="" IsUserOp="False" Noneditable="False" Anchor="" FlipSideOp="${B(hole.FlipSideOp)}">\n`;
       xml += `          <OpIdTag TypeCode="${typeCode}" LegacyNumber="${legacyNum}">\n`;
       xml += tagContent;
       xml += `          </OpIdTag>\n`;

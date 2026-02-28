@@ -40,6 +40,7 @@ export function drawLinearDim(
   side: DimSide,
   toX: CoordTransform,
   toY: CoordTransform,
+  color = '#000000',
 ) {
   const sx1 = toX(mx1), sy1 = toY(my1);
   const sx2 = toX(mx2), sy2 = toY(my2);
@@ -59,8 +60,8 @@ export function drawLinearDim(
   const d2x = sx2 + dx, d2y = sy2 + dy;
 
   ctx.save();
-  ctx.strokeStyle = '#000000';
-  ctx.fillStyle = '#000000';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
   ctx.lineWidth = 0.75;
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'center';
@@ -105,12 +106,12 @@ export function drawLinearDim(
   ctx.fillStyle = '#ffffff';
   if (side === 'left' || side === 'right') {
     ctx.fillRect(midX - 3, midY - th / 2 - 1, tw, th);
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = color;
     ctx.textAlign = 'left';
     ctx.fillText(label, midX, midY);
   } else {
     ctx.fillRect(midX - tw / 2, midY - th / 2 - 1, tw, th);
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = color;
     ctx.fillText(label, midX, midY);
   }
 
@@ -211,6 +212,157 @@ export function drawRadiusDim(
   ctx.fillRect(ex - 3, ey - 7, tw, 14);
   ctx.fillStyle = '#000000';
   ctx.fillText(label, ex, ey);
+
+  ctx.restore();
+}
+
+/**
+ * Draw a snap indicator at screen coordinates: hollow circle + crosshair.
+ */
+export function drawSnapIndicator(
+  ctx: CanvasRenderingContext2D,
+  sx: number, sy: number,
+  label?: string,
+) {
+  ctx.save();
+  ctx.strokeStyle = '#00aaff';
+  ctx.lineWidth = 1.5;
+
+  // Hollow circle
+  ctx.beginPath();
+  ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Crosshair
+  ctx.beginPath();
+  ctx.moveTo(sx - 4, sy); ctx.lineTo(sx + 4, sy);
+  ctx.moveTo(sx, sy - 4); ctx.lineTo(sx, sy + 4);
+  ctx.stroke();
+
+  // Optional label
+  if (label) {
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#00aaff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, sx + 10, sy - 4);
+  }
+  ctx.restore();
+}
+
+/**
+ * Draw the measure-tool rubber-band preview: dashed line A→cursor,
+ * solid line A→auto-straightened B, and a filled dot at A.
+ */
+export function drawMeasurePreview(
+  ctx: CanvasRenderingContext2D,
+  ax: number, ay: number,   // screen coords of point A
+  bx: number, by: number,   // screen coords of current cursor/snap
+  straightX: number, straightY: number, // screen coords of auto-straightened B
+) {
+  ctx.save();
+
+  // Dashed line from A to raw cursor
+  ctx.strokeStyle = 'rgba(0, 170, 255, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.stroke();
+
+  // Solid line from A to straightened B
+  ctx.strokeStyle = '#00aaff';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(straightX, straightY);
+  ctx.stroke();
+
+  // Point A marker
+  ctx.fillStyle = '#00aaff';
+  ctx.beginPath();
+  ctx.arc(ax, ay, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Draw a general-purpose linear dimension between two screen-space points.
+ * Works for any angle (horizontal, vertical, or diagonal).
+ *
+ * @param perpOffset — signed perpendicular offset from the A→B line (screen px).
+ *   Positive = left of A→B direction, negative = right.
+ */
+export function drawGeneralDim(
+  ctx: CanvasRenderingContext2D,
+  sx1: number, sy1: number,
+  sx2: number, sy2: number,
+  label: string,
+  perpOffset: number,
+  color = '#00aaff',
+) {
+  const dx = sx2 - sx1;
+  const dy = sy2 - sy1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+
+  // Perpendicular unit vector (rotated 90° CCW from A→B direction)
+  const px = -dy / len;
+  const py = dx / len;
+
+  const gap = 3;
+  const ext = 4;
+  const arrowSize = 6;
+
+  // Dimension line endpoints (offset perpendicular from feature)
+  const d1x = sx1 + px * perpOffset;
+  const d1y = sy1 + py * perpOffset;
+  const d2x = sx2 + px * perpOffset;
+  const d2y = sy2 + py * perpOffset;
+
+  // Extension line direction sign (same as perpOffset sign)
+  const sign = perpOffset >= 0 ? 1 : -1;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 0.75;
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Extension lines from feature to dimension line (with gap and extension past)
+  ctx.beginPath();
+  ctx.moveTo(sx1 + px * gap * sign, sy1 + py * gap * sign);
+  ctx.lineTo(d1x + px * ext * sign, d1y + py * ext * sign);
+  ctx.moveTo(sx2 + px * gap * sign, sy2 + py * gap * sign);
+  ctx.lineTo(d2x + px * ext * sign, d2y + py * ext * sign);
+  ctx.stroke();
+
+  // Dimension line
+  ctx.beginPath();
+  ctx.moveTo(d1x, d1y);
+  ctx.lineTo(d2x, d2y);
+  ctx.stroke();
+
+  // Arrows along the dimension line direction
+  const angle = Math.atan2(d2y - d1y, d2x - d1x);
+  drawArrowHead(ctx, d1x, d1y, angle, arrowSize);
+  drawArrowHead(ctx, d2x, d2y, angle + Math.PI, arrowSize);
+
+  // Label at midpoint with white background
+  const midX = (d1x + d2x) / 2;
+  const midY = (d1y + d2y) / 2;
+  const metrics = ctx.measureText(label);
+  const tw = metrics.width + 6;
+  const th = 12;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(midX - tw / 2, midY - th / 2 - 1, tw, th);
+  ctx.fillStyle = color;
+  ctx.fillText(label, midX, midY);
 
   ctx.restore();
 }

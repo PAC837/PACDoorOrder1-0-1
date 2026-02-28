@@ -7,26 +7,50 @@ import {
 import type { UnitSystem } from '../types.js';
 import { formatUnit } from '../types.js';
 
+/** V-bit tool data extracted from tools.json */
+interface VBitTool {
+  toolId: number;
+  toolName: string;
+  diameter_mm: number;
+  sharpCornerAngle: number;
+}
+
+/** Unified display item: either a profile tool or a v-bit tool */
+type DisplayItem =
+  | { type: 'profile'; profile: ToolProfile }
+  | { type: 'vbit'; vbit: VBitTool };
+
 export function ToolShapeViewer({ units }: { units: UnitSystem }) {
-  const [profiles, setProfiles] = useState<ToolProfile[]>([]);
+  const [items, setItems] = useState<DisplayItem[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStraight, setShowStraight] = useState(false);
 
   useEffect(() => {
-    fetch('/data/profiles.json')
-      .then((r) => r.json())
-      .then((data: ToolProfile[]) => {
-        setProfiles(data);
-        const idx = data.findIndex((p) => p.toolId === 194);
-        if (idx >= 0) setSelectedIndex(idx);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(e.message);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch('/data/profiles.json').then(r => r.json()) as Promise<ToolProfile[]>,
+      fetch('/data/tools.json').then(r => r.json()) as Promise<{ ToolID: number; Name: string; Dia: number; SharpCornerAngle: number }[]>,
+    ]).then(([profileData, toolData]) => {
+      const profileIds = new Set(profileData.map(p => p.toolId));
+      // Profile tools
+      const profileItems: DisplayItem[] = profileData.map(p => ({ type: 'profile' as const, profile: p }));
+      // V-bit tools not already in profiles
+      const vbitItems: DisplayItem[] = toolData
+        .filter(t => t.SharpCornerAngle > 0 && !profileIds.has(t.ToolID))
+        .map(t => ({
+          type: 'vbit' as const,
+          vbit: { toolId: t.ToolID, toolName: t.Name, diameter_mm: t.Dia, sharpCornerAngle: t.SharpCornerAngle },
+        }));
+      const all = [...profileItems, ...vbitItems];
+      setItems(all);
+      const idx = all.findIndex(i => i.type === 'profile' && i.profile.toolId === 194);
+      if (idx >= 0) setSelectedIndex(idx);
+      setLoading(false);
+    }).catch(e => {
+      setError(e.message);
+      setLoading(false);
+    });
   }, []);
 
   if (loading) {
@@ -35,11 +59,15 @@ export function ToolShapeViewer({ units }: { units: UnitSystem }) {
   if (error) {
     return <div style={styles.centered}><p style={{ color: '#ff6b6b' }}>Error: {error}</p></div>;
   }
-  if (profiles.length === 0) {
+  if (items.length === 0) {
     return <div style={styles.centered}><p>No tool profiles found.</p></div>;
   }
 
-  const selected = profiles[selectedIndex];
+  const selected = items[selectedIndex];
+  const isProfile = selected.type === 'profile';
+  const toolId = isProfile ? selected.profile.toolId : selected.vbit.toolId;
+  const toolName = isProfile ? selected.profile.toolName : selected.vbit.toolName;
+  const diameter = isProfile ? selected.profile.diameter_mm : selected.vbit.diameter_mm;
 
   return (
     <div style={styles.container}>
@@ -54,69 +82,92 @@ export function ToolShapeViewer({ units }: { units: UnitSystem }) {
             onChange={(e) => setSelectedIndex(Number(e.target.value))}
             style={styles.select}
           >
-            {profiles.map((p, i) => (
-              <option key={p.toolId} value={i}>
-                #{p.toolId} — {p.toolName}
-              </option>
-            ))}
+            {items.map((item, i) => {
+              const id = item.type === 'profile' ? item.profile.toolId : item.vbit.toolId;
+              const name = item.type === 'profile' ? item.profile.toolName : item.vbit.toolName;
+              const tag = item.type === 'vbit' ? ' [V-bit]' : '';
+              return (
+                <option key={`${item.type}-${id}`} value={i}>
+                  #{id} — {name}{tag}
+                </option>
+              );
+            })}
           </select>
         </div>
 
         <div style={styles.info}>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>ID:</span>
-            <span>{selected.toolId}</span>
+            <span>{toolId}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Name:</span>
-            <span style={{ fontSize: '11px' }}>{selected.toolName}</span>
+            <span style={{ fontSize: '11px' }}>{toolName}</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Diameter:</span>
-            <span>{formatUnit(selected.diameter_mm, units)}</span>
+            <span>{formatUnit(diameter, units)}</span>
           </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Points:</span>
-            <span>{selected.points.length}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>Fillets:</span>
-            <span>{selected.points.filter((p) => p.ptType !== 0).length}</span>
-          </div>
-        </div>
-
-        <div style={styles.pointList}>
-          <h4 style={styles.pointHeader}>Half-Profile Points</h4>
-          {selected.points.map((pt, i) => (
-            <div key={i} style={styles.pointRow}>
-              <span style={styles.pointIndex}>{i}</span>
-              <span style={styles.pointCoord}>
-                ({units === 'in' ? pt.x_in.toFixed(4) : pt.x_mm.toFixed(3)}, {units === 'in' ? pt.y_in.toFixed(4) : pt.y_mm.toFixed(3)})
-              </span>
-              <span style={styles.pointType}>
-                {pt.ptType === 0
-                  ? 'LINE'
-                  : `T${pt.ptType} r=${pt.data > 0 ? '+' : ''}${pt.data.toFixed(3)}`}
-              </span>
+          {isProfile && (
+            <>
+              <div style={styles.infoRow}>
+                <span style={styles.infoLabel}>Points:</span>
+                <span>{selected.profile.points.length}</span>
+              </div>
+              <div style={styles.infoRow}>
+                <span style={styles.infoLabel}>Fillets:</span>
+                <span>{selected.profile.points.filter((p) => p.ptType !== 0).length}</span>
+              </div>
+            </>
+          )}
+          {!isProfile && (
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Angle:</span>
+              <span>{selected.vbit.sharpCornerAngle}°</span>
             </div>
-          ))}
+          )}
         </div>
 
-        <div style={styles.toggleRow}>
-          <label style={styles.toggleLabel}>
-            <input
-              type="checkbox"
-              checked={showStraight}
-              onChange={(e) => setShowStraight(e.target.checked)}
-            />
-            Show straight-line polygon
-          </label>
-        </div>
+        {isProfile && (
+          <div style={styles.pointList}>
+            <h4 style={styles.pointHeader}>Half-Profile Points</h4>
+            {selected.profile.points.map((pt, i) => (
+              <div key={i} style={styles.pointRow}>
+                <span style={styles.pointIndex}>{i}</span>
+                <span style={styles.pointCoord}>
+                  ({units === 'in' ? pt.x_in.toFixed(4) : pt.x_mm.toFixed(3)}, {units === 'in' ? pt.y_in.toFixed(4) : pt.y_mm.toFixed(3)})
+                </span>
+                <span style={styles.pointType}>
+                  {pt.ptType === 0
+                    ? 'LINE'
+                    : `T${pt.ptType} r=${pt.data > 0 ? '+' : ''}${pt.data.toFixed(3)}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isProfile && (
+          <div style={styles.toggleRow}>
+            <label style={styles.toggleLabel}>
+              <input
+                type="checkbox"
+                checked={showStraight}
+                onChange={(e) => setShowStraight(e.target.checked)}
+              />
+              Show straight-line polygon
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Main canvas */}
       <div style={styles.canvasArea}>
-        <ToolCanvas profile={selected} showStraight={showStraight} />
+        {isProfile ? (
+          <ToolCanvas profile={selected.profile} showStraight={showStraight} />
+        ) : (
+          <VBitCanvas vbit={selected.vbit} />
+        )}
       </div>
     </div>
   );
@@ -390,6 +441,203 @@ function ToolCanvas({
   const handleReset = useCallback(() => {
     setZoom(1); setPanX(0); setPanY(0);
   }, []);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas ref={canvasRef} style={styles.canvas} />
+      {zoom !== 1 && (
+        <button
+          onClick={handleReset}
+          style={{
+            position: 'absolute', top: 8, right: 8,
+            padding: '4px 10px', fontSize: '11px',
+            background: 'rgba(40,40,70,0.85)', color: '#ccc',
+            border: '1px solid #555', borderRadius: 4, cursor: 'pointer',
+          }}
+        >
+          Reset Zoom
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Canvas for v-bit tools — draws a triangle cross-section from angle + diameter */
+function VBitCanvas({ vbit }: { vbit: VBitTool }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const dragRef = useRef<{ dragging: boolean; lastX: number; lastY: number }>({
+    dragging: false, lastX: 0, lastY: 0,
+  });
+
+  useEffect(() => { setZoom(1); setPanX(0); setPanY(0); }, [vbit]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, w, h);
+
+    const r = vbit.diameter_mm / 2;
+    const halfAngle = (vbit.sharpCornerAngle / 2) * (Math.PI / 180);
+    const cutHeight = r / Math.tan(halfAngle); // depth where full diameter is used
+    const halfW = r;
+
+    // Triangle points (in tool space: x = horizontal, y = vertical up)
+    const points = [
+      { x: 0, y: -cutHeight },       // tip (bottom)
+      { x: halfW, y: 0 },            // right at surface
+      { x: -halfW, y: 0 },           // left at surface
+    ];
+
+    // Bounds
+    const minX = -halfW - 1, maxX = halfW + 1;
+    const minY = -cutHeight - 1, maxY = 1;
+    const pw = maxX - minX;
+    const ph = maxY - minY;
+
+    const pad = 40;
+    const scaleX = (w - pad * 2) / pw;
+    const scaleY = (h - pad * 2) / ph;
+    const baseScale = Math.min(scaleX, scaleY);
+    const scale = baseScale * zoom;
+    const cx = w / 2;
+    const cy = h / 2;
+    const pcx = (minX + maxX) / 2;
+    const pcy = (minY + maxY) / 2;
+
+    const toX = (px: number) => cx + (px - pcx) * scale + panX;
+    const toY = (py: number) => cy - (py - pcy) * scale + panY;
+
+    // Grid
+    ctx.strokeStyle = '#2a2a44';
+    ctx.lineWidth = 0.5;
+    const gridStep = findGridStep(pw);
+    for (let x = Math.floor((minX - 1) / gridStep) * gridStep; x <= maxX + 1; x += gridStep) {
+      const sx = toX(x);
+      if (sx >= 0 && sx <= w) { ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke(); }
+    }
+    for (let y = Math.floor((minY - 1) / gridStep) * gridStep; y <= maxY + 1; y += gridStep) {
+      const sy = toY(y);
+      if (sy >= 0 && sy <= h) { ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke(); }
+    }
+
+    // Center axis
+    ctx.strokeStyle = '#5577aa';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(toX(0), 0); ctx.lineTo(toX(0), h); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Y=0 line (surface)
+    ctx.strokeStyle = '#555577';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(0, toY(0)); ctx.lineTo(w, toY(0)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Filled triangle
+    ctx.beginPath();
+    ctx.moveTo(toX(points[0].x), toY(points[0].y));
+    ctx.lineTo(toX(points[1].x), toY(points[1].y));
+    ctx.lineTo(toX(points[2].x), toY(points[2].y));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(184, 131, 74, 0.35)';
+    ctx.fill();
+
+    // Outline
+    ctx.beginPath();
+    ctx.moveTo(toX(points[0].x), toY(points[0].y));
+    ctx.lineTo(toX(points[1].x), toY(points[1].y));
+    ctx.lineTo(toX(points[2].x), toY(points[2].y));
+    ctx.closePath();
+    ctx.strokeStyle = '#ffdd88';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Angle arc at tip
+    const tipSx = toX(0);
+    const tipSy = toY(-cutHeight);
+    const arcR = 25;
+    const startAngle = Math.PI / 2 - halfAngle;
+    const endAngle = Math.PI / 2 + halfAngle;
+    ctx.strokeStyle = '#aaccff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(tipSx, tipSy, arcR, startAngle, endAngle);
+    ctx.stroke();
+    // Angle label
+    ctx.fillStyle = '#aaccff';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${vbit.sharpCornerAngle}°`, tipSx, tipSy + arcR + 14);
+
+    // Zoom indicator
+    if (zoom !== 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${zoom.toFixed(1)}x`, w - 10, h - 10);
+    }
+  }, [vbit, zoom, panX, panY]);
+
+  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => {
+    const handleResize = () => draw();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [draw]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.max(0.1, Math.min(50, z * factor)));
+    };
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onDown = (e: MouseEvent) => {
+      dragRef.current = { dragging: true, lastX: e.clientX, lastY: e.clientY };
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current.dragging) return;
+      setPanX(px => px + e.clientX - dragRef.current.lastX);
+      setPanY(py => py + e.clientY - dragRef.current.lastY);
+      dragRef.current.lastX = e.clientX;
+      dragRef.current.lastY = e.clientY;
+    };
+    const onUp = () => { dragRef.current.dragging = false; };
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const handleReset = useCallback(() => { setZoom(1); setPanX(0); setPanY(0); }, []);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

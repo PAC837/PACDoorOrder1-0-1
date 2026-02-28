@@ -1,14 +1,17 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { DoorData, UnitSystem, HoleData } from '../types.js';
+import type { DoorData, UnitSystem, HoleData, HandleConfig } from '../types.js';
 import { formatUnit } from '../types.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
 import { flattenTree, enumerateSplits, enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
-import { drawArrowHead, drawLinearDim } from '../utils/canvasDrawing.js';
+import { drawArrowHead, drawLinearDim, drawSnapIndicator, drawMeasurePreview, drawGeneralDim } from '../utils/canvasDrawing.js';
+import { useMeasureTool } from '../hooks/useMeasureTool.js';
+import type { SnapTarget, SnapLine } from '../hooks/useMeasureTool.js';
 
 interface ElevationViewerProps {
   door: DoorData;
   units: UnitSystem;
   panelTree: PanelTree;
+  handleConfig?: HandleConfig;
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   onSplitDragEnd?: (path: number[], newPos: number) => void;
@@ -70,7 +73,7 @@ function getDragRange(split: SplitInfoWithBounds): { min: number; max: number } 
 }
 
 export function ElevationViewer({
-  door, units, panelTree,
+  door, units, panelTree, handleConfig,
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -86,6 +89,7 @@ export function ElevationViewer({
   const [showDimensions, setShowDimensions] = useState(true);
   const [showHatching, setShowHatching] = useState(true);
   const [showHardware, setShowHardware] = useState(true);
+  const [showUserDimensions, setShowUserDimensions] = useState(true);
 
   const [hoveredSplit, setHoveredSplit] = useState<{ path: number[]; type: 'hsplit' | 'vsplit' } | null>(null);
   const [draggingSplit, setDraggingSplit] = useState<DragState | null>(null);
@@ -145,6 +149,87 @@ export function ElevationViewer({
   // Inverse transforms: screen → model
   const fromX = useCallback((sx: number) => (sx - panX - cx) / scale + doorW / 2, [cx, doorW, scale, panX]);
   const fromY = useCallback((sy: number) => -(sy - panY - cy) / scale + doorH / 2, [cy, doorH, scale, panY]);
+  const fmtDim = useCallback((mm: number) => formatUnit(mm, units), [units]);
+
+  // Panel leaves for snap targets
+  const leaves = useMemo(() => flattenTree(panelTree, rootBounds), [panelTree, rootBounds]);
+
+  // --- Snap targets for measure tool ---
+  const snapTargets = useMemo((): SnapTarget[] => {
+    const targets: SnapTarget[] = [];
+    // Door perimeter corners
+    targets.push({ x: 0, y: 0, label: 'corner' });
+    targets.push({ x: doorW, y: 0, label: 'corner' });
+    targets.push({ x: doorW, y: doorH, label: 'corner' });
+    targets.push({ x: 0, y: doorH, label: 'corner' });
+    // Inner frame corners
+    targets.push({ x: leftStileW, y: bottomRailW, label: 'frame' });
+    targets.push({ x: doorW - rightStileW, y: bottomRailW, label: 'frame' });
+    targets.push({ x: leftStileW, y: doorH - topRailW, label: 'frame' });
+    targets.push({ x: doorW - rightStileW, y: doorH - topRailW, label: 'frame' });
+    // Panel leaf corners
+    for (const pb of leaves) {
+      targets.push({ x: pb.yMin, y: pb.xMin });
+      targets.push({ x: pb.yMax, y: pb.xMin });
+      targets.push({ x: pb.yMin, y: pb.xMax });
+      targets.push({ x: pb.yMax, y: pb.xMax });
+    }
+    // Divider centers and edges
+    for (const s of splitsWithBounds) {
+      const b = s.bounds;
+      targets.push({ x: (b.yMin + b.yMax) / 2, y: (b.xMin + b.xMax) / 2, label: 'divider' });
+    }
+    // Hardware hole centers
+    for (const hole of holes) {
+      targets.push({ x: hole.Y, y: hole.X, label: 'hole' });
+    }
+    return targets;
+  }, [doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, leaves, splitsWithBounds, holes]);
+
+  const snapLines = useMemo((): SnapLine[] => {
+    const lines: SnapLine[] = [];
+    // Door perimeter
+    lines.push({ x1: 0, y1: 0, x2: doorW, y2: 0, label: 'bottom' });
+    lines.push({ x1: doorW, y1: 0, x2: doorW, y2: doorH, label: 'right' });
+    lines.push({ x1: doorW, y1: doorH, x2: 0, y2: doorH, label: 'top' });
+    lines.push({ x1: 0, y1: doorH, x2: 0, y2: 0, label: 'left' });
+    // Inner frame
+    lines.push({ x1: leftStileW, y1: bottomRailW, x2: doorW - rightStileW, y2: bottomRailW });
+    lines.push({ x1: doorW - rightStileW, y1: bottomRailW, x2: doorW - rightStileW, y2: doorH - topRailW });
+    lines.push({ x1: doorW - rightStileW, y1: doorH - topRailW, x2: leftStileW, y2: doorH - topRailW });
+    lines.push({ x1: leftStileW, y1: doorH - topRailW, x2: leftStileW, y2: bottomRailW });
+    return lines;
+  }, [doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW]);
+
+  // --- Measure tool hook ---
+  const measure = useMeasureTool({
+    fromX, fromY, toX, toY,
+    scale,
+    snapTargets,
+    snapLines,
+    formatDistance: fmtDim,
+  });
+
+  // Keyboard listener for measure tool
+  useEffect(() => {
+    if (!measure.measureMode) return;
+    const handler = (e: KeyboardEvent) => measure.handleKeyDown(e);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [measure.measureMode, measure.handleKeyDown]);
+
+  // Cursor
+  const cursor = useMemo(() => {
+    if (measure.measureMode) return measure.draggingIdx !== null ? 'grabbing' : 'crosshair';
+    if (draggingSplit) {
+      return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
+    }
+    if (hoveredSplit) {
+      return hoveredSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
+    }
+    if (isPanning) return 'grabbing';
+    return 'grab';
+  }, [measure.measureMode, measure.draggingIdx, draggingSplit, hoveredSplit, isPanning]);
 
   // Wheel zoom (center-anchored)
   useEffect(() => {
@@ -159,12 +244,19 @@ export function ElevationViewer({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Mouse handlers — restructured for hit-testing + drag
+  // Mouse handlers — measure mode > split hit-testing > pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    // Measure mode has highest priority
+    if (measure.measureMode) {
+      if (measure.handleDimMouseDown(sx, sy)) return;
+      measure.handleMouseDown(sx, sy);
+      return;
+    }
 
     // Hit-test dividers first (only when interactive)
     if (onSplitSelect) {
@@ -187,13 +279,22 @@ export function ElevationViewer({
     // Otherwise start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [splitsWithBounds, toX, toY, onSplitSelect]);
+  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, onSplitSelect]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    // Measure mode
+    if (measure.measureMode) {
+      measure.handleMouseMove(sx, sy);
+      if (measure.draggingIdx !== null) {
+        measure.handleDimMouseMove(sx, sy);
+      }
+      return;
+    }
 
     if (draggingSplit) {
       // Compute new position from mouse
@@ -226,15 +327,18 @@ export function ElevationViewer({
         setHoveredSplit(null);
       }
     }
-  }, [draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, onSplitSelect, hoveredSplit]);
+  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, onSplitSelect, hoveredSplit]);
 
   const handleMouseUp = useCallback(() => {
+    if (measure.draggingIdx !== null) {
+      measure.handleDimMouseUp();
+    }
     if (draggingSplit) {
       onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
       setDraggingSplit(null);
     }
     setIsPanning(false);
-  }, [draggingSplit, onSplitDragEnd]);
+  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, onSplitDragEnd]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -300,20 +404,6 @@ export function ElevationViewer({
     setIsPanning(false);
     lastPinchDist.current = 0;
   }, [draggingSplit, onSplitDragEnd]);
-
-  // Cursor
-  const cursor = useMemo(() => {
-    if (draggingSplit) {
-      return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
-    }
-    if (hoveredSplit) {
-      return hoveredSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
-    }
-    if (isPanning) return 'grabbing';
-    return 'grab';
-  }, [draggingSplit, hoveredSplit, isPanning]);
-
-  const fmtDim = useCallback((mm: number) => formatUnit(mm, units), [units]);
 
   // DXF export
   const handleExportDxf = useCallback(() => {
@@ -595,11 +685,79 @@ export function ElevationViewer({
         ctx.moveTo(sx, sy - ch2); ctx.lineTo(sx, sy + ch2);
         ctx.stroke();
       }
+
+      // Handle dimension annotations
+      if (handleConfig) {
+        const handleHoles = holes.filter(h => h.holeType === 'handle');
+        const dimColor = '#2255aa';
+
+        // Separation dimension between handle hole pair
+        if (handleHoles.length === 2) {
+          const h0 = handleHoles[0], h1 = handleHoles[1];
+          // Model coords: mx = Mozaik Y (width), my = Mozaik X (height)
+          drawLinearDim(ctx, h0.Y, h0.X, h1.Y, h1.X,
+            fmtDim(Math.hypot(h1.X - h0.X, h1.Y - h0.Y)),
+            20, 'left', toX, toY, dimColor);
+        }
+
+        // Elevation dimension — pick first handle hole as reference
+        if (handleHoles.length > 0) {
+          const h = handleHoles[0];
+          const handleMidX = handleHoles.length === 2
+            ? (handleHoles[0].X + handleHoles[1].X) / 2
+            : h.X;
+          const dp = handleConfig.doorPlacement;
+          if (dp === 'top' || dp === 'center-top') {
+            // Elevation from top of door
+            drawLinearDim(ctx, h.Y, handleMidX, h.Y, doorH,
+              fmtDim(doorH - handleMidX), 40, 'left', toX, toY, dimColor);
+          } else if (dp === 'bottom' || dp === 'custom') {
+            // Elevation from bottom of door
+            drawLinearDim(ctx, h.Y, 0, h.Y, handleMidX,
+              fmtDim(handleMidX), 40, 'left', toX, toY, dimColor);
+          }
+        }
+      }
+    }
+
+    // --- Measure tool overlays ---
+    // Completed measurements
+    if (showUserDimensions) {
+      for (const m of measure.measurements) {
+        drawGeneralDim(ctx, toX(m.ax), toY(m.ay), toX(m.bx), toY(m.by), m.label, m.perpOffset, '#0088cc');
+      }
+    }
+
+    // Dimension preview during placing-dim drag
+    if (measure.measureMode && measure.dimPreview) {
+      const dp = measure.dimPreview;
+      drawGeneralDim(ctx, toX(dp.ax), toY(dp.ay), toX(dp.bx), toY(dp.by), dp.label, dp.perpOffset, 'rgba(0, 136, 204, 0.6)');
+    }
+
+    // Snap indicator
+    if (measure.measureMode && measure.snap && measure.phase !== 'placing-dim') {
+      drawSnapIndicator(ctx, toX(measure.snap.x), toY(measure.snap.y), measure.snap.label);
+    }
+    // Preview line from point A to cursor (during placing-b)
+    if (measure.measureMode && measure.phase === 'placing-b' && measure.pointA && measure.snap) {
+      const sax = toX(measure.pointA.x), say = toY(measure.pointA.y);
+      const sbx = toX(measure.snap.x), sby = toY(measure.snap.y);
+      drawMeasurePreview(ctx, sax, say, sbx, sby, sbx, sby);
+    }
+    // Point A marker
+    if (measure.measureMode && measure.pointA) {
+      ctx.save();
+      ctx.fillStyle = '#00aaff';
+      ctx.beginPath();
+      ctx.arc(toX(measure.pointA.x), toY(measure.pointA.y), 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
   }, [cw, ch, toX, toY, scale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      panelTree, rootBounds, showDimensions, showHatching, showHardware, holes, fmtDim,
-      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds]);
+      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, fmtDim,
+      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds,
+      measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
 
@@ -646,6 +804,10 @@ export function ElevationViewer({
             <input type="checkbox" checked={showHardware} onChange={(e) => setShowHardware(e.target.checked)} />
             Hardware ({holes.length})
           </label>
+          <label style={sidebarStyles.checkLabel}>
+            <input type="checkbox" checked={showUserDimensions} onChange={(e) => setShowUserDimensions(e.target.checked)} />
+            User Dimensions
+          </label>
         </div>
 
         <button style={sidebarStyles.exportBtn} onClick={handleExportDxf}>
@@ -668,6 +830,34 @@ export function ElevationViewer({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         />
+        {/* Measure toolbar */}
+        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
+          <button
+            onClick={measure.toggleMeasure}
+            style={{
+              ...measureBtnStyle,
+              background: measure.measureMode ? '#0088cc' : '#fff',
+              color: measure.measureMode ? '#fff' : '#333',
+              borderColor: measure.measureMode ? '#0077b3' : '#999',
+            }}
+            title={measure.measureMode ? 'Exit Measure Mode (Esc)' : 'Measure Tool'}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="1" y1="13" x2="13" y2="1" />
+              <line x1="1" y1="13" x2="1" y2="9" />
+              <line x1="1" y1="13" x2="5" y2="13" />
+              <line x1="13" y1="1" x2="13" y2="5" />
+              <line x1="13" y1="1" x2="9" y2="1" />
+            </svg>
+          </button>
+          {measure.measurements.length > 0 && (
+            <button
+              onClick={measure.clearMeasurements}
+              style={measureBtnStyle}
+              title="Clear Measurements"
+            >Clear</button>
+          )}
+        </div>
         {isZoomed && (
           <button
             style={resetBtnStyle}
@@ -832,6 +1022,19 @@ const sidebarStyles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
   },
+};
+
+const measureBtnStyle: React.CSSProperties = {
+  padding: '4px 8px',
+  borderRadius: 4,
+  border: '1px solid #999',
+  background: '#fff',
+  color: '#333',
+  fontSize: '11px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
 };
 
 const resetBtnStyle: React.CSSProperties = {

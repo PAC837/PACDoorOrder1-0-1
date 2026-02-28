@@ -90,6 +90,7 @@ export interface DoorGraphData {
     operationId: number;
     toolGroupId: number;
     toolGroupName: string;
+    alignment: number;
     depth: number;
     flipSideOp: boolean;
     toolCount: number;
@@ -187,7 +188,7 @@ export type BackPocketMode = 'all' | 'selected' | 'full';
 
 export type HingeSide = 'left' | 'right' | 'top' | 'bottom';
 export type HandlePlacement = 'center' | 'top-rail' | 'two-equidistant';
-export type DoorHandlePlacement = 'top' | 'middle' | 'bottom';
+export type DoorHandlePlacement = 'top' | 'center-top' | 'middle' | 'bottom' | 'custom';
 export type HandleElevationRef = 'from-top' | 'from-bottom';
 
 /** A single bore hole operation (hinge cup, mounting hole, or handle hole). */
@@ -198,6 +199,7 @@ export interface HoleData {
   Depth: number;       // mm
   FlipSideOp: boolean; // true = drilled from back face
   holeType: 'hinge-cup' | 'hinge-mount' | 'handle';
+  depthEq?: string;    // "PartTH" for cut-through handles, empty otherwise
 }
 
 export interface HingeConfig {
@@ -221,6 +223,7 @@ export interface HandleConfig {
   enabled: boolean;
   holeDia: number;         // default 5mm
   holeDepth: number;       // default 19mm
+  cutThrough: boolean;     // when true, depth = material thickness (exports Depth_Eq="PartTH")
   holeSeparation: number;  // default 101.6mm (4"); 0 = knob (single hole)
   insetFromEdge: number;   // default 28.575mm
   elevation: number;       // mm from reference edge
@@ -252,6 +255,7 @@ export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
   enabled: true,
   holeDia: 5,
   holeDepth: 19,
+  cutThrough: false,
   holeSeparation: 101.6,   // 4"
   insetFromEdge: 28.575,
   elevation: 114.3,        // ~4.5" from top

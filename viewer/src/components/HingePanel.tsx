@@ -6,6 +6,7 @@ interface HingePanelProps {
   setHingeConfig: React.Dispatch<React.SetStateAction<HingeConfig>>;
   showAdvanced: boolean;
   setShowAdvanced: React.Dispatch<React.SetStateAction<boolean>>;
+  thickness: number;
   toDisplay: (mm: number) => number;
   fromDisplay: (val: number) => number;
   inputStep: number;
@@ -15,6 +16,7 @@ interface HingePanelProps {
 export function HingePanel({
   hingeConfig, setHingeConfig,
   showAdvanced, setShowAdvanced,
+  thickness,
   toDisplay, fromDisplay, inputStep,
   styles,
 }: HingePanelProps) {
@@ -82,7 +84,7 @@ export function HingePanel({
           <div style={styles.selector}>
             <label style={styles.label}>Cup Depth:</label>
             <CommitNumberInput value={toDisplay(hingeConfig.cupDepth)} step={inputStep}
-              onCommit={(v) => setHingeConfig(prev => ({ ...prev, cupDepth: fromDisplay(v) }))}
+              onCommit={(v) => setHingeConfig(prev => ({ ...prev, cupDepth: Math.min(fromDisplay(v), thickness) }))}
               style={styles.numberInput} />
           </div>
           <div style={styles.selector}>
@@ -100,7 +102,7 @@ export function HingePanel({
           <div style={styles.selector}>
             <label style={styles.label}>Mount Depth:</label>
             <CommitNumberInput value={toDisplay(hingeConfig.mountDepth)} step={inputStep}
-              onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountDepth: fromDisplay(v) }))}
+              onCommit={(v) => setHingeConfig(prev => ({ ...prev, mountDepth: Math.min(fromDisplay(v), thickness) }))}
               style={styles.numberInput} />
           </div>
           <div style={styles.selector}>

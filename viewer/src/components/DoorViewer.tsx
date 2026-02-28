@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
 import { MATERIAL_THICKNESS } from '../types.js';
+
 import { CNCDoorSlab } from './CNCDoorSlab.js';
 import { toolPathToRect } from '../utils/geometry.js';
 import type { PanelTree, PanelBounds } from '../utils/panelTree.js';
@@ -21,9 +22,10 @@ interface DoorViewerProps {
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   panelTree?: PanelTree;
+  thickness?: number;
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp }: DoorViewerProps) {
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
@@ -39,7 +41,7 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
     (op) => operationVisibility[op.ID] === true
   );
 
-  const thickness = MATERIAL_THICKNESS;
+  const thickness = thicknessProp ?? MATERIAL_THICKNESS;
   const doorW = door.DefaultW;
   const doorH = door.DefaultH;
 

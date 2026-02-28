@@ -9,6 +9,7 @@ interface HandlePanelProps {
   doorPartType: DoorPartType;
   savedSep: number;
   setSavedSep: React.Dispatch<React.SetStateAction<number>>;
+  thickness: number;
   toDisplay: (mm: number) => number;
   fromDisplay: (val: number) => number;
   inputStep: number;
@@ -19,6 +20,7 @@ export function HandlePanel({
   handleConfig, setHandleConfig,
   showAdvanced, setShowAdvanced,
   doorPartType, savedSep, setSavedSep,
+  thickness,
   toDisplay, fromDisplay, inputStep,
   styles,
 }: HandlePanelProps) {
@@ -69,10 +71,12 @@ export function HandlePanel({
             <label style={styles.label}>Position:</label>
             <select value={handleConfig.doorPlacement}
               onChange={(e) => setHandleConfig(prev => ({ ...prev, doorPlacement: e.target.value as DoorHandlePlacement }))}
-              style={{ ...styles.select, flex: 'none', width: 100 }}>
+              style={{ ...styles.select, flex: 'none', width: 110 }}>
               <option value="top">Top</option>
+              <option value="center-top">Center Top</option>
               <option value="middle">Middle</option>
               <option value="bottom">Bottom</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
           {handleConfig.doorPlacement !== 'middle' && (
@@ -120,10 +124,22 @@ export function HandlePanel({
               style={styles.numberInput} />
           </div>
           <div style={styles.selector}>
+            <label style={styles.label}>Cut Through:</label>
+            <input type="checkbox" checked={handleConfig.cutThrough}
+              onChange={(e) => setHandleConfig(prev => ({
+                ...prev,
+                cutThrough: e.target.checked,
+                ...(e.target.checked ? { holeDepth: thickness } : {}),
+              }))} />
+          </div>
+          <div style={styles.selector}>
             <label style={styles.label}>Hole Depth:</label>
-            <CommitNumberInput value={toDisplay(handleConfig.holeDepth)} step={inputStep}
-              onCommit={(v) => setHandleConfig(prev => ({ ...prev, holeDepth: fromDisplay(v) }))}
-              style={styles.numberInput} />
+            <CommitNumberInput
+              value={toDisplay(handleConfig.cutThrough ? thickness : handleConfig.holeDepth)}
+              step={inputStep}
+              disabled={handleConfig.cutThrough}
+              onCommit={(v) => setHandleConfig(prev => ({ ...prev, holeDepth: Math.min(fromDisplay(v), thickness) }))}
+              style={{ ...styles.numberInput, ...(handleConfig.cutThrough ? { opacity: 0.5 } : {}) }} />
           </div>
         </>)}
       </>)}

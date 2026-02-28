@@ -173,7 +173,8 @@ export function buildGenericDoor(
     HasRightStile: true,
     TopRailW: topRailW,
     BottomRailW: bottomRailW,
-    LeftRightStileW: leftStileW,
+    // Mozaik has a single LeftRightStileW field; use average when L/R differ
+    LeftRightStileW: (leftStileW + rightStileW) / 2,
     CenterStileW: firstVsplit?.width ?? 0,
     CenterRailW: firstHsplit?.width ?? 0,
     PanelRecess: frontDepth,
@@ -248,6 +249,7 @@ function buildGraphOperation(
     operationId,
     toolGroupId: group.ToolGroupID,
     toolGroupName: group.Name,
+    alignment: group.Alignment,
     depth,
     flipSideOp,
     toolCount: tools.length,

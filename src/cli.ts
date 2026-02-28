@@ -136,6 +136,7 @@ function main() {
       operationId: op.operation.ID,
       toolGroupId: op.operation.ToolGroupID,
       toolGroupName: op.toolGroup.group.Name,
+      alignment: op.toolGroup.group.Alignment,
       depth: op.operation.Depth,
       flipSideOp: op.operation.FlipSideOp,
       toolCount: op.toolGroup.tools.length,

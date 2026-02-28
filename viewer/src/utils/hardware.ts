@@ -35,9 +35,12 @@ export function computeHingeHoles(
   config: HingeConfig,
   doorW: number,
   doorH: number,
+  thickness: number,
 ): HoleData[] {
   if (!config.enabled || config.count <= 0) return [];
 
+  const clampedCupDepth = Math.min(config.cupDepth, thickness);
+  const clampedMountDepth = Math.min(config.mountDepth, thickness);
   const isVertical = config.side === 'left' || config.side === 'right';
   const axisLength = isVertical ? doorH : doorW;
 
@@ -74,7 +77,7 @@ export function computeHingeHoles(
         X: center,
         Y: cupCrossPos,
         Diameter: config.cupDia,
-        Depth: config.cupDepth,
+        Depth: clampedCupDepth,
         FlipSideOp: true, // cups always on back
         holeType: 'hinge-cup',
       });
@@ -83,7 +86,7 @@ export function computeHingeHoles(
         X: center - halfSep,
         Y: mountCrossPos,
         Diameter: config.mountDia,
-        Depth: config.mountDepth,
+        Depth: clampedMountDepth,
         FlipSideOp: !config.mountOnFront,
         holeType: 'hinge-mount',
       });
@@ -92,7 +95,7 @@ export function computeHingeHoles(
         X: center + halfSep,
         Y: mountCrossPos,
         Diameter: config.mountDia,
-        Depth: config.mountDepth,
+        Depth: clampedMountDepth,
         FlipSideOp: !config.mountOnFront,
         holeType: 'hinge-mount',
       });
@@ -102,7 +105,7 @@ export function computeHingeHoles(
         X: cupCrossPos,
         Y: center,
         Diameter: config.cupDia,
-        Depth: config.cupDepth,
+        Depth: clampedCupDepth,
         FlipSideOp: true,
         holeType: 'hinge-cup',
       });
@@ -110,7 +113,7 @@ export function computeHingeHoles(
         X: mountCrossPos,
         Y: center - halfSep,
         Diameter: config.mountDia,
-        Depth: config.mountDepth,
+        Depth: clampedMountDepth,
         FlipSideOp: !config.mountOnFront,
         holeType: 'hinge-mount',
       });
@@ -118,7 +121,7 @@ export function computeHingeHoles(
         X: mountCrossPos,
         Y: center + halfSep,
         Diameter: config.mountDia,
-        Depth: config.mountDepth,
+        Depth: clampedMountDepth,
         FlipSideOp: !config.mountOnFront,
         holeType: 'hinge-mount',
       });
@@ -140,9 +143,14 @@ export function computeHandleHoles(
   doorPartType: DoorPartType,
   doorW: number,
   doorH: number,
+  thickness: number,
 ): HoleData[] {
   if (!config.enabled) return [];
 
+  const effectiveDepth = config.cutThrough
+    ? thickness
+    : Math.min(config.holeDepth, thickness);
+  const depthEq = config.cutThrough ? 'PartTH' : '';
   const isKnob = config.holeSeparation === 0;
 
   // Determine handle center positions (may be multiple for two-equidistant)
@@ -191,6 +199,11 @@ export function computeHandleHoles(
         handleX = doorH / 2;
       } else if (config.doorPlacement === 'bottom') {
         handleX = config.elevation; // from bottom edge
+      } else if (config.doorPlacement === 'custom') {
+        handleX = config.elevation; // custom distance from bottom
+      } else if (config.doorPlacement === 'center-top') {
+        handleX = doorH - config.elevation; // from top edge
+        handleY = doorW / 2; // centered width-wise
       } else {
         // 'top' — from top edge (default)
         handleX = doorH - config.elevation;
@@ -211,9 +224,10 @@ export function computeHandleHoles(
         X: center.x,
         Y: center.y,
         Diameter: config.holeDia,
-        Depth: config.holeDepth,
+        Depth: effectiveDepth,
         FlipSideOp: !config.onFront,
         holeType: 'handle',
+        depthEq,
       });
     } else {
       // Handle with two holes — separated along the height axis (X) for doors,
@@ -290,10 +304,11 @@ export function computeAllHoles(
   doorPartType: DoorPartType,
   doorW: number,
   doorH: number,
+  thickness: number,
 ): HoleData[] {
   // Only doors get hinges
   const hingeHoles = doorPartType === 'door'
-    ? computeHingeHoles(hingeConfig, doorW, doorH)
+    ? computeHingeHoles(hingeConfig, doorW, doorH, thickness)
     : [];
 
   const handleHoles = computeHandleHoles(
@@ -302,6 +317,7 @@ export function computeAllHoles(
     doorPartType,
     doorW,
     doorH,
+    thickness,
   );
 
   return [...hingeHoles, ...handleHoles];
@@ -448,7 +464,7 @@ export function validateHardware(
     }
 
     // Compute actual hole positions and check bounds
-    const handleHoles = computeHandleHoles(handleConfig, hingeConfig.side, doorPartType, doorW, doorH);
+    const handleHoles = computeHandleHoles(handleConfig, hingeConfig.side, doorPartType, doorW, doorH, thickness);
     const holeR = handleConfig.holeDia / 2;
     for (const hole of handleHoles) {
       if (hole.X - holeR < 0 || hole.X + holeR > doorH) {
