@@ -79,7 +79,7 @@ export function HandlePanel({
               <option value="custom">Custom</option>
             </select>
           </div>
-          {handleConfig.doorPlacement === 'custom' && (
+          {(handleConfig.doorPlacement === 'top' || handleConfig.doorPlacement === 'bottom' || handleConfig.doorPlacement === 'custom') && (
             <div style={styles.selector}>
               <label style={styles.label}>Elevation:</label>
               <CommitNumberInput value={toDisplay(handleConfig.elevation)} step={inputStep}

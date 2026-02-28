@@ -1,90 +1,43 @@
 [
   {
-    "Name": "Solid Surface Cutout (1/2\" Upshear)",
+    "Name": "VTX Raised Cove (w 1/4\" Bead)",
     "Type": 0,
-    "ToolGroupID": 4,
+    "ToolGroupID": 2,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 182,
-        "Depth": 6.35,
-        "Offset": 6.35,
-        "ThruCut": true,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "Buildup Cutout (3/8\" Compression)",
-    "Type": 0,
-    "ToolGroupID": 5,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 23.7744,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 1,
-        "Depth": 12.7,
-        "Offset": 4.7625,
-        "ThruCut": true,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S006 Skinny Bead125",
-    "Type": 0,
-    "ToolGroupID": 6,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 183,
-        "Depth": 3.81,
-        "Offset": -11.1125,
+        "ToolID": 41,
+        "Depth": 7.9375,
+        "Offset": 11.811,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 184,
-        "Depth": 3.302,
-        "Offset": 6.35127,
+        "ToolID": 48,
+        "Depth": 7.9375,
+        "Offset": 5.9182,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 185,
-        "Depth": 3.302,
-        "Offset": 1.1811,
+        "ToolID": 49,
+        "Depth": 1.5875,
+        "Offset": -5.588,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 186,
-        "Depth": 3.302,
-        "Offset": -0.2032,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 186,
-        "Depth": 3.302,
-        "Offset": -6.5278,
+        "ToolID": 49,
+        "Depth": 7.9375,
+        "Offset": 0.762,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -93,54 +46,18 @@
     ]
   },
   {
-    "Name": "_S007 Skinny Bead187",
-    "Type": 0,
+    "Name": "VTX Ogee Edge Profile",
+    "Type": 1,
     "ToolGroupID": 7,
-    "Alignment": 1,
+    "Alignment": 0,
     "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
+    "PartSpacing": 14.2875,
     "ToolEntry": [
       {
-        "ToolID": 187,
-        "Depth": 4.8768,
-        "Offset": 5.97027,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 4.8768,
-        "Offset": -11.1125,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 4.8768,
-        "Offset": 0.8001,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.8768,
-        "Offset": -0.381,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.8768,
-        "Offset": -9.905999,
-        "ThruCut": false,
+        "ToolID": 59,
+        "Depth": 19.05,
+        "Offset": 10.1854,
+        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
@@ -148,7 +65,7 @@
     ]
   },
   {
-    "Name": "2PC Beaded Door 125R",
+    "Name": "VTX Raised Cove (w 3/8\" Bead)",
     "Type": 0,
     "ToolGroupID": 8,
     "Alignment": 1,
@@ -156,73 +73,37 @@
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 1,
-        "Depth": 17.78,
-        "Offset": -10.8585,
+        "ToolID": 41,
+        "Depth": 11.1125,
+        "Offset": 11.1506,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 1,
-        "Depth": 15.875,
-        "Offset": 5.1435,
+        "ToolID": 45,
+        "Depth": 11.1125,
+        "Offset": 5.9182,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 26.90266,
+        "ToolID": 46,
+        "Depth": 11.1125,
+        "Offset": 0.762,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 37.15,
+        "ToolID": 46,
+        "Depth": 1.5875,
+        "Offset": -8.763,
         "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 185,
-        "Depth": 15.875,
-        "Offset": 1.5875,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 186,
-        "Depth": 3.302,
-        "Offset": 0.1778,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 186,
-        "Depth": 3.302,
-        "Offset": -6.1722,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 1,
-        "Depth": 16.80425,
-        "Offset": 61.9633,
-        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
@@ -230,7 +111,7 @@
     ]
   },
   {
-    "Name": "_S081 FRANKLIN DS500 FROST LABS",
+    "Name": "Shaker (5/16\" Deep Pocket)",
     "Type": 0,
     "ToolGroupID": 9,
     "Alignment": 1,
@@ -238,36 +119,9 @@
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 15,
-        "Depth": 7.9502,
-        "Offset": 6.730999,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 1.6002,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 15,
-        "Depth": 1.6002,
-        "Offset": -22.225,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 192,
-        "Depth": 6.35,
-        "Offset": -4.7752,
+        "ToolID": 14,
+        "Depth": 7.8994,
+        "Offset": 6.35,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -275,53 +129,72 @@
       },
       {
         "ToolID": 61,
-        "Depth": 7.9502,
-        "Offset": 1.6002,
+        "Depth": 7.9,
+        "Offset": 1.5875,
         "ThruCut": false,
         "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 61,
-        "Depth": 1.6002,
-        "Offset": -27.3812,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 7.9502,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 1.6002,
-        "Offset": -28.9814,
-        "ThruCut": false,
-        "SharpCorners": true,
         "NoRamp": false,
         "FlipSide": false
       }
     ]
   },
   {
-    "Name": "1/8\" Cut Through (Inside of Line)",
+    "Name": "RoyceAyr Raised Panel",
     "Type": 0,
     "ToolGroupID": 10,
-    "Alignment": 0,
+    "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
-    "ToolEntry": []
+    "ToolEntry": [
+      {
+        "ToolID": 15,
+        "Depth": 9.778999,
+        "Offset": 9.525,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 120,
+        "Depth": 9.778999,
+        "Offset": 17.4625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 112,
+        "Depth": 7.62,
+        "Offset": -1.524,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 122,
+        "Depth": 9.778999,
+        "Offset": 1.778,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 122,
+        "Depth": 1.5875,
+        "Offset": -9.651999,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
   },
   {
-    "Name": "2PC Beaded Door 187R",
+    "Name": "Shaker (1/4\" Deep Pocket)Tarvin",
     "Type": 0,
     "ToolGroupID": 12,
     "Alignment": 1,
@@ -329,824 +202,8 @@
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 1,
-        "Depth": 17.78,
-        "Offset": -13.8557,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 1,
-        "Depth": 15.875,
-        "Offset": 4.9657,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 26.90266,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 37.15,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 185,
-        "Depth": 15.875,
-        "Offset": 1.4097,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.826,
-        "Offset": 0.1778,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.826,
-        "Offset": -9.347199,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 1,
-        "Depth": 16.80425,
-        "Offset": 61.9633,
-        "ThruCut": true,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "2PC Beaded Door Shaker",
-    "Type": 0,
-    "ToolGroupID": 13,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 1,
-        "Depth": 15.875,
-        "Offset": 5.1435,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 26.90266,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 195,
-        "Depth": 15.875,
-        "Offset": 37.15,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 185,
-        "Depth": 15.875,
-        "Offset": 1.5875,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 1,
-        "Depth": 16.80425,
-        "Offset": 61.9633,
-        "ThruCut": true,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S162 Florence DS500 (PANEL)",
-    "Type": 0,
-    "ToolGroupID": 14,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 195,
-        "Depth": 4.9022,
-        "Offset": -29.08749,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 187,
-        "Depth": 7.9375,
-        "Offset": 26.162,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 187,
-        "Depth": 12.7,
-        "Offset": 13.7668,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 12.7,
-        "Offset": 19.9644,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 197,
-        "Depth": 12.7,
-        "Offset": 7.1755,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 12.7,
-        "Offset": 8.763,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 4.9022,
-        "Offset": 1.5875,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.9022,
-        "Offset": -9.3726,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.9022,
-        "Offset": 0.1778,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 198,
-        "Depth": 7.9375,
-        "Offset": 32.385,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_SR147 HDF DS4375 (PANEL) (Adam Frost Labs)",
-    "Type": 0,
-    "ToolGroupID": 53,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 25.4,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 202,
-        "Depth": 3.175,
-        "Offset": -3.4544,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 202,
-        "Depth": 12.7,
-        "Offset": 5.5626,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 203,
-        "Depth": 9.525,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 204,
-        "Depth": 3.175,
-        "Offset": -7.7597,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 204,
-        "Depth": 12.7,
-        "Offset": 1.5875,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S004 Slim Shaker",
-    "Type": 0,
-    "ToolGroupID": 56,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 3.175,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 61,
-        "Depth": 3.175,
-        "Offset": 1.2065,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.175,
-        "Offset": -0.381,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S004BR Slim Shaker",
-    "Type": 0,
-    "ToolGroupID": 57,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 3.175,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 61,
-        "Depth": 3.175,
-        "Offset": 1.2065,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.175,
-        "Offset": -0.381,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 39,
-        "Depth": 2.3622,
-        "Offset": 31.75,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": true
-      }
-    ]
-  },
-  {
-    "Name": "_S000 Back Pocket (1/8\")",
-    "Type": 0,
-    "ToolGroupID": 58,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 3.175,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 61,
-        "Depth": 3.175,
-        "Offset": 1.2065,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S001 Shaker",
-    "Type": 0,
-    "ToolGroupID": 59,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
+        "ToolID": 14,
         "Depth": 6.35,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 61,
-        "Depth": 6.35,
-        "Offset": 1.2065,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S000 V-Joint (60 deg - 1/16 Deep)",
-    "Type": 0,
-    "ToolGroupID": 60,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 39,
-        "Depth": 0.7873999,
-        "Offset": 0.381,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S010 RP Step Bead Pro",
-    "Type": 0,
-    "ToolGroupID": 61,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 205,
-        "Depth": 7.9375,
-        "Offset": 12.6238,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 1.5875,
-        "Offset": 1.013812,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.9375,
-        "Offset": 8.086406,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 196,
-        "Depth": 7.9375,
-        "Offset": 19.05,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 7.9375,
-        "Offset": 7.112,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 1.5875,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S010 RP Step Bead DS500 Starter",
-    "Type": 0,
-    "ToolGroupID": 62,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 187,
-        "Depth": 7.9375,
-        "Offset": 12.6238,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 196,
-        "Depth": 7.9375,
-        "Offset": 19.05,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.9375,
-        "Offset": 8.086404,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 185,
-        "Depth": 1.5875,
-        "Offset": 1.01382,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 7.9375,
-        "Offset": 7.112,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 1.5875,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S010 RP Step Bead DS375 Starter",
-    "Type": 0,
-    "ToolGroupID": 63,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 207,
-        "Depth": 7.9375,
-        "Offset": 11.2903,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 1.5875,
-        "Offset": 0.9369459,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.9375,
-        "Offset": 8.009534,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 196,
-        "Depth": 7.9375,
-        "Offset": 16.51,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 7.9375,
-        "Offset": 7.112,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 1.5875,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S010 RP Step Bead DS4375 Starter",
-    "Type": 0,
-    "ToolGroupID": 64,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 208,
-        "Depth": 7.9375,
-        "Offset": 12.6238,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 1.5875,
-        "Offset": 0.4572,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.9375,
-        "Offset": 8.152534,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 196,
-        "Depth": 7.9375,
-        "Offset": 18.796,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 7.9375,
-        "Offset": 7.112,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 206,
-        "Depth": 1.5875,
-        "Offset": -0.381,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S131 Madrid (EDGE)",
-    "Type": 1,
-    "ToolGroupID": 65,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 195,
-        "Depth": 4.8768,
-        "Offset": 10.625,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S131 Madrid DS375 (PANEL)",
-    "Type": 0,
-    "ToolGroupID": 66,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 195,
-        "Depth": 4.8768,
-        "Offset": -32.95142,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 207,
-        "Depth": 4.7625,
-        "Offset": 0.5715,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 207,
-        "Depth": 7.9502,
-        "Offset": 4.7752,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 197,
-        "Depth": 7.9502,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 4.7625,
-        "Offset": -2.6162,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.9502,
-        "Offset": 1.5875,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.8768,
-        "Offset": -13.3477,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 189,
-        "Depth": 4.8768,
-        "Offset": -3.8227,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S300 GoodYear (PANEL)",
-    "Type": 0,
-    "ToolGroupID": 67,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 195,
-        "Depth": 4.191,
-        "Offset": -40.88892,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 207,
-        "Depth": 7.62,
         "Offset": 4.7625,
         "ThruCut": false,
         "SharpCorners": false,
@@ -1154,309 +211,65 @@
         "FlipSide": false
       },
       {
-        "ToolID": 209,
-        "Depth": 4.191,
-        "Offset": -7.26321,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 209,
-        "Depth": 4.191,
-        "Offset": -21.8694,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.62,
-        "Offset": 1.658047,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 207,
-        "Depth": 5.08,
-        "Offset": -4.6482,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 210,
-        "Depth": 7.62,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 5.08,
-        "Offset": -8.0772,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 6.263183,
-        "Offset": -6.105068,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 6.562644,
-        "Offset": -5.660873,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 6.758684,
-        "Offset": -4.909665,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 6.913196,
-        "Offset": -4.199617,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.04068,
-        "Offset": -3.639505,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.209717,
-        "Offset": -2.763391,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.354108,
-        "Offset": -1.812813,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.450371,
-        "Offset": -1.102884,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.546632,
-        "Offset": -0.4531207,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 7.606795,
-        "Offset": 0.08834934,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 0.6112089,
-        "Offset": -11.90054,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 0.9947944,
-        "Offset": -11.16047,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 1.482921,
-        "Offset": -10.42042,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 2.059477,
-        "Offset": -9.79582,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 2.620018,
-        "Offset": -9.267313,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 3.292669,
-        "Offset": -8.818877,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 3.901258,
-        "Offset": -8.482553,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 200,
-        "Depth": 4.285628,
-        "Offset": -8.258339,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S300 GoodYear (EDGE)",
-    "Type": 1,
-    "ToolGroupID": 68,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 195,
-        "Depth": 4.191,
-        "Offset": 10.625,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S071 Ogee DS375 FROST LABS",
-    "Type": 0,
-    "ToolGroupID": 69,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 207,
-        "Depth": 4.572,
-        "Offset": 5.464272,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 211,
-        "Depth": 7.1374,
-        "Offset": 5.842,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 188,
-        "Depth": 7.1374,
-        "Offset": 1.4986,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 193,
-        "Depth": 1.40208,
-        "Offset": -10.033,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 193,
-        "Depth": 7.1374,
-        "Offset": -0.127,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S008 Inside Bead125",
-    "Type": 0,
-    "ToolGroupID": 70,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
+        "ToolID": 61,
         "Depth": 6.35,
-        "Offset": 6.34492,
+        "Offset": 1.2065,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "VTX Flat Panel (w 1/4\" Bead)",
+    "Type": 0,
+    "ToolGroupID": 14,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 48,
+        "Depth": 7.9375,
+        "Offset": 5.9182,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 7.9375,
+        "Offset": 0.762,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 1.5875,
+        "Offset": -5.588,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Flat Panel w 60° Sharp Corner (5/16 Pocket)",
+    "Type": 0,
+    "ToolGroupID": 15,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 2,
+        "Depth": 7.9375,
+        "Offset": 6.35,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -1464,8 +277,45 @@
       },
       {
         "ToolID": 61,
-        "Depth": 6.35,
-        "Offset": 1.1811,
+        "Depth": 7.9375,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 39,
+        "Depth": 7.9375,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Flat Panel w 45 Sharp Corner (5/16\" Deep Pocket)",
+    "Type": 0,
+    "ToolGroupID": 16,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 40,
+        "Depth": 7.9375,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 2,
+        "Depth": 7.9375,
+        "Offset": 6.35,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -1473,82 +323,55 @@
       },
       {
         "ToolID": 61,
-        "Depth": 3.302,
-        "Offset": -7.8613,
+        "Depth": 7.9375,
+        "Offset": 1.5875,
         "ThruCut": false,
         "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -0.2032,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -6.5278,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.302,
-        "Offset": -9.4488,
-        "ThruCut": false,
-        "SharpCorners": true,
         "NoRamp": false,
         "FlipSide": false
       }
     ]
   },
   {
-    "Name": "FROSTCNC 1/8 Cut Through",
+    "Name": "GLCT Cove Raised Panel",
     "Type": 0,
-    "ToolGroupID": 71,
+    "ToolGroupID": 17,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
+        "ToolID": 82,
         "Depth": 9.525,
-        "Offset": 0,
+        "Offset": 7.9375,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 213,
-        "Depth": 14.2875,
-        "Offset": 0,
+        "ToolID": 85,
+        "Depth": 9.525,
+        "Offset": 15.875,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 213,
-        "Depth": 0,
-        "Offset": 0,
-        "ThruCut": true,
+        "ToolID": 88,
+        "Depth": 9.525,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 88,
+        "Depth": 2.032,
+        "Offset": -4.445,
+        "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
@@ -1556,81 +379,128 @@
     ]
   },
   {
-    "Name": "FROSTCNC Beaded Frame",
-    "Type": 1,
-    "ToolGroupID": 72,
+    "Name": "Flat Panel w Beaded Edge (5/16\" Deep Pocket)",
+    "Type": 0,
+    "ToolGroupID": 18,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 2,
+        "Depth": 7.9375,
+        "Offset": 6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 7.9375,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 153,
+        "Depth": 3.429,
+        "Offset": 0.635,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 153,
+        "Depth": 3.429,
+        "Offset": -6.604,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "VTX Glass Door (w 1/4\" Bead)",
+    "Type": 0,
+    "ToolGroupID": 19,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 48,
+        "Depth": 7.9375,
+        "Offset": 5.9182,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 7.9375,
+        "Offset": 0.762,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 1.5875,
+        "Offset": -5.588,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 1,
+        "Depth": 11.1125,
+        "Offset": -3.175,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 11.1125,
+        "Offset": -6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
+  },
+  {
+    "Name": "Whiteside Raised Panel Ogee",
+    "Type": 0,
+    "ToolGroupID": 20,
     "Alignment": 0,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 212,
-        "Depth": 3.175,
-        "Offset": -9.474199,
+        "ToolID": 148,
+        "Depth": 7.9375,
+        "Offset": 22.225,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": 0,
+        "ToolID": 152,
+        "Depth": 7.9375,
+        "Offset": 33.3375,
         "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 9.525,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.175,
-        "Offset": 0.0508,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.175,
-        "Offset": -6.2992,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 215,
-        "Depth": 3.175,
-        "Offset": -9.474199,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 213,
-        "Depth": 14.2875,
-        "Offset": 0,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 213,
-        "Depth": 0,
-        "Offset": 0,
-        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
@@ -1638,154 +508,229 @@
     ]
   },
   {
-    "Name": "FROSTCNC Shaker (1/4\" Pocket) Beaded End Panel",
+    "Name": "Whiteside Raised Panel Cove",
     "Type": 0,
-    "ToolGroupID": 73,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.35,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 6.35,
-        "Offset": 1.2,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 3.175,
-        "Offset": -68.2625,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": -58.7375,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 9.525,
-        "Offset": -58.7375,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.175,
-        "Offset": -60.2742,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.175,
-        "Offset": -66.6242,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 215,
-        "Depth": 3.175,
-        "Offset": -69.85,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "FROSTCNC Shaker (1/4\" Pocket)",
-    "Type": 0,
-    "ToolGroupID": 74,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.35,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 6.35,
-        "Offset": 1.2,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "FROSTCNC Square Frame",
-    "Type": 1,
-    "ToolGroupID": 75,
+    "ToolGroupID": 21,
     "Alignment": 0,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": 0,
+        "ToolID": 147,
+        "Depth": 7.9375,
+        "Offset": 16.66875,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 212,
+        "ToolID": 150,
+        "Depth": 7.9375,
+        "Offset": 30.1625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "VTX Raised Ogee (w 1/4\" Bead)",
+    "Type": 0,
+    "ToolGroupID": 22,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 73,
+        "Depth": 7.9375,
+        "Offset": 14.2875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 48,
+        "Depth": 7.9375,
+        "Offset": 5.9182,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 7.9375,
+        "Offset": 0.762,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 49,
+        "Depth": 1.5875,
+        "Offset": -5.588,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "VTX Raised Ogee (w 3/8\" Bead)",
+    "Type": 0,
+    "ToolGroupID": 23,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 66,
+        "Depth": 11.1125,
+        "Offset": 14.2875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 45,
+        "Depth": 11.1125,
+        "Offset": 5.9182,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 46,
+        "Depth": 11.1125,
+        "Offset": 0.762,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 46,
+        "Depth": 1.5875,
+        "Offset": -8.763,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Shaker Double (5/16\" Deep Pocket)",
+    "Type": 0,
+    "ToolGroupID": 24,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 2,
+        "Depth": 3.96875,
+        "Offset": -4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 2,
+        "Depth": 7.9375,
+        "Offset": 6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 3.97002,
+        "Offset": -7.9375,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 7.9375,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "GLCT Angled Raised Panel",
+    "Type": 0,
+    "ToolGroupID": 25,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 82,
         "Depth": 9.525,
-        "Offset": 0,
+        "Offset": 7.9375,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 213,
-        "Depth": 14.2875,
-        "Offset": 0,
+        "ToolID": 86,
+        "Depth": 9.525,
+        "Offset": 15.875,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 213,
-        "Depth": 0,
-        "Offset": 0,
+        "ToolID": 88,
+        "Depth": 9.525,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 88,
+        "Depth": 2.032,
+        "Offset": -4.445,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "GLCT Ogee Edge Profile",
+    "Type": 1,
+    "ToolGroupID": 27,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 22.225,
+    "ToolEntry": [
+      {
+        "ToolID": 93,
+        "Depth": 19.05,
+        "Offset": -9.525,
         "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
@@ -1794,207 +739,89 @@
     ]
   },
   {
-    "Name": "FROSTCNC Shaker (1/4\" Pocket) Square End Panel",
-    "Type": 0,
-    "ToolGroupID": 76,
+    "Name": "Beaded Edge Profile",
+    "Type": 1,
+    "ToolGroupID": 28,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.35,
+        "ToolID": 153,
+        "Depth": 3.429,
+        "Offset": -0.635,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 212,
-        "Depth": 6.35,
-        "Offset": 1.2,
+        "ToolID": 153,
+        "Depth": 3.429,
+        "Offset": 6.604,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
-      },
+      }
+    ]
+  },
+  {
+    "Name": "Shaker Glass Door (From Back)",
+    "Type": 0,
+    "ToolGroupID": 29,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
       {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": -58.7375,
-        "ThruCut": false,
+        "ToolID": 14,
+        "Depth": 19.05,
+        "Offset": 4.7625,
+        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       },
       {
-        "ToolID": 212,
+        "ToolID": 14,
         "Depth": 9.525,
-        "Offset": -58.7375,
+        "Offset": -4.7625,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "FROST S008F Inside Bead Square End Panel",
-    "Type": 0,
-    "ToolGroupID": 77,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       },
       {
-        "ToolID": 212,
-        "Depth": 6.35,
-        "Offset": 1.1811,
-        "ThruCut": false,
+        "ToolID": 61,
+        "Depth": 19.05,
+        "Offset": 1.5875,
+        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       },
       {
-        "ToolID": 212,
-        "Depth": 3.302,
-        "Offset": -7.8613,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 4.7625,
-        "Offset": -68.2625,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
+        "ToolID": 61,
         "Depth": 9.525,
-        "Offset": -68.2625,
+        "Offset": -9.525,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -0.2032,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -6.5278,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.302,
-        "Offset": -9.4488,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       }
     ]
   },
   {
-    "Name": "FROST S008F Inside Bead",
+    "Name": "Shaker (Two-Piece)",
     "Type": 0,
-    "ToolGroupID": 78,
+    "ToolGroupID": 30,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.34492,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 6.35,
-        "Offset": 1.1811,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 212,
-        "Depth": 3.302,
-        "Offset": -7.8613,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -0.2032,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -6.5278,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.302,
-        "Offset": -9.4488,
-        "ThruCut": false,
-        "SharpCorners": true,
-        "NoRamp": false,
-        "FlipSide": false
-      }
-    ]
-  },
-  {
-    "Name": "_S001GL Shaker GLASS",
-    "Type": 0,
-    "ToolGroupID": 79,
-    "Alignment": 1,
-    "DefaultMaterialThickness": 19.05,
-    "PartSpacing": 0,
-    "ToolEntry": [
-      {
-        "ToolID": 15,
+        "ToolID": 14,
         "Depth": 12.7,
         "Offset": -3.175,
         "ThruCut": false,
@@ -2003,9 +830,18 @@
         "FlipSide": true
       },
       {
-        "ToolID": 15,
+        "ToolID": 14,
+        "Depth": 12.7,
+        "Offset": -7.6835,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 1,
         "Depth": 18.288,
-        "Offset": 6.34492,
+        "Offset": 4.7625,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -2014,7 +850,7 @@
       {
         "ToolID": 61,
         "Depth": 12.7,
-        "Offset": -8.186419,
+        "Offset": -11.2395,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -2022,7 +858,7 @@
       },
       {
         "ToolID": 61,
-        "Depth": 18.796,
+        "Depth": 19.05,
         "Offset": 1.5875,
         "ThruCut": true,
         "SharpCorners": false,
@@ -2032,16 +868,16 @@
     ]
   },
   {
-    "Name": "Custom Door Back Pocket Clean (.5\" Depth)",
+    "Name": "Shaker (1/8\" Deep Pocket)",
     "Type": 0,
-    "ToolGroupID": 80,
+    "ToolGroupID": 35,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 15,
-        "Depth": 12.7,
+        "ToolID": 2,
+        "Depth": 3.175,
         "Offset": 6.35,
         "ThruCut": false,
         "SharpCorners": false,
@@ -2050,8 +886,8 @@
       },
       {
         "ToolID": 61,
-        "Depth": 12.7,
-        "Offset": 1.3335,
+        "Depth": 3.175,
+        "Offset": 1.5875,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -2060,17 +896,91 @@
     ]
   },
   {
-    "Name": "_S001C Shaker PETAL CUTOUT",
+    "Name": "Glass Door",
     "Type": 0,
-    "ToolGroupID": 81,
+    "ToolGroupID": 38,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 213,
-        "Depth": 0,
-        "Offset": 1.2065,
+        "ToolID": 1,
+        "Depth": 12.7,
+        "Offset": 4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 1,
+        "Depth": 9.525,
+        "Offset": -4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 9.525,
+        "Offset": -8.218015,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 12.7,
+        "Offset": 2.805098,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Chamfered Edge",
+    "Type": 1,
+    "ToolGroupID": 41,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 1,
+        "Depth": 17.78,
+        "Offset": -5.08,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 40,
+        "Depth": 4.7625,
+        "Offset": -0.508,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Mid America 13011839",
+    "Type": 1,
+    "ToolGroupID": 42,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 183,
+        "Depth": 19.05,
+        "Offset": -7.9502,
         "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
@@ -2079,144 +989,774 @@
     ]
   },
   {
-    "Name": "_S008 Inside Bead125 DS375",
-    "Type": 0,
-    "ToolGroupID": 82,
+    "Name": "_3/16\" Radius Edge Profile",
+    "Type": 1,
+    "ToolGroupID": 43,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 207,
-        "Depth": 6.35,
-        "Offset": 5.55752,
+        "ToolID": 14,
+        "Depth": 17.4625,
+        "Offset": -5.0165,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 188,
-        "Depth": 6.35,
-        "Offset": 1.1811,
+        "ToolID": 182,
+        "Depth": 4.7625,
+        "Offset": -0.7873999,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 188,
-        "Depth": 3.302,
-        "Offset": -7.8613,
-        "ThruCut": false,
+        "ToolID": 14,
+        "Depth": 0,
+        "Offset": -4.7625,
+        "ThruCut": true,
         "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 193,
-        "Depth": 3.302,
-        "Offset": -0.2032,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 193,
-        "Depth": 3.302,
-        "Offset": -6.5278,
-        "ThruCut": false,
-        "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 193,
-        "Depth": 3.302,
-        "Offset": -9.4488,
-        "ThruCut": false,
-        "SharpCorners": true,
         "NoRamp": false,
         "FlipSide": false
       }
     ]
   },
   {
-    "Name": "_S008 Inside Bead125 GLASS",
+    "Name": "Tarvin Shaker Glass Door (From Back)",
     "Type": 0,
-    "ToolGroupID": 83,
+    "ToolGroupID": 44,
     "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 15,
-        "Depth": 6.35,
-        "Offset": 6.34492,
+        "ToolID": 14,
+        "Depth": 19.05,
+        "Offset": 4.7625,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 14,
+        "Depth": 9.525,
+        "Offset": -4.7625,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       },
       {
         "ToolID": 61,
-        "Depth": 6.35,
-        "Offset": 1.1811,
-        "ThruCut": false,
+        "Depth": 19.05,
+        "Offset": 1.5875,
+        "ThruCut": true,
         "SharpCorners": false,
         "NoRamp": false,
-        "FlipSide": false
+        "FlipSide": true
       },
       {
         "ToolID": 61,
-        "Depth": 3.302,
-        "Offset": -7.8613,
+        "Depth": 9.525,
+        "Offset": -9.525,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
+  },
+  {
+    "Name": "Tarvin Glass Door",
+    "Type": 0,
+    "ToolGroupID": 45,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 12.7,
+        "Offset": 4.7625,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -0.2032,
+        "ToolID": 14,
+        "Depth": 9.525,
+        "Offset": -4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 9.525,
+        "Offset": -8.218015,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 12.7,
+        "Offset": 2.805098,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
-      },
+      }
+    ]
+  },
+  {
+    "Name": "_S63 Madison RP SR2-25 DS375",
+    "Type": 0,
+    "ToolGroupID": 46,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
       {
-        "ToolID": 214,
-        "Depth": 3.302,
-        "Offset": -6.5278,
+        "ToolID": 41,
+        "Depth": 9.4615,
+        "Offset": 13.1,
         "ThruCut": false,
         "SharpCorners": false,
-        "NoRamp": false,
-        "FlipSide": false
-      },
-      {
-        "ToolID": 168,
-        "Depth": 3.302,
-        "Offset": -9.4488,
-        "ThruCut": false,
-        "SharpCorners": true,
         "NoRamp": false,
         "FlipSide": false
       },
       {
         "ToolID": 15,
         "Depth": 9.525,
-        "Offset": 0,
+        "Offset": 6.4008,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 9.6393,
+        "Offset": 1.4732,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 3.1877,
+        "Offset": -5.3594,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 188,
+        "Depth": 9.4615,
+        "Offset": 0.381,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 188,
+        "Depth": 3.1115,
+        "Offset": -6.214917,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Shaker .246 93CNR1",
+    "Type": 0,
+    "ToolGroupID": 47,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 6.2484,
+        "Offset": 4.798007,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 191,
+        "Depth": 6.2484,
+        "Offset": 0.84582,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Cutout Inside of Line (3/8\" Compression)",
+    "Type": 0,
+    "ToolGroupID": 48,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 1,
+        "Depth": 0,
+        "Offset": 4.7625,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Online Door Order Edge",
+    "Type": 1,
+    "ToolGroupID": 50,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 17.4625,
+        "Offset": -5.0165,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 182,
+        "Depth": 4.7625,
+        "Offset": -0.7873999,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 14,
+        "Depth": 0,
+        "Offset": -4.7625,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Shaker (Two-Piece) Frost",
+    "Type": 0,
+    "ToolGroupID": 51,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 12.7,
+        "Offset": -3.175,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": true
       },
       {
-        "ToolID": 203,
-        "Depth": 7.551954,
-        "Offset": -6.205575,
+        "ToolID": 14,
+        "Depth": 12.7,
+        "Offset": -7.6835,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 14,
+        "Depth": 18.288,
+        "Offset": 4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 12.7,
+        "Offset": -11.2395,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 19.05,
+        "Offset": 1.5875,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
+  },
+  {
+    "Name": "Shaker Frost",
+    "Type": 0,
+    "ToolGroupID": 52,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 193,
+        "Depth": 6.2,
+        "Offset": 5,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 191,
+        "Depth": 6.2484,
+        "Offset": 0.84582,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Frost 16 DM2 PCD 1/8 round over",
+    "Type": 1,
+    "ToolGroupID": 53,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 194,
+        "Depth": 19.05,
+        "Offset": -7.9502,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Shaker (1/4\" Deep Pocket)",
+    "Type": 0,
+    "ToolGroupID": 54,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 15,
+        "Depth": 6.35,
+        "Offset": 6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 198,
+        "Depth": 6.35,
+        "Offset": 1.2954,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 200,
+        "Depth": 0.79248,
+        "Offset": 0.14224,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 197,
+        "Depth": 6.35,
+        "Offset": 31.75,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "VTX .125 Radius SC Point Cutting",
+    "Type": 1,
+    "ToolGroupID": 55,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 200,
+        "Depth": 2.930525,
+        "Offset": -0.396875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Shaker (1/4\" Deep Pocket) (VTX .125 Radius SC Point Cutting)",
+    "Type": 0,
+    "ToolGroupID": 56,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 201,
+        "Depth": 6.35,
+        "Offset": 6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 198,
+        "Depth": 6.35,
+        "Offset": 1.2954,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 200,
+        "Depth": 0.79375,
+        "Offset": 0.14224,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Legacy VTX .125 Radius SC Point Cutting",
+    "Type": 1,
+    "ToolGroupID": 57,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 202,
+        "Depth": 17.4625,
+        "Offset": -5.0165,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 200,
+        "Depth": 2.930525,
+        "Offset": -0.396875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 202,
+        "Depth": 0,
+        "Offset": -4.7625,
+        "ThruCut": true,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "1/8\" Radius Edge Profile",
+    "Type": 1,
+    "ToolGroupID": 58,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 17.4625,
+        "Offset": -5.0165,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 207,
+        "Depth": 2.6,
+        "Offset": -0.254,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "60V Shaker Frost Bevel",
+    "Type": 0,
+    "ToolGroupID": 59,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 193,
+        "Depth": 6.2484,
+        "Offset": 5,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 39,
+        "Depth": 6.2484,
+        "Offset": 0.508,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Flat Panel w 60° Sharp Corner (5/16 Pocket) 10DM",
+    "Type": 0,
+    "ToolGroupID": 60,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 193,
+        "Depth": 7.9375,
+        "Offset": 5,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 198,
+        "Depth": 7.7,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 39,
+        "Depth": 7.9375,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "_S63 Flat Madison",
+    "Type": 0,
+    "ToolGroupID": 61,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 15,
+        "Depth": 7.9375,
+        "Offset": 6.4008,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 8.0518,
+        "Offset": 1.4732,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 1.5875,
+        "Offset": -5.3594,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 188,
+        "Depth": 7.874,
+        "Offset": 0.381,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 188,
+        "Depth": 1.524,
+        "Offset": -6.214917,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "Tarvin Glass Door  (Copy)",
+    "Type": 0,
+    "ToolGroupID": 63,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 12.7,
+        "Offset": 4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 14,
+        "Depth": 9.525,
+        "Offset": -4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 9.525,
+        "Offset": -8.218015,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 61,
+        "Depth": 12.7,
+        "Offset": 2.805098,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
+  },
+  {
+    "Name": "glass 60",
+    "Type": 0,
+    "ToolGroupID": 64,
+    "Alignment": 0,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": []
+  },
+  {
+    "Name": "Glass w 60° Sharp Corner (5/16 Pocket)",
+    "Type": 0,
+    "ToolGroupID": 65,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 14,
+        "Depth": 7.95274,
+        "Offset": 4.91998,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 198,
+        "Depth": 9.271,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 39,
+        "Depth": 7.9375,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 14,
+        "Depth": 9.525,
+        "Offset": -4.7625,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      },
+      {
+        "ToolID": 198,
+        "Depth": 9.46912,
+        "Offset": -8.29056,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
@@ -2225,30 +1765,85 @@
     ]
   },
   {
-    "Name": "Test",
-    "Type": 1,
-    "ToolGroupID": 84,
-    "Alignment": 0,
+    "Name": "13/16 MDF Glass w 60° Sharp Corner (5/16 Pocket)",
+    "Type": 0,
+    "ToolGroupID": 66,
+    "Alignment": 1,
     "DefaultMaterialThickness": 19.05,
     "PartSpacing": 0,
     "ToolEntry": [
       {
-        "ToolID": 107,
-        "Depth": 6.842793,
-        "Offset": 20.9095,
+        "ToolID": 14,
+        "Depth": 7.95274,
+        "Offset": 4.91998,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": false
       },
       {
-        "ToolID": 203,
-        "Depth": 6.115938,
-        "Offset": 8.413975,
+        "ToolID": 198,
+        "Depth": 9.271,
+        "Offset": 1.5875,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 39,
+        "Depth": 7.9375,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": true,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 14,
+        "Depth": 11.4,
+        "Offset": -4.7625,
         "ThruCut": false,
         "SharpCorners": false,
         "NoRamp": false,
         "FlipSide": true
+      },
+      {
+        "ToolID": 198,
+        "Depth": 11.4,
+        "Offset": -8.29056,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
+  },
+  {
+    "Name": "Shaker Frost LEGACY",
+    "Type": 0,
+    "ToolGroupID": 67,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 205,
+        "Depth": 6.2,
+        "Offset": 6.35,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 198,
+        "Depth": 6.2484,
+        "Offset": 0.84582,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
       }
     ]
   }

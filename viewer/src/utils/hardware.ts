@@ -197,19 +197,25 @@ export function computeHandleHoles(
       handleX = doorH - config.insetFromEdge; // near top edge
     } else {
       // Left/right hinge: use doorPlacement preset
-      // Elevation only used for custom; all others use insetFromEdge
+      // Elevation controls X-axis for top/bottom/custom; inset is Y-axis only.
+      // For handles (not knobs) with vertical separation, offset so the
+      // nearest hole center sits at elevation from the edge.
+      const isVerticalHinge = hingeSide === 'left' || hingeSide === 'right';
+      const verticalSep = !isKnob && isVerticalHinge && config.doorPlacement !== 'center-top';
+      const halfSepOffset = verticalSep ? (config.holeSeparation / 2) : 0;
+
       if (config.doorPlacement === 'middle') {
         handleX = doorH / 2;
       } else if (config.doorPlacement === 'custom') {
         handleX = config.elevation;
       } else if (config.doorPlacement === 'bottom') {
-        handleX = config.insetFromEdge; // from bottom edge
+        handleX = config.elevation + halfSepOffset; // elevation from bottom edge
       } else if (config.doorPlacement === 'center-top') {
-        handleX = doorH - config.insetFromEdge; // from top edge
+        handleX = doorH - config.insetFromEdge; // inset takes over for elevation
         handleY = doorW / 2; // centered width-wise
       } else {
-        // 'top' — from top edge (default)
-        handleX = doorH - config.insetFromEdge;
+        // 'top' — elevation from top edge (default)
+        handleX = doorH - config.elevation - halfSepOffset;
       }
     }
 

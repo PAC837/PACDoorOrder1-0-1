@@ -22,6 +22,7 @@ interface CrossSectionViewerProps {
   thickness?: number;
   toolOverlayList?: ToolOverlayInfo[];
   toolOverlayVisibility?: Record<string, boolean>;
+  compact?: boolean;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -400,12 +401,26 @@ function CrossSectionCanvas({
   showUserDimensions,
   units,
   showGlass,
-  showFullToolShape,
+  toolOverlayMode,
   edgeGroupId: edgeGroupIdProp,
   thickness: thicknessCanvasProp,
   toolOverlayList,
   toolOverlayVisibility,
-}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean; showFullToolShape: boolean; edgeGroupId?: number | null }) {
+  onToggleHatching,
+  onToggleDimensions,
+  onToggleUserDimensions,
+  onCycleToolOverlay,
+  onExportDxf,
+}: CrossSectionViewerProps & {
+  showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean;
+  toolOverlayMode: 'off' | 'full' | 'outline';
+  edgeGroupId?: number | null;
+  onToggleHatching: () => void;
+  onToggleDimensions: () => void;
+  onToggleUserDimensions: () => void;
+  onCycleToolOverlay: () => void;
+  onExportDxf: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -476,29 +491,31 @@ function CrossSectionCanvas({
       targets.push({ x: 0, y: thickness - backPocketDepth, label: 'back pocket' });
     }
     // Tool overlay polygon vertices
-    const overlayList = toolOverlayList ?? [];
-    for (const info of overlayList) {
-      const toolEntry = { ...info, flipSide: false };
-      let pts: { x: number; y: number }[] | null;
-      if (showFullToolShape) {
-        pts = buildUnclippedCrossSectionPoints(toolEntry, profiles, thickness, EXTEND_ABOVE, info.alignment);
-      } else {
-        pts = buildCrossSectionPoints(toolEntry, profiles, thickness);
-        if (pts) adjustForAlignment(pts, info.alignment, -info.entryOffset, info.toolDiameter);
-      }
-      if (!pts) continue;
-      const halfTh = thickness / 2;
-      for (const pt of pts) {
-        const depth = halfTh - pt.y;
-        const x = info.isEdge ? pt.x + stileW : pt.x;
-        const y = info.face === 'front' ? depth : thickness - depth;
-        if (y >= -1 && y <= thickness + 1) {
-          targets.push({ x, y });
+    if (toolOverlayMode !== 'off') {
+      const overlayList = toolOverlayList ?? [];
+      for (const info of overlayList) {
+        const toolEntry = { ...info, flipSide: false };
+        let pts: { x: number; y: number }[] | null;
+        if (toolOverlayMode === 'full') {
+          pts = buildUnclippedCrossSectionPoints(toolEntry, profiles, thickness, EXTEND_ABOVE, info.alignment);
+        } else {
+          pts = buildCrossSectionPoints(toolEntry, profiles, thickness);
+          if (pts) adjustForAlignment(pts, info.alignment, -info.entryOffset, info.toolDiameter);
+        }
+        if (!pts) continue;
+        const halfTh = thickness / 2;
+        for (const pt of pts) {
+          const depth = halfTh - pt.y;
+          const x = info.isEdge ? pt.x + stileW : pt.x;
+          const y = info.face === 'front' ? depth : thickness - depth;
+          if (y >= -1 && y <= thickness + 1) {
+            targets.push({ x, y });
+          }
         }
       }
     }
     return targets;
-  }, [thickness, stileW, frontPocketDepth, backPocketDepth, frontPanelType, backPanelType, toolOverlayList, profiles, showFullToolShape]);
+  }, [thickness, stileW, frontPocketDepth, backPocketDepth, frontPanelType, backPanelType, toolOverlayList, profiles, toolOverlayMode]);
 
   const snapLines = useMemo((): SnapLine[] => [
     { x1: -VIEW_HALF, y1: 0, x2: stileW, y2: 0, label: 'front face' },
@@ -652,13 +669,13 @@ function CrossSectionCanvas({
     const perToolShapes: { key: string; color: string; isFront: boolean; open: boolean; path: { x: number; y: number }[] }[] = [];
     const overlayList = toolOverlayList ?? [];
     const overlayVis = toolOverlayVisibility ?? {};
-    if (overlayList.length > 0) {
+    if (toolOverlayMode !== 'off' && overlayList.length > 0) {
       const halfTh = thickness / 2;
       for (const info of overlayList) {
         if (overlayVis[info.key] === false) continue;
         const toolEntry = { ...info, flipSide: false };
 
-        if (showFullToolShape) {
+        if (toolOverlayMode === 'full') {
           // Full tool shape — closed polygon with fill extending above surface
           const pts = buildUnclippedCrossSectionPoints(toolEntry, profiles, thickness, EXTEND_ABOVE, info.alignment);
           if (!pts || pts.length < 3) continue;
@@ -673,7 +690,7 @@ function CrossSectionCanvas({
             perToolShapes.push({ key: info.key, color: info.color, isFront: info.face === 'front', open: false, path });
           }
         } else {
-          // Contact only — show where this tool sits on the composite profile
+          // Outline — show where this tool sits on the composite profile
           const csPoints = buildCrossSectionPoints(toolEntry, profiles, thickness);
           if (!csPoints || csPoints.length < 3) continue;
           adjustForAlignment(csPoints, info.alignment, -info.entryOffset, info.toolDiameter);
@@ -1044,7 +1061,7 @@ function CrossSectionCanvas({
       ctx.restore();
     }
 
-  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, showFullToolShape, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
+  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, toolOverlayMode, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -1166,6 +1183,77 @@ function CrossSectionCanvas({
       />
       {/* Toolbar */}
       <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
+        {/* Tool Overlays — 3-state cycle: off → full → outline */}
+        <button
+          onClick={onCycleToolOverlay}
+          style={{
+            ...measureBtnStyle,
+            background: toolOverlayMode !== 'off' ? '#0088cc' : '#fff',
+            color: toolOverlayMode !== 'off' ? '#fff' : '#333',
+            borderColor: toolOverlayMode !== 'off' ? '#0077b3' : '#999',
+          }}
+          title={`Tool Overlays: ${toolOverlayMode === 'off' ? 'Off' : toolOverlayMode === 'full' ? 'Full Shape' : 'Outline'}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12 L5 2 L7 8 L9 4 L12 12" />
+          </svg>
+          {toolOverlayMode !== 'off' && (
+            <span style={{ fontSize: '9px' }}>{toolOverlayMode === 'full' ? 'F' : 'O'}</span>
+          )}
+        </button>
+        {/* Export DXF */}
+        <button
+          onClick={onExportDxf}
+          style={measureBtnStyle}
+          title="Export DXF"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M7 2 L7 10 M4 7 L7 10 L10 7" />
+            <path d="M2 11 L2 12 L12 12 L12 11" />
+          </svg>
+        </button>
+        {/* Hatching */}
+        <button
+          onClick={onToggleHatching}
+          style={{
+            ...measureBtnStyle,
+            background: showHatching ? '#0088cc' : '#fff',
+            color: showHatching ? '#fff' : '#333',
+            borderColor: showHatching ? '#0077b3' : '#999',
+          }}
+          title={showHatching ? 'Hide Hatching' : 'Show Hatching'}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+            <line x1="3" y1="1" x2="1" y2="3" />
+            <line x1="6" y1="1" x2="1" y2="6" />
+            <line x1="9" y1="1" x2="1" y2="9" />
+            <line x1="12" y1="1" x2="1" y2="12" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+            <line x1="13" y1="6" x2="6" y2="13" />
+            <line x1="13" y1="9" x2="9" y2="13" />
+            <line x1="13" y1="12" x2="12" y2="13" />
+          </svg>
+        </button>
+        {/* Dimensions */}
+        <button
+          onClick={onToggleDimensions}
+          style={{
+            ...measureBtnStyle,
+            background: showDimensions ? '#0088cc' : '#fff',
+            color: showDimensions ? '#fff' : '#333',
+            borderColor: showDimensions ? '#0077b3' : '#999',
+          }}
+          title={showDimensions ? 'Hide Dimensions' : 'Show Dimensions'}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="2" y1="3" x2="2" y2="11" />
+            <line x1="12" y1="3" x2="12" y2="11" />
+            <line x1="2" y1="7" x2="12" y2="7" />
+            <polyline points="4,5.5 2,7 4,8.5" />
+            <polyline points="10,5.5 12,7 10,8.5" />
+          </svg>
+        </button>
+        {/* Measure Tool */}
         <button
           onClick={measure.toggleMeasure}
           style={{
@@ -1182,6 +1270,26 @@ function CrossSectionCanvas({
             <line x1="1" y1="13" x2="5" y2="13" />
             <line x1="13" y1="1" x2="13" y2="5" />
             <line x1="13" y1="1" x2="9" y2="1" />
+          </svg>
+        </button>
+        {/* User Dimensions */}
+        <button
+          onClick={onToggleUserDimensions}
+          style={{
+            ...measureBtnStyle,
+            background: showUserDimensions ? '#0088cc' : '#fff',
+            color: showUserDimensions ? '#fff' : '#333',
+            borderColor: showUserDimensions ? '#0077b3' : '#999',
+          }}
+          title={showUserDimensions ? 'Hide User Dimensions' : 'Show User Dimensions'}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="2" y1="3" x2="2" y2="11" />
+            <line x1="12" y1="3" x2="12" y2="11" />
+            <line x1="2" y1="7" x2="12" y2="7" />
+            <polyline points="4,5.5 2,7 4,8.5" />
+            <polyline points="10,5.5 12,7 10,8.5" />
+            <circle cx="7" cy="4" r="2" />
           </svg>
         </button>
         {measure.measurements.length > 0 && (
@@ -1206,32 +1314,37 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp }: CrossSectionViewerProps) {
+export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp, compact }: CrossSectionViewerProps) {
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
   const [showGlass, setShowGlass] = useState(true);
-  const [showFullToolShape, setShowFullToolShape] = useState(true);
+  const [toolOverlayMode, setToolOverlayMode] = useState<'off' | 'full' | 'outline'>('off');
   const [toolOverlayVisibility, setToolOverlayVisibility] = useState<Record<string, boolean>>({});
 
   const isGlass = frontPanelType === 'glass' || backPanelType === 'glass';
 
-  // Build per-tool overlay info from graph data
+  // Build per-tool overlay info from graph data (deduplicated by toolId + face)
   const toolOverlayList = useMemo(() => {
     if (!graph) return [];
     const list: ToolOverlayInfo[] = [];
+    const seen = new Set<string>();
     let colorIdx = 0;
     for (const op of graph.operations) {
       const isEdge = edgeGroupId != null && op.toolGroupId === edgeGroupId;
       for (let ti = 0; ti < op.tools.length; ti++) {
         const t = op.tools[ti];
         const effectiveFlip = op.flipSideOp !== (t.flipSide ?? false);
+        const face = effectiveFlip ? 'back' : 'front';
+        const dedupeKey = `${t.toolId}-${face}-${t.entryOffset}-${t.entryDepth}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
         list.push({
-          key: `${op.operationId}-${ti}`,
+          key: dedupeKey,
           toolId: t.toolId,
           toolName: t.toolName,
           color: TOOL_COLORS[colorIdx % TOOL_COLORS.length],
-          face: effectiveFlip ? 'back' : 'front',
+          face,
           isEdge,
           alignment: op.alignment,
           entryOffset: t.entryOffset,
@@ -1294,9 +1407,9 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
   }, [door, graph, profiles, frontPanelType, backPanelType]);
 
   return (
-    <div style={styles.container}>
+    <div style={compact ? { width: '100%', height: '100%', display: 'flex' } : styles.container}>
       {/* Left info panel */}
-      <div style={styles.sidebar}>
+      {!compact && <div style={styles.sidebar}>
         <h2 style={styles.title}>Cross Section</h2>
         <div style={styles.info}>
           <div style={styles.infoRow}>
@@ -1411,9 +1524,16 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
             User Dimensions
           </label>
           <label style={styles.toggleLabel}>
-            <input type="checkbox" checked={showFullToolShape}
-              onChange={(e) => setShowFullToolShape(e.target.checked)} />
-            Full Tool Shape
+            <select
+              value={toolOverlayMode}
+              onChange={(e) => setToolOverlayMode(e.target.value as 'off' | 'full' | 'outline')}
+              style={{ fontSize: '11px', background: '#2a2a44', color: '#ccc', border: '1px solid #444466', borderRadius: 3, padding: '1px 4px' }}
+            >
+              <option value="off">Off</option>
+              <option value="full">Full Shape</option>
+              <option value="outline">Outline</option>
+            </select>
+            Tool Overlays
           </label>
           {isGlass && (
             <label style={styles.toggleLabel}>
@@ -1433,7 +1553,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           {units === 'mm' ? '152.4 mm' : '6"'} slice through the door edge,<br />
           centered on the toolpath boundary.
         </div>
-      </div>
+      </div>}
 
       {/* Canvas */}
       <div style={styles.canvasArea}>
@@ -1441,11 +1561,16 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           door={door} graph={graph} profiles={profiles}
           frontPanelType={frontPanelType} backPanelType={backPanelType} hasBackRabbit={hasBackRabbit}
           showHatching={showHatching} showDimensions={showDimensions} showUserDimensions={showUserDimensions}
-          showFullToolShape={showFullToolShape}
+          toolOverlayMode={toolOverlayMode}
           units={units} showGlass={showGlass} edgeGroupId={edgeGroupId}
           thickness={thicknessProp}
           toolOverlayList={toolOverlayList}
           toolOverlayVisibility={toolOverlayVisibility}
+          onToggleHatching={() => setShowHatching(v => !v)}
+          onToggleDimensions={() => setShowDimensions(v => !v)}
+          onToggleUserDimensions={() => setShowUserDimensions(v => !v)}
+          onCycleToolOverlay={() => setToolOverlayMode(m => m === 'off' ? 'full' : m === 'full' ? 'outline' : 'off')}
+          onExportDxf={handleExportDxf}
         />
       </div>
     </div>

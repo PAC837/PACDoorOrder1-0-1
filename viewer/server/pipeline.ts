@@ -222,3 +222,83 @@ export async function loadFromFolders(
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Parse from raw XML content (browser sends file content, server parses)
+// ---------------------------------------------------------------------------
+
+export async function parseFromContent(
+  doorsXml: string,
+  toolGroupsXml: string,
+  toolLibXml: string,
+  outputDir: string,
+  projectRoot: string,
+): Promise<LoadResult> {
+  try {
+    const distDir = resolve(projectRoot, 'dist');
+    const toURL = (p: string) => pathToFileURL(p).href;
+    const bust = `?t=${Date.now()}`;
+    const { parseDoors } = await import(/* @vite-ignore */ toURL(resolve(distDir, 'parsers', 'parseDoors.js')) + bust);
+    const { parseToolGroups } = await import(/* @vite-ignore */ toURL(resolve(distDir, 'parsers', 'parseToolGroups.js')) + bust);
+    const { parseToolLib } = await import(/* @vite-ignore */ toURL(resolve(distDir, 'parsers', 'parseToolLib.js')) + bust);
+    const { buildGraph } = await import(/* @vite-ignore */ toURL(resolve(distDir, 'normalizers', 'buildGraph.js')) + bust);
+    const { extractProfiles } = await import(/* @vite-ignore */ toURL(resolve(distDir, 'normalizers', 'extractProfiles.js')) + bust);
+
+    const doors = parseDoors(doorsXml);
+    const toolGroups = parseToolGroups(toolGroupsXml);
+    const tools = parseToolLib(toolLibXml);
+
+    const doorGraphs = buildGraph(doors, tools, toolGroups);
+    const profiles = extractProfiles(tools);
+
+    const serializableGraphs = doorGraphs.map((dg: any) => ({
+      doorName: dg.door.Name,
+      doorType: dg.door.Type,
+      operationCount: dg.operations.length,
+      operations: dg.operations.map((op: any) => ({
+        operationId: op.operation.ID,
+        toolGroupId: op.operation.ToolGroupID,
+        toolGroupName: op.toolGroup.group.Name,
+        alignment: op.toolGroup.group.Alignment,
+        depth: op.operation.Depth,
+        flipSideOp: op.operation.FlipSideOp,
+        toolCount: op.toolGroup.tools.length,
+        tools: op.toolGroup.tools.map((t: any) => ({
+          toolId: t.tool.ToolID,
+          toolName: t.tool.Name,
+          isCNCDoor: t.tool.AppCNCDoor,
+          toolDiameter: t.tool.Dia,
+          sharpCornerAngle: t.tool.SharpCornerAngle,
+          entryDepth: t.entry.Depth,
+          entryOffset: t.entry.Offset,
+          flipSide: t.entry.FlipSide ?? false,
+        })),
+      })),
+    }));
+
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(resolve(outputDir, 'doors.json'), JSON.stringify(doors, null, 2));
+    writeFileSync(resolve(outputDir, 'toolGroups.json'), JSON.stringify(toolGroups, null, 2));
+    writeFileSync(resolve(outputDir, 'tools.json'), JSON.stringify(tools, null, 2));
+    writeFileSync(resolve(outputDir, 'profiles.json'), JSON.stringify(profiles, null, 2));
+    writeFileSync(resolve(outputDir, 'doorGraphs.json'), JSON.stringify(serializableGraphs, null, 2));
+
+    const cncDoorsCount = doorGraphs.filter((dg: any) => dg.operations.length > 0).length;
+
+    return {
+      success: true,
+      stats: {
+        doorsCount: doors.length,
+        toolGroupsCount: toolGroups.length,
+        toolsCount: tools.length,
+        cncDoorsCount,
+        profilesCount: profiles.length,
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}

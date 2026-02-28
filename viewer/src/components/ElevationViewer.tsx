@@ -18,6 +18,7 @@ interface ElevationViewerProps {
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   onSplitDragEnd?: (path: number[], newPos: number) => void;
+  compact?: boolean;
 }
 
 const MIN_PANEL_SIZE = 25.4; // 1" minimum panel dimension for drag constraints
@@ -77,7 +78,7 @@ function getDragRange(split: SplitInfoWithBounds): { min: number; max: number } 
 
 export function ElevationViewer({
   door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
-  selectedSplitPath, onSplitSelect, onSplitDragEnd,
+  selectedSplitPath, onSplitSelect, onSplitDragEnd, compact,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -772,7 +773,7 @@ export function ElevationViewer({
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
       {/* Sidebar */}
-      <div style={sidebarStyles.container}>
+      {!compact && <div style={sidebarStyles.container}>
         <h3 style={sidebarStyles.title}>{door.Name}</h3>
         <div style={sidebarStyles.row}>
           <span style={sidebarStyles.label}>Size:</span>
@@ -818,7 +819,7 @@ export function ElevationViewer({
         <button style={sidebarStyles.exportBtn} onClick={handleExportDxf}>
           Export DXF
         </button>
-      </div>
+      </div>}
 
       {/* Canvas area */}
       <div ref={containerRef} style={{ flex: 1, position: 'relative' }}>
