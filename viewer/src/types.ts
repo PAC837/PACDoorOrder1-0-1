@@ -182,8 +182,12 @@ export interface RawTool {
 /** Part type for generic door configuration. */
 export type DoorPartType = 'door' | 'drawer' | 'reduced-rail' | 'slab';
 
+/** How back operations apply to split panels. */
+export type BackPocketMode = 'all' | 'selected' | 'full';
+
 export type HingeSide = 'left' | 'right' | 'top' | 'bottom';
 export type HandlePlacement = 'center' | 'top-rail' | 'two-equidistant';
+export type DoorHandlePlacement = 'top' | 'middle' | 'bottom';
 export type HandleElevationRef = 'from-top' | 'from-bottom';
 
 /** A single bore hole operation (hinge cup, mounting hole, or handle hole). */
@@ -221,7 +225,8 @@ export interface HandleConfig {
   insetFromEdge: number;   // default 28.575mm
   elevation: number;       // mm from reference edge
   elevationRef: HandleElevationRef;
-  placement: HandlePlacement; // for drawers
+  placement: HandlePlacement; // for drawers/reduced-rail/slab
+  doorPlacement: DoorHandlePlacement; // preset position for door-type handles
   twoHandleEdgeDist: number; // mm from door left/right to handle center (two-equidistant)
   onFront: boolean;        // true = front (default)
 }
@@ -252,6 +257,7 @@ export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
   elevation: 114.3,        // ~4.5" from top
   elevationRef: 'from-top',
   placement: 'center',
+  doorPlacement: 'top',
   twoHandleEdgeDist: 127,  // 5" from each edge
   onFront: true,
 };

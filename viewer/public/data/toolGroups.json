@@ -2223,5 +2223,33 @@
         "FlipSide": true
       }
     ]
+  },
+  {
+    "Name": "Test",
+    "Type": 1,
+    "ToolGroupID": 84,
+    "Alignment": 0,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 107,
+        "Depth": 6.842793,
+        "Offset": 20.9095,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 203,
+        "Depth": 6.115938,
+        "Offset": 8.413975,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": true
+      }
+    ]
   }
 ]

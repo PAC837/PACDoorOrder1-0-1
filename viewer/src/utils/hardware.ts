@@ -18,7 +18,7 @@ import type {
  * Compute equidistant hinge positions along an axis.
  * Returns centers spaced evenly between `edgeDistance` from each end.
  */
-function equidistantPositions(count: number, axisLength: number, edgeDistance: number): number[] {
+export function equidistantPositions(count: number, axisLength: number, edgeDistance: number): number[] {
   if (count <= 0) return [];
   if (count === 1) return [axisLength / 2];
   const first = edgeDistance;
@@ -47,21 +47,21 @@ export function computeHingeHoles(
     : config.positions.slice(0, config.count);
 
   // Cup position on the cross-axis (perpendicular to hinge line)
-  // In Mozaik coords: Y = width axis for left/right hinges, X = height axis for top/bottom
+  // In Mozaik coords: Y = width axis (Y=0 is LEFT edge), X = height axis
   let cupCrossPos: number;
   if (config.side === 'left') {
-    cupCrossPos = doorW - config.cupBoringDist; // left edge in Mozaik Y (Y=0 is right)
+    cupCrossPos = config.cupBoringDist;         // left edge (low Y)
   } else if (config.side === 'right') {
-    cupCrossPos = config.cupBoringDist;         // right edge
+    cupCrossPos = doorW - config.cupBoringDist; // right edge (high Y)
   } else if (config.side === 'top') {
     cupCrossPos = doorH - config.cupBoringDist; // top edge in Mozaik X
   } else {
     cupCrossPos = config.cupBoringDist;         // bottom edge
   }
 
-  // Mounting holes offset inward from cup
+  // Mounting holes offset inward from cup (toward door center)
   const mountCrossPos = isVertical
-    ? (config.side === 'left' ? cupCrossPos - config.mountInset : cupCrossPos + config.mountInset)
+    ? (config.side === 'left' ? cupCrossPos + config.mountInset : cupCrossPos - config.mountInset)
     : (config.side === 'top' ? cupCrossPos - config.mountInset : cupCrossPos + config.mountInset);
 
   const halfSep = config.mountSeparation / 2;
@@ -148,8 +148,8 @@ export function computeHandleHoles(
   // Determine handle center positions (may be multiple for two-equidistant)
   const handleCenters: { x: number; y: number }[] = [];
 
-  if (doorPartType === 'drawer') {
-    // Drawer handle placement
+  if (doorPartType !== 'door') {
+    // Drawer / reduced-rail / slab handle placement
     switch (config.placement) {
       case 'center':
         handleCenters.push({ x: doorH / 2, y: doorW / 2 });
@@ -169,12 +169,12 @@ export function computeHandleHoles(
       }
     }
   } else {
-    // Door / reduced-rail / slab: handle on opposite side from hinge
+    // Door: handle on opposite side from hinge (Y=0 is LEFT edge)
     let handleY: number;
     if (hingeSide === 'left') {
-      handleY = config.insetFromEdge; // right side (low Y in Mozaik)
+      handleY = doorW - config.insetFromEdge; // right side (high Y = opposite from left hinge)
     } else if (hingeSide === 'right') {
-      handleY = doorW - config.insetFromEdge; // left side (high Y in Mozaik)
+      handleY = config.insetFromEdge; // left side (low Y = opposite from right hinge)
     } else {
       // Top/bottom hinge: handle on opposite horizontal edge
       handleY = doorW / 2; // centered width-wise
@@ -186,10 +186,15 @@ export function computeHandleHoles(
     } else if (hingeSide === 'bottom') {
       handleX = doorH - config.insetFromEdge; // near top edge
     } else {
-      // Left/right hinge: use elevation from top or bottom
-      handleX = config.elevationRef === 'from-top'
-        ? doorH - config.elevation
-        : config.elevation;
+      // Left/right hinge: use doorPlacement preset
+      if (config.doorPlacement === 'middle') {
+        handleX = doorH / 2;
+      } else if (config.doorPlacement === 'bottom') {
+        handleX = config.elevation; // from bottom edge
+      } else {
+        // 'top' — from top edge (default)
+        handleX = doorH - config.elevation;
+      }
     }
 
     handleCenters.push({ x: handleX, y: handleY });
@@ -212,9 +217,9 @@ export function computeHandleHoles(
       });
     } else {
       // Handle with two holes — separated along the height axis (X) for doors,
-      // along width (Y) for drawers
-      if (doorPartType === 'drawer') {
-        // Drawer handles: holes separated along Y (width)
+      // along width (Y) for drawers/reduced-rail/slab
+      if (doorPartType !== 'door') {
+        // Non-door handles: holes separated along Y (width)
         holes.push({
           X: center.x,
           Y: center.y - halfSep,
@@ -232,23 +237,45 @@ export function computeHandleHoles(
           holeType: 'handle',
         });
       } else {
-        // Door handles: holes separated along X (height)
-        holes.push({
-          X: center.x - halfSep,
-          Y: center.y,
-          Diameter: config.holeDia,
-          Depth: config.holeDepth,
-          FlipSideOp: !config.onFront,
-          holeType: 'handle',
-        });
-        holes.push({
-          X: center.x + halfSep,
-          Y: center.y,
-          Diameter: config.holeDia,
-          Depth: config.holeDepth,
-          FlipSideOp: !config.onFront,
-          holeType: 'handle',
-        });
+        // Door handles: separation axis depends on hinge orientation
+        const isVerticalHinge = hingeSide === 'left' || hingeSide === 'right';
+        if (isVerticalHinge) {
+          // Vertical handle — holes separated along X (height)
+          holes.push({
+            X: center.x - halfSep,
+            Y: center.y,
+            Diameter: config.holeDia,
+            Depth: config.holeDepth,
+            FlipSideOp: !config.onFront,
+            holeType: 'handle',
+          });
+          holes.push({
+            X: center.x + halfSep,
+            Y: center.y,
+            Diameter: config.holeDia,
+            Depth: config.holeDepth,
+            FlipSideOp: !config.onFront,
+            holeType: 'handle',
+          });
+        } else {
+          // Horizontal handle (top/bottom hinge) — holes separated along Y (width)
+          holes.push({
+            X: center.x,
+            Y: center.y - halfSep,
+            Diameter: config.holeDia,
+            Depth: config.holeDepth,
+            FlipSideOp: !config.onFront,
+            holeType: 'handle',
+          });
+          holes.push({
+            X: center.x,
+            Y: center.y + halfSep,
+            Diameter: config.holeDia,
+            Depth: config.holeDepth,
+            FlipSideOp: !config.onFront,
+            holeType: 'handle',
+          });
+        }
       }
     }
   }
@@ -264,10 +291,10 @@ export function computeAllHoles(
   doorW: number,
   doorH: number,
 ): HoleData[] {
-  // Drawers don't get hinges
-  const hingeHoles = doorPartType === 'drawer'
-    ? []
-    : computeHingeHoles(hingeConfig, doorW, doorH);
+  // Only doors get hinges
+  const hingeHoles = doorPartType === 'door'
+    ? computeHingeHoles(hingeConfig, doorW, doorH)
+    : [];
 
   const handleHoles = computeHandleHoles(
     handleConfig,
@@ -278,4 +305,168 @@ export function computeAllHoles(
   );
 
   return [...hingeHoles, ...handleHoles];
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+export interface HardwareWarning {
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/** Validate hardware config against door dimensions. Returns warnings/errors. */
+export function validateHardware(
+  hingeConfig: HingeConfig,
+  handleConfig: HandleConfig,
+  doorPartType: DoorPartType,
+  doorW: number,
+  doorH: number,
+  thickness: number,
+  leftStileW: number,
+  rightStileW: number,
+  topRailW: number,
+  bottomRailW: number,
+): HardwareWarning[] {
+  const warnings: HardwareWarning[] = [];
+  const fmt = (v: number) => v.toFixed(1);
+
+  // --- Hinge validation ---
+  if (hingeConfig.enabled && doorPartType !== 'drawer') {
+    const cupR = hingeConfig.cupDia / 2;
+
+    // Cup depth vs thickness
+    if (hingeConfig.cupDepth > thickness) {
+      warnings.push({
+        severity: 'error',
+        message: `Hinge cup depth (${fmt(hingeConfig.cupDepth)}mm) exceeds material thickness (${fmt(thickness)}mm) — cup drills through panel`,
+      });
+    } else if (hingeConfig.cupDepth > thickness - 2) {
+      warnings.push({
+        severity: 'warning',
+        message: `Hinge cup depth (${fmt(hingeConfig.cupDepth)}mm) leaves only ${fmt(thickness - hingeConfig.cupDepth)}mm of material`,
+      });
+    }
+
+    // Cup boring distance vs cup radius (extends past door edge)
+    if (hingeConfig.cupBoringDist < cupR) {
+      warnings.push({
+        severity: 'error',
+        message: `Hinge cup extends ${fmt(cupR - hingeConfig.cupBoringDist)}mm past door edge (boring distance ${fmt(hingeConfig.cupBoringDist)}mm < cup radius ${fmt(cupR)}mm)`,
+      });
+    }
+
+    // Cup extends into panel area (past stile/rail)
+    const isVertical = hingeConfig.side === 'left' || hingeConfig.side === 'right';
+    if (isVertical) {
+      const stileW = hingeConfig.side === 'left' ? leftStileW : rightStileW;
+      if (hingeConfig.cupBoringDist + cupR > stileW) {
+        warnings.push({
+          severity: 'warning',
+          message: `Hinge cup extends into panel area — stile width (${fmt(stileW)}mm) too narrow for cup (boring ${fmt(hingeConfig.cupBoringDist)}mm + radius ${fmt(cupR)}mm = ${fmt(hingeConfig.cupBoringDist + cupR)}mm)`,
+        });
+      }
+    } else {
+      const railW = hingeConfig.side === 'top' ? topRailW : bottomRailW;
+      if (hingeConfig.cupBoringDist + cupR > railW) {
+        warnings.push({
+          severity: 'warning',
+          message: `Hinge cup extends into panel area — rail width (${fmt(railW)}mm) too narrow for cup`,
+        });
+      }
+    }
+
+    // Mount depth vs thickness
+    if (hingeConfig.mountDepth > thickness) {
+      warnings.push({
+        severity: 'error',
+        message: `Hinge mount depth (${fmt(hingeConfig.mountDepth)}mm) exceeds material thickness (${fmt(thickness)}mm)`,
+      });
+    }
+
+    // Mount holes cross-axis clearance (past stile/rail boundary)
+    const mountR = hingeConfig.mountDia / 2;
+    if (isVertical) {
+      const stileW = hingeConfig.side === 'left' ? leftStileW : rightStileW;
+      const mountCross = hingeConfig.cupBoringDist + hingeConfig.mountInset;
+      if (mountCross + mountR > stileW) {
+        warnings.push({
+          severity: 'warning',
+          message: `Hinge mount holes extend into panel area (${fmt(mountCross + mountR)}mm > stile width ${fmt(stileW)}mm)`,
+        });
+      }
+    }
+
+    // Check hinge positions vs rail boundaries
+    const axisLength = isVertical ? doorH : doorW;
+    const halfSep = hingeConfig.mountSeparation / 2;
+    const centers = hingeConfig.equidistant
+      ? equidistantPositions(hingeConfig.count, axisLength, hingeConfig.edgeDistance)
+      : hingeConfig.positions.slice(0, hingeConfig.count);
+
+    const minBound = isVertical ? bottomRailW : leftStileW;
+    const maxBound = isVertical ? doorH - topRailW : doorW - rightStileW;
+
+    for (let i = 0; i < centers.length; i++) {
+      const c = centers[i];
+      if (c - halfSep - mountR < 0) {
+        warnings.push({
+          severity: 'error',
+          message: `Hinge ${i + 1} mount hole extends past door edge (position ${fmt(c)}mm, needs ${fmt(halfSep + mountR)}mm clearance)`,
+        });
+      }
+      if (c + halfSep + mountR > axisLength) {
+        warnings.push({
+          severity: 'error',
+          message: `Hinge ${i + 1} mount hole extends past door edge (position ${fmt(c)}mm, needs ${fmt(halfSep + mountR)}mm from top)`,
+        });
+      }
+      if (c - cupR < minBound) {
+        warnings.push({
+          severity: 'warning',
+          message: `Hinge ${i + 1} cup extends into rail area at ${fmt(c - cupR)}mm (rail starts at ${fmt(minBound)}mm)`,
+        });
+      }
+      if (c + cupR > maxBound) {
+        warnings.push({
+          severity: 'warning',
+          message: `Hinge ${i + 1} cup extends into rail area at ${fmt(c + cupR)}mm (rail ends at ${fmt(maxBound)}mm)`,
+        });
+      }
+    }
+  }
+
+  // --- Handle validation ---
+  if (handleConfig.enabled) {
+    // Hole depth vs thickness
+    if (handleConfig.holeDepth > thickness) {
+      warnings.push({
+        severity: 'warning',
+        message: `Handle hole depth (${fmt(handleConfig.holeDepth)}mm) exceeds material thickness (${fmt(thickness)}mm) — hole drills through`,
+      });
+    }
+
+    // Compute actual hole positions and check bounds
+    const handleHoles = computeHandleHoles(handleConfig, hingeConfig.side, doorPartType, doorW, doorH);
+    const holeR = handleConfig.holeDia / 2;
+    for (const hole of handleHoles) {
+      if (hole.X - holeR < 0 || hole.X + holeR > doorH) {
+        warnings.push({
+          severity: 'error',
+          message: `Handle hole at X=${fmt(hole.X)}mm extends outside door height (0–${fmt(doorH)}mm)`,
+        });
+        break; // One error is enough
+      }
+      if (hole.Y - holeR < 0 || hole.Y + holeR > doorW) {
+        warnings.push({
+          severity: 'error',
+          message: `Handle hole at Y=${fmt(hole.Y)}mm extends outside door width (0–${fmt(doorW)}mm)`,
+        });
+        break;
+      }
+    }
+  }
+
+  return warnings;
 }

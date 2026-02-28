@@ -30,6 +30,7 @@ interface CrossSectionViewerProps {
   backPanelType?: PanelType;
   hasBackRabbit?: boolean;
   units: UnitSystem;
+  edgeGroupId?: number | null;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -573,7 +574,8 @@ function CrossSectionCanvas({
   showDimensions,
   units,
   showGlass,
-}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showGlass: boolean }) {
+  edgeGroupId: edgeGroupIdProp,
+}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showGlass: boolean; edgeGroupId?: number | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
@@ -611,9 +613,19 @@ function CrossSectionCanvas({
     const backPocketDepth = backPanelType === 'glass' ? thickness : (backOp?.Depth ?? 0);
 
     // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
+    // Edge tools are separated into their own arrays
     const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
     const backTools: typeof tools = [];
+    const edgeFrontTools: typeof tools = [];
+    const edgeBackTools: typeof tools = [];
     for (const graphOp of (graph?.operations ?? [])) {
+      if (edgeGroupIdProp && graphOp.toolGroupId === edgeGroupIdProp) {
+        for (const tool of graphOp.tools) {
+          const effectiveFlip = graphOp.flipSideOp !== (tool.flipSide ?? false);
+          (effectiveFlip ? edgeBackTools : edgeFrontTools).push(tool);
+        }
+        continue;
+      }
       for (const tool of graphOp.tools) {
         const effectiveFlip = graphOp.flipSideOp !== (tool.flipSide ?? false);
         if (effectiveFlip) {
@@ -631,6 +643,53 @@ function CrossSectionCanvas({
     );
     const outline = composite.frontOutline;
     const backProfile = composite.backProfile;
+
+    // Edge tools carve the outer stile edge. Their cross-sections are relative to
+    // the door perimeter (x=0 at perimeter). In cross-section view, the perimeter
+    // is at x=stileW. Shift edge tool points by stileW and merge into the composite
+    // by overriding the profile at x >= 0 (stile area) where edge tools cut deeper.
+    if (edgeFrontTools.length > 0 || edgeBackTools.length > 0) {
+      const halfThickness = thickness / 2;
+
+      // Build shifted edge cross-section edges (shift x by stileW)
+      const edgeFrontEdges: ShapeEdge[][] = [];
+      for (const tool of edgeFrontTools) {
+        const pts = buildCrossSectionPoints(tool, profiles, thickness);
+        if (pts) {
+          const shifted = pts.map(p => ({ x: p.x + stileW, y: p.y }));
+          edgeFrontEdges.push(buildEdgesFromPoints(shifted));
+        }
+      }
+      const edgeBackEdges: ShapeEdge[][] = [];
+      for (const tool of edgeBackTools) {
+        const pts = buildCrossSectionPoints(tool, profiles, thickness);
+        if (pts) {
+          const shifted = pts.map(p => ({ x: p.x + stileW, y: p.y }));
+          edgeBackEdges.push(buildEdgesFromPoints(shifted));
+        }
+      }
+
+      // Merge edge depths into front profile (override where edge cuts deeper)
+      for (const pt of outline) {
+        for (const edges of edgeFrontEdges) {
+          const minY = getMinYAtX(edges, pt.x);
+          if (minY !== null) {
+            const d = halfThickness - minY;
+            if (d > pt.y) pt.y = d;
+          }
+        }
+      }
+      // Merge edge depths into back profile
+      for (const pt of backProfile) {
+        for (const edges of edgeBackEdges) {
+          const minY = getMinYAtX(edges, pt.x);
+          if (minY !== null) {
+            const d = halfThickness - minY;
+            if (d > pt.y) pt.y = d;
+          }
+        }
+      }
+    }
 
     // --- Coordinate transform (with zoom + pan) ---
     const dimSpace = showDimensions ? 50 : 0;
@@ -862,7 +921,7 @@ function CrossSectionCanvas({
     ctx.fillText('Stile / Rail', toX(VIEW_HALF * 0.5), slabBot + 30);
     ctx.fillText('Panel Area', toX(-VIEW_HALF * 0.5), slabBot + 30);
 
-  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY]);
+  }, [door, graph, profiles, showHatching, showDimensions, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -961,7 +1020,7 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units }: CrossSectionViewerProps) {
+export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId }: CrossSectionViewerProps) {
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [showGlass, setShowGlass] = useState(true);
@@ -978,9 +1037,11 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
     const backPocketDepth = backPanelType === 'glass' ? thickness : (backOp?.Depth ?? 0);
 
     // Partition tools by effective face (operation.flipSideOp XOR tool.flipSide)
+    // Edge tools are excluded from panel profile (they'd need separate handling in DXF)
     const tools: NonNullable<typeof graph>['operations'][0]['tools'] = [];
     const backTools: typeof tools = [];
     for (const graphOp of (graph?.operations ?? [])) {
+      if (edgeGroupId && graphOp.toolGroupId === edgeGroupId) continue;
       for (const tool of graphOp.tools) {
         const effectiveFlip = graphOp.flipSideOp !== (tool.flipSide ?? false);
         if (effectiveFlip) {
@@ -1101,7 +1162,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           door={door} graph={graph} profiles={profiles}
           frontPanelType={frontPanelType} backPanelType={backPanelType} hasBackRabbit={hasBackRabbit}
           showHatching={showHatching} showDimensions={showDimensions}
-          units={units} showGlass={showGlass}
+          units={units} showGlass={showGlass} edgeGroupId={edgeGroupId}
         />
       </div>
     </div>

@@ -25,7 +25,7 @@ interface CNCDoorSlabProps {
   doorH: number;
   thickness: number;
   frontOps: OperationData[];
-  backPocketOp?: OperationData;
+  backPocketOps?: OperationData[];
   graph?: DoorGraphData;
   profiles: ToolProfileData[];
   frontVisible?: boolean;
@@ -48,7 +48,7 @@ export function CNCDoorSlab({
   doorH,
   thickness,
   frontOps,
-  backPocketOp,
+  backPocketOps = [],
   graph,
   profiles,
   frontVisible = true,
@@ -67,8 +67,8 @@ export function CNCDoorSlab({
       .map(([k]) => k)
       .sort()
       .join(',');
-    return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}`;
-  }, [toolVisibility, frontVisible, backPocketVisible, holes]);
+    return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}-bp${backPocketOps.length}`;
+  }, [toolVisibility, frontVisible, backPocketVisible, holes, backPocketOps]);
 
   const carvedGeo = useMemo(() => {
     // Build toolpath rects + associated tool entries from graph
@@ -99,38 +99,41 @@ export function CNCDoorSlab({
       }
     }
 
-    // Back pocket — extract tools from graph just like front operations
-    let backPocket: { rect: ReturnType<typeof toolPathToRect>; depth: number; tools: DoorGraphData['operations'][0]['tools'] } | null = null;
-    if (backPocketVisible && backPocketOp?.OperationToolPathNode && backPocketOp.OperationToolPathNode.length >= 3) {
-      const graphBackOp = graph?.operations.find((go) => go.operationId === backPocketOp.ID);
-      const backTools = graphBackOp
-        ? graphBackOp.tools.filter((_, ti) => {
-            const key = `${graphBackOp.operationId}-${ti}`;
-            return toolVisibility[key] !== false;
-          })
-        : [];
+    // Back pockets — extract tools from graph for each back operation
+    const backPockets: { rect: ReturnType<typeof toolPathToRect>; depth: number; tools: DoorGraphData['operations'][0]['tools'] }[] = [];
+    if (backPocketVisible) {
+      for (const bop of backPocketOps) {
+        if (!bop.OperationToolPathNode || bop.OperationToolPathNode.length < 3) continue;
+        const graphBackOp = graph?.operations.find((go) => go.operationId === bop.ID);
+        const backTools = graphBackOp
+          ? graphBackOp.tools.filter((_, ti) => {
+              const key = `${graphBackOp.operationId}-${ti}`;
+              return toolVisibility[key] !== false;
+            })
+          : [];
 
-      backPocket = {
-        rect: toolPathToRect(backPocketOp.OperationToolPathNode, doorW, doorH),
-        depth: backPocketOp.Depth,
-        tools: backTools,
-      };
+        backPockets.push({
+          rect: toolPathToRect(bop.OperationToolPathNode, doorW, doorH),
+          depth: bop.Depth,
+          tools: backTools,
+        });
+      }
     }
 
-    if (toolpathRects.length === 0 && !backPocket && holes.length === 0) {
+    if (toolpathRects.length === 0 && backPockets.length === 0 && holes.length === 0) {
       console.log('[CNCDoorSlab] No visible tools — returning plain slab');
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
 
     try {
-      const geo = buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPocket, holes);
+      const geo = buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPockets, holes);
       console.log(`[CNCDoorSlab] Carved geometry: ${geo.attributes.position.count} vertices`);
       return geo;
     } catch (e) {
       console.error('[CNCDoorSlab] CSG FAILED:', e);
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
-  }, [doorW, doorH, thickness, frontOps, backPocketOp, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes]);
+  }, [doorW, doorH, thickness, frontOps, backPocketOps, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes]);
 
   // Glass pane — shown when either panel type is 'glass'
   const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';

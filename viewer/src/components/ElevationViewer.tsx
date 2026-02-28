@@ -1,17 +1,76 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import type { DoorData, UnitSystem, HoleData } from '../types.js';
 import { formatUnit } from '../types.js';
-import type { PanelTree, PanelBounds } from '../utils/panelTree.js';
-import { flattenTree, enumerateSplits } from '../utils/panelTree.js';
+import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
+import { flattenTree, enumerateSplits, enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
 
 interface ElevationViewerProps {
   door: DoorData;
   units: UnitSystem;
   panelTree: PanelTree;
+  selectedSplitPath?: number[] | null;
+  onSplitSelect?: (path: number[] | null) => void;
+  onSplitDragEnd?: (path: number[], newPos: number) => void;
+}
+
+const MIN_PANEL_SIZE = 25.4; // 1" minimum panel dimension for drag constraints
+
+interface DragState {
+  path: number[];
+  type: 'hsplit' | 'vsplit';
+  currentPos: number;
+  range: { min: number; max: number };
+}
+
+/** Hit-test splits against a screen coordinate. Returns the deepest hit. */
+function hitTestSplits(
+  sx: number, sy: number,
+  splits: SplitInfoWithBounds[],
+  toX: (x: number) => number,
+  toY: (y: number) => number,
+  hitPadding = 4,
+): SplitInfoWithBounds | null {
+  // Test in reverse order (deepest splits get priority)
+  for (let i = splits.length - 1; i >= 0; i--) {
+    const s = splits[i];
+    const b = s.bounds;
+    // Convert divider model bounds to screen rect
+    // drawRect maps (yMin, xMin, yMax, xMax) — x-axis is width (model Y), y-axis is height (model X)
+    const sx1 = toX(b.yMin);
+    const sy1 = toY(b.xMax); // toY flips: higher model y → lower screen y
+    const sx2 = toX(b.yMax);
+    const sy2 = toY(b.xMin);
+
+    const minSx = Math.min(sx1, sx2) - hitPadding;
+    const maxSx = Math.max(sx1, sx2) + hitPadding;
+    const minSy = Math.min(sy1, sy2) - hitPadding;
+    const maxSy = Math.max(sy1, sy2) + hitPadding;
+
+    if (sx >= minSx && sx <= maxSx && sy >= minSy && sy <= maxSy) {
+      return s;
+    }
+  }
+  return null;
+}
+
+/** Compute valid drag range for a split within its parent bounds. */
+function getDragRange(split: SplitInfoWithBounds): { min: number; max: number } {
+  const half = split.width / 2;
+  if (split.type === 'hsplit') {
+    return {
+      min: split.parentBounds.xMin + MIN_PANEL_SIZE + half,
+      max: split.parentBounds.xMax - MIN_PANEL_SIZE - half,
+    };
+  }
+  return {
+    min: split.parentBounds.yMin + MIN_PANEL_SIZE + half,
+    max: split.parentBounds.yMax - MIN_PANEL_SIZE - half,
+  };
 }
 
 export function ElevationViewer({
   door, units, panelTree,
+  selectedSplitPath, onSplitSelect, onSplitDragEnd,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,12 +79,15 @@ export function ElevationViewer({
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
   const [showDimensions, setShowDimensions] = useState(true);
   const [showHatching, setShowHatching] = useState(true);
   const [showHardware, setShowHardware] = useState(true);
+
+  const [hoveredSplit, setHoveredSplit] = useState<{ path: number[]; type: 'hsplit' | 'vsplit' } | null>(null);
+  const [draggingSplit, setDraggingSplit] = useState<DragState | null>(null);
 
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
@@ -35,6 +97,20 @@ export function ElevationViewer({
   const rightStileW = door.LeftRightStileW;
   const topRailW = door.TopRailW;
   const bottomRailW = door.BottomRailW;
+
+  // Root panel bounds (computed once, used by hit-testing and drawing)
+  const rootBounds: PanelBounds = useMemo(() => ({
+    xMin: bottomRailW,
+    xMax: doorH - topRailW,
+    yMin: leftStileW,
+    yMax: doorW - rightStileW,
+  }), [bottomRailW, topRailW, leftStileW, rightStileW, doorH, doorW]);
+
+  // Splits with bounds for hit-testing
+  const splitsWithBounds = useMemo(
+    () => enumerateSplitsWithBounds(panelTree, rootBounds),
+    [panelTree, rootBounds],
+  );
 
   // Reset zoom/pan when door changes
   useEffect(() => {
@@ -54,6 +130,21 @@ export function ElevationViewer({
     return () => ro.disconnect();
   }, []);
 
+  // Coordinate transforms (extracted so mouse handlers can use them)
+  const pad = 80;
+  const scaleX = (cw - 2 * pad) / doorW;
+  const scaleY = (ch - 2 * pad) / doorH;
+  const baseScale = Math.min(scaleX, scaleY);
+  const scale = baseScale * zoom;
+  const cx = cw / 2;
+  const cy = ch / 2;
+
+  const toX = useCallback((x: number) => cx + (x - doorW / 2) * scale + panX, [cx, doorW, scale, panX]);
+  const toY = useCallback((y: number) => cy - (y - doorH / 2) * scale + panY, [cy, doorH, scale, panY]);
+  // Inverse transforms: screen → model
+  const fromX = useCallback((sx: number) => (sx - panX - cx) / scale + doorW / 2, [cx, doorW, scale, panX]);
+  const fromY = useCallback((sy: number) => -(sy - panY - cy) / scale + doorH / 2, [cy, doorH, scale, panY]);
+
   // Wheel zoom (center-anchored)
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -67,36 +158,127 @@ export function ElevationViewer({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Mouse pan
+  // Mouse handlers — restructured for hit-testing + drag
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    setIsDragging(true);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    // Hit-test dividers first (only when interactive)
+    if (onSplitSelect) {
+      const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+      if (hit) {
+        e.preventDefault();
+        onSplitSelect(hit.path);
+        const range = getDragRange(hit);
+        setDraggingSplit({
+          path: hit.path,
+          type: hit.type,
+          currentPos: hit.pos,
+          range,
+        });
+        lastMouse.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+    }
+
+    // Otherwise start canvas pan
+    setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, []);
+  }, [splitsWithBounds, toX, toY, onSplitSelect]);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return;
-    setPanX((p) => p + e.clientX - lastMouse.current.x);
-    setPanY((p) => p + e.clientY - lastMouse.current.y);
-    lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [isDragging]);
-  const handleMouseUp = useCallback(() => setIsDragging(false), []);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    if (draggingSplit) {
+      // Compute new position from mouse
+      let newPos: number;
+      if (draggingSplit.type === 'hsplit') {
+        newPos = fromY(sy); // hsplit moves along height (model Y)
+      } else {
+        newPos = fromX(sx); // vsplit moves along width (model X)
+      }
+      newPos = Math.max(draggingSplit.range.min, Math.min(draggingSplit.range.max, newPos));
+      setDraggingSplit(prev => prev ? { ...prev, currentPos: newPos } : null);
+      return;
+    }
+
+    if (isPanning) {
+      setPanX((p) => p + e.clientX - lastMouse.current.x);
+      setPanY((p) => p + e.clientY - lastMouse.current.y);
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    // Hover detection for cursor
+    if (onSplitSelect) {
+      const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+      if (hit) {
+        if (!hoveredSplit || !pathsEqual(hoveredSplit.path, hit.path)) {
+          setHoveredSplit({ path: hit.path, type: hit.type });
+        }
+      } else if (hoveredSplit) {
+        setHoveredSplit(null);
+      }
+    }
+  }, [draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, onSplitSelect, hoveredSplit]);
+
+  const handleMouseUp = useCallback(() => {
+    if (draggingSplit) {
+      onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
+      setDraggingSplit(null);
+    }
+    setIsPanning(false);
+  }, [draggingSplit, onSplitDragEnd]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1) {
-      setIsDragging(true);
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect && onSplitSelect) {
+        const sx = e.touches[0].clientX - rect.left;
+        const sy = e.touches[0].clientY - rect.top;
+        const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+        if (hit) {
+          onSplitSelect(hit.path);
+          const range = getDragRange(hit);
+          setDraggingSplit({ path: hit.path, type: hit.type, currentPos: hit.pos, range });
+          lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          return;
+        }
+      }
+      setIsPanning(true);
       lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     } else if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       lastPinchDist.current = Math.hypot(dx, dy);
     }
-  }, []);
+  }, [splitsWithBounds, toX, toY, onSplitSelect]);
+
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1 && isDragging) {
-      const t = e.touches[0];
-      setPanX((p) => p + t.clientX - lastMouse.current.x);
-      setPanY((p) => p + t.clientY - lastMouse.current.y);
-      lastMouse.current = { x: t.clientX, y: t.clientY };
+    if (e.touches.length === 1) {
+      if (draggingSplit) {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const sx = e.touches[0].clientX - rect.left;
+          const sy = e.touches[0].clientY - rect.top;
+          let newPos = draggingSplit.type === 'hsplit' ? fromY(sy) : fromX(sx);
+          newPos = Math.max(draggingSplit.range.min, Math.min(draggingSplit.range.max, newPos));
+          setDraggingSplit(prev => prev ? { ...prev, currentPos: newPos } : null);
+        }
+        return;
+      }
+      if (isPanning) {
+        const t = e.touches[0];
+        setPanX((p) => p + t.clientX - lastMouse.current.x);
+        setPanY((p) => p + t.clientY - lastMouse.current.y);
+        lastMouse.current = { x: t.clientX, y: t.clientY };
+      }
     } else if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -107,11 +289,28 @@ export function ElevationViewer({
       }
       lastPinchDist.current = dist;
     }
-  }, [isDragging]);
+  }, [draggingSplit, isPanning, fromX, fromY]);
+
   const handleTouchEnd = useCallback(() => {
-    setIsDragging(false);
+    if (draggingSplit) {
+      onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
+      setDraggingSplit(null);
+    }
+    setIsPanning(false);
     lastPinchDist.current = 0;
-  }, []);
+  }, [draggingSplit, onSplitDragEnd]);
+
+  // Cursor
+  const cursor = useMemo(() => {
+    if (draggingSplit) {
+      return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
+    }
+    if (hoveredSplit) {
+      return hoveredSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
+    }
+    if (isPanning) return 'grabbing';
+    return 'grab';
+  }, [draggingSplit, hoveredSplit, isPanning]);
 
   const fmtDim = useCallback((mm: number) => formatUnit(mm, units), [units]);
 
@@ -144,17 +343,6 @@ export function ElevationViewer({
     // White background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
-
-    // Coordinate transform: model space mm (origin at bottom-left of door) → screen
-    const pad = 80;
-    const scaleX = (cw - 2 * pad) / doorW;
-    const scaleY = (ch - 2 * pad) / doorH;
-    const baseScale = Math.min(scaleX, scaleY);
-    const scale = baseScale * zoom;
-    const cx = cw / 2;
-    const cy = ch / 2;
-    const toX = (x: number) => cx + (x - doorW / 2) * scale + panX;
-    const toY = (y: number) => cy - (y - doorH / 2) * scale + panY; // Y-up
 
     // Helper: draw a filled rect in model space
     const drawRect = (x1: number, y1: number, x2: number, y2: number) => {
@@ -192,13 +380,6 @@ export function ElevationViewer({
       ctx.restore();
     };
 
-    // Compute panel bounds from tree
-    const rootBounds: PanelBounds = {
-      xMin: bottomRailW,
-      xMax: doorH - topRailW,
-      yMin: leftStileW,
-      yMax: doorW - rightStileW,
-    };
     const leaves = flattenTree(panelTree, rootBounds);
 
     // Panel areas (light gray fill with hatching)
@@ -274,6 +455,61 @@ export function ElevationViewer({
     ctx.lineWidth = 0.5;
     for (const pb of leaves) {
       strokeRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+    }
+
+    // --- Divider highlights (selected + hovered) ---
+    // Hovered divider (subtle warm tint, only if not the selected one)
+    if (hoveredSplit && (!selectedSplitPath || !pathsEqual(hoveredSplit.path, selectedSplitPath))) {
+      const hovered = splitsWithBounds.find(s => pathsEqual(s.path, hoveredSplit.path));
+      if (hovered) {
+        const b = hovered.bounds;
+        ctx.fillStyle = 'rgba(255, 200, 100, 0.2)';
+        drawRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        ctx.strokeStyle = '#ffaa44';
+        ctx.lineWidth = 1.5;
+        strokeRect(b.yMin, b.xMin, b.yMax, b.xMax);
+      }
+    }
+
+    // Selected divider (orange highlight)
+    if (selectedSplitPath) {
+      const selected = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
+      if (selected) {
+        const b = selected.bounds;
+        ctx.fillStyle = 'rgba(255, 165, 0, 0.35)';
+        drawRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        ctx.strokeStyle = '#ff8800';
+        ctx.lineWidth = 2;
+        strokeRect(b.yMin, b.xMin, b.yMax, b.xMax);
+      }
+    }
+
+    // Ghost line during drag
+    if (draggingSplit) {
+      ctx.save();
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      if (draggingSplit.type === 'hsplit') {
+        // Horizontal line at new Y position
+        const syLine = toY(draggingSplit.currentPos);
+        const sxLeft = toX(leftStileW);
+        const sxRight = toX(doorW - rightStileW);
+        ctx.beginPath();
+        ctx.moveTo(sxLeft, syLine);
+        ctx.lineTo(sxRight, syLine);
+        ctx.stroke();
+      } else {
+        // Vertical line at new X position
+        const sxLine = toX(draggingSplit.currentPos);
+        const syTop = toY(doorH - topRailW);
+        const syBot = toY(bottomRailW);
+        ctx.beginPath();
+        ctx.moveTo(sxLine, syTop);
+        ctx.lineTo(sxLine, syBot);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Dimensions
@@ -360,8 +596,9 @@ export function ElevationViewer({
       }
     }
 
-  }, [cw, ch, zoom, panX, panY, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      panelTree, showDimensions, showHatching, showHardware, holes, fmtDim]);
+  }, [cw, ch, toX, toY, scale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
+      panelTree, rootBounds, showDimensions, showHatching, showHardware, holes, fmtDim,
+      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
 
@@ -421,7 +658,7 @@ export function ElevationViewer({
           ref={canvasRef}
           width={cw}
           height={ch}
-          style={{ width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : 'grab' }}
+          style={{ width: '100%', height: '100%', cursor }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

@@ -157,6 +157,70 @@ export function updateSplit(
   return recurse(tree, 0);
 }
 
+/** Compare two split paths for equality. */
+export function pathsEqual(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** SplitInfo extended with spatial bounds for hit-testing and drag constraints. */
+export interface SplitInfoWithBounds extends SplitInfo {
+  bounds: PanelBounds;        // divider bar rectangle in model space
+  parentBounds: PanelBounds;  // region this split divides (for drag range)
+}
+
+/** Enumerate splits with their model-space rectangles for hit-testing. */
+export function enumerateSplitsWithBounds(
+  tree: PanelTree,
+  rootBounds: PanelBounds,
+): SplitInfoWithBounds[] {
+  const result: SplitInfoWithBounds[] = [];
+
+  function recurse(node: PanelTree, parentBounds: PanelBounds, path: number[], depth: number) {
+    if (node.type === 'leaf') return;
+    const half = node.width / 2;
+
+    let dividerBounds: PanelBounds;
+    let child0Bounds: PanelBounds;
+    let child1Bounds: PanelBounds;
+
+    if (node.type === 'hsplit') {
+      dividerBounds = {
+        xMin: node.pos - half,
+        xMax: node.pos + half,
+        yMin: parentBounds.yMin,
+        yMax: parentBounds.yMax,
+      };
+      child0Bounds = { ...parentBounds, xMax: node.pos - half };
+      child1Bounds = { ...parentBounds, xMin: node.pos + half };
+    } else {
+      dividerBounds = {
+        xMin: parentBounds.xMin,
+        xMax: parentBounds.xMax,
+        yMin: node.pos - half,
+        yMax: node.pos + half,
+      };
+      child0Bounds = { ...parentBounds, yMax: node.pos - half };
+      child1Bounds = { ...parentBounds, yMin: node.pos + half };
+    }
+
+    result.push({
+      path: [...path],
+      type: node.type,
+      pos: node.pos,
+      width: node.width,
+      depth,
+      bounds: dividerBounds,
+      parentBounds,
+    });
+
+    recurse(node.children[0], child0Bounds, [...path, 0], depth + 1);
+    recurse(node.children[1], child1Bounds, [...path, 1], depth + 1);
+  }
+
+  recurse(tree, rootBounds, [], 0);
+  return result;
+}
+
 /** Enumerate all split nodes for UI editing. */
 export function enumerateSplits(tree: PanelTree): SplitInfo[] {
   const result: SplitInfo[] = [];

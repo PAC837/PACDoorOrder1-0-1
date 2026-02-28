@@ -1,0 +1,32 @@
+8
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Parts MaterialName="3/4 MDF">
+  <Part PartID="6" PartNumbers="6" Quan="1" Name="Generic Door" Width="508" Length="762" EdgeBand="None" Color="None" AssyNo="R0N1" Comment="Cabinet Door" UserAdded="False" RemakeJobName="" AllowRotation="1" TextureName="">
+    <Shape Version="2" Name="" Type="1" RadiusX="0" RadiusY="0" Source="1" Data1="0" Data2="0" RotAng="0" DoNotTranslateTo00="False">
+      <ShapePoint ID="0" X="0" Y="0" PtType="0" Data="0" EdgeType="0" Anchor="" EBand="0" X_Eq="" Y_Eq="" Data_Eq="" LAdj="0" RAdj="0" TAdj="0" BAdj="0" Scribe="0" Source="0" BoreHoles="0" EBandLock="False" SideName="Right" />
+      <ShapePoint ID="1" X="762" Y="0" PtType="0" Data="0" EdgeType="0" Anchor="" EBand="0" X_Eq="" Y_Eq="" Data_Eq="" LAdj="0" RAdj="0" TAdj="0" BAdj="0" Scribe="0" Source="0" BoreHoles="0" EBandLock="False" SideName="Top" />
+      <ShapePoint ID="2" X="762" Y="508" PtType="0" Data="0" EdgeType="0" Anchor="" EBand="0" X_Eq="" Y_Eq="" Data_Eq="" LAdj="0" RAdj="0" TAdj="0" BAdj="0" Scribe="0" Source="0" BoreHoles="0" EBandLock="False" SideName="Left" />
+      <ShapePoint ID="3" X="0" Y="508" PtType="0" Data="0" EdgeType="0" Anchor="" EBand="0" X_Eq="" Y_Eq="" Data_Eq="" LAdj="0" RAdj="0" TAdj="0" BAdj="0" Scribe="0" Source="0" BoreHoles="0" EBandLock="False" SideName="Bottom" />
+      <Operations Version="2">
+        <OperationToolPath ToolID="-1" ToolGroupID="62" DecorativeProfileID="-1" ClosedShape="True" ToolPathWidth="0" NoRamp="False" NextToolPathIdTag="-1" ToolPathIdTag="-1" ID="2" X="0" Y="0" Depth="0" Hide="False" X_Eq="" Y_Eq="" Depth_Eq="" Hide_Eq="" IsUserOp="True" Noneditable="False" Anchor="" FlipSideOp="False">
+          <OpIdTag TypeCode="29" LegacyNumber="54001">
+            <OpIdTagReference Key="Panel Index" Value="1" />
+            <OpIdTagReference Key="Count" Value="1" />
+          </OpIdTag>
+          <OperationToolPathNode X="63.5" Y="63.5" DepthOR="-9999" PtType="0" Data="0" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />
+          <OperationToolPathNode X="63.5" Y="444.5" DepthOR="-9999" PtType="0" Data="0" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />
+          <OperationToolPathNode X="698.5" Y="444.5" DepthOR="-9999" PtType="0" Data="0" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />
+          <OperationToolPathNode X="698.5" Y="63.5" DepthOR="-9999" PtType="0" Data="0" X_Eq="" Y_Eq="" Data_Eq="" Anchor="" />
+        </OperationToolPath>
+      </Operations>
+    </Shape>
+    <BandMatTmpSel RootTemplateId="71" MissingTemplateName="PVC Banding">
+      <TextureIdOverrideByPartType PartType="EDGEBAND" Id="227" ManuallyChanged="False" />
+      <TextureIdOverrideByPartType PartType="EDGEBAND2" Id="227" ManuallyChanged="False" />
+      <TextureIdOverrideByPartType PartType="EDGEBAND3" Id="227" ManuallyChanged="False" />
+      <TextureIdOverrideByPartType PartType="EDGEBAND4" Id="227" ManuallyChanged="False" />
+      <TextureIdOverrideByPartType PartType="EDGEBAND5" Id="227" ManuallyChanged="False" />
+      <TextureIdOverrideByPartType PartType="EDGEBAND6" Id="227" ManuallyChanged="False" />
+    </BandMatTmpSel>
+  </Part>
+</Parts>

@@ -352,7 +352,7 @@ export function buildCarvedDoor(
   thickness: number,
   toolpathRects: { rect: SceneRect; tools: GraphToolEntry[]; depth?: number }[],
   profiles: ToolProfileData[],
-  backPocket?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] } | null,
+  backPockets?: { rect: SceneRect; depth: number; tools: GraphToolEntry[] }[],
   holes?: HoleData[],
 ): THREE.BufferGeometry {
   console.time('[CNCDoorSlab] CSG carving');
@@ -455,88 +455,90 @@ export function buildCarvedDoor(
   }
 
   // Back pocket subtraction — box recess + tool profiles (mirrored to back face)
-  if (backPocket) {
-    const { rect: backRect, depth: backPocketDepth, tools: backTools } = backPocket;
+  if (backPockets && backPockets.length > 0) {
+    for (const backPocket of backPockets) {
+      const { rect: backRect, depth: backPocketDepth, tools: backTools } = backPocket;
 
-    // Back pocket box recess
-    if (backPocketDepth > 0) {
-      const pocketGeo = new THREE.BoxGeometry(
-        backRect.width, backRect.height, backPocketDepth + SURFACE_OVERSHOOT,
-      );
-      const pocketBrush = new Brush(pocketGeo);
-      pocketBrush.position.set(
-        backRect.x,
-        backRect.y,
-        -thickness / 2 + backPocketDepth / 2 - SURFACE_OVERSHOOT / 2,
-      );
-      pocketBrush.updateMatrixWorld(true);
-      try {
-        slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
-        opCount++;
-      } catch (e) {
-        failedOps++;
-        console.warn('[CNCDoorSlab] CSG subtract failed for back pocket, skipping', e);
-      }
-    }
-
-    // Back tool profiles — same dispatch as front but with flipSide=true by default
-    // Per-tool flip: FlipSide tools in a back operation render on the front face (XOR)
-    for (const tool of backTools) {
-      const effectiveFlipSide = !(tool.flipSide ?? false);
-      const offset = -tool.entryOffset;
-      const radius = tool.toolDiameter / 2;
-      const tipZ = effectiveFlipSide
-        ? -thickness / 2 + tool.entryDepth
-        : thickness / 2 - tool.entryDepth;
-      const surfaceZ = effectiveFlipSide
-        ? -thickness / 2 - SURFACE_OVERSHOOT
-        : thickness / 2 + SURFACE_OVERSHOOT;
-
-      const isProfile = tool.isCNCDoor;
-      const isVBit = tool.sharpCornerAngle > 0;
-      const toolType = isProfile ? 'profile' : isVBit ? 'v-bit' : 'flat';
-
-      console.log(
-        `[CNCDoorSlab] Back tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
-        `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
-        `surfaceZ=${surfaceZ.toFixed(2)}${!effectiveFlipSide ? ' (FLIPPED to front)' : ''}`,
-      );
-
-      if (!isProfile && !isVBit) {
-        // FLAT TOOL — frame pocket; swap args for back face
-        const pocketGeo = effectiveFlipSide
-          ? buildFramePocket(backRect, offset, radius, surfaceZ, tipZ)
-          : buildFramePocket(backRect, offset, radius, tipZ, surfaceZ);
+      // Back pocket box recess
+      if (backPocketDepth > 0) {
+        const pocketGeo = new THREE.BoxGeometry(
+          backRect.width, backRect.height, backPocketDepth + SURFACE_OVERSHOOT,
+        );
         const pocketBrush = new Brush(pocketGeo);
+        pocketBrush.position.set(
+          backRect.x,
+          backRect.y,
+          -thickness / 2 + backPocketDepth / 2 - SURFACE_OVERSHOOT / 2,
+        );
         pocketBrush.updateMatrixWorld(true);
         try {
           slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
           opCount++;
         } catch (e) {
           failedOps++;
-          console.warn(
-            `[CNCDoorSlab] CSG subtract failed for back flat tool "${tool.toolName}", skipping`, e,
-          );
+          console.warn('[CNCDoorSlab] CSG subtract failed for back pocket, skipping', e);
         }
-      } else {
-        // PROFILE or V-BIT — sweep cross-section along back toolpath
-        const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
-        if (!crossSection) {
-          console.warn(`[CNCDoorSlab] No back cross-section for "${tool.toolName}", skipping`);
-          continue;
-        }
+      }
 
-        const sweepGeo = buildRectangularSweep(crossSection, backRect);
-        const sweepBrush = new Brush(sweepGeo);
-        sweepBrush.updateMatrixWorld(true);
-        try {
-          slabBrush = evaluator.evaluate(slabBrush, sweepBrush, SUBTRACTION);
-          opCount++;
-        } catch (e) {
-          failedOps++;
-          console.warn(
-            `[CNCDoorSlab] CSG subtract failed for back tool "${tool.toolName}", skipping`, e,
-          );
+      // Back tool profiles — same dispatch as front but with flipSide=true by default
+      // Per-tool flip: FlipSide tools in a back operation render on the front face (XOR)
+      for (const tool of backTools) {
+        const effectiveFlipSide = !(tool.flipSide ?? false);
+        const offset = -tool.entryOffset;
+        const radius = tool.toolDiameter / 2;
+        const tipZ = effectiveFlipSide
+          ? -thickness / 2 + tool.entryDepth
+          : thickness / 2 - tool.entryDepth;
+        const surfaceZ = effectiveFlipSide
+          ? -thickness / 2 - SURFACE_OVERSHOOT
+          : thickness / 2 + SURFACE_OVERSHOOT;
+
+        const isProfile = tool.isCNCDoor;
+        const isVBit = tool.sharpCornerAngle > 0;
+        const toolType = isProfile ? 'profile' : isVBit ? 'v-bit' : 'flat';
+
+        console.log(
+          `[CNCDoorSlab] Back tool "${tool.toolName}": type=${toolType}, offset=${offset.toFixed(2)}, ` +
+          `radius=${radius.toFixed(2)}, depth=${tool.entryDepth.toFixed(2)}, tipZ=${tipZ.toFixed(2)}, ` +
+          `surfaceZ=${surfaceZ.toFixed(2)}${!effectiveFlipSide ? ' (FLIPPED to front)' : ''}`,
+        );
+
+        if (!isProfile && !isVBit) {
+          // FLAT TOOL — frame pocket; swap args for back face
+          const pocketGeo = effectiveFlipSide
+            ? buildFramePocket(backRect, offset, radius, surfaceZ, tipZ)
+            : buildFramePocket(backRect, offset, radius, tipZ, surfaceZ);
+          const pocketBrush = new Brush(pocketGeo);
+          pocketBrush.updateMatrixWorld(true);
+          try {
+            slabBrush = evaluator.evaluate(slabBrush, pocketBrush, SUBTRACTION);
+            opCount++;
+          } catch (e) {
+            failedOps++;
+            console.warn(
+              `[CNCDoorSlab] CSG subtract failed for back flat tool "${tool.toolName}", skipping`, e,
+            );
+          }
+        } else {
+          // PROFILE or V-BIT — sweep cross-section along back toolpath
+          const crossSection = buildCrossSection(tool, profiles, thickness, effectiveFlipSide);
+          if (!crossSection) {
+            console.warn(`[CNCDoorSlab] No back cross-section for "${tool.toolName}", skipping`);
+            continue;
+          }
+
+          const sweepGeo = buildRectangularSweep(crossSection, backRect);
+          const sweepBrush = new Brush(sweepGeo);
+          sweepBrush.updateMatrixWorld(true);
+          try {
+            slabBrush = evaluator.evaluate(slabBrush, sweepBrush, SUBTRACTION);
+            opCount++;
+          } catch (e) {
+            failedOps++;
+            console.warn(
+              `[CNCDoorSlab] CSG subtract failed for back tool "${tool.toolName}", skipping`, e,
+            );
+          }
         }
       }
     }

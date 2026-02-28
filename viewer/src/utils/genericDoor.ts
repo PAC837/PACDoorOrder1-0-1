@@ -6,6 +6,7 @@ import type {
   OperationData,
   ToolPathNodeData,
   HoleData,
+  BackPocketMode,
 } from '../types.js';
 import type { PanelTree, PanelBounds } from './panelTree.js';
 import { flattenTree, enumerateSplits } from './panelTree.js';
@@ -35,6 +36,9 @@ export function buildGenericDoor(
   bottomRailW = 63.5,       // 2.5"
   panelTree: PanelTree = { type: 'leaf' },
   holes: HoleData[] = [],
+  backPocketMode: BackPocketMode = 'all',
+  selectedPanelIndices: Set<number> = new Set(),
+  edgeGroupId: number | null = null,
 ): { door: DoorData; graph: DoorGraphData; panelBounds: PanelBounds[] } {
   // Look up maps
   const toolGroupById = new Map(allToolGroups.map((g) => [g.ToolGroupID, g]));
@@ -88,7 +92,26 @@ export function buildGenericDoor(
   if (backGroupId !== null) {
     const group = toolGroupById.get(backGroupId);
     if (group) {
-      for (const pathNodes of subPanelPaths) {
+      // Determine which toolpaths get back operations based on mode
+      let backPaths: ToolPathNodeData[][];
+      if (backPocketMode === 'full') {
+        // Single rectangle covering entire frame area (ignoring splits)
+        backPaths = [[
+          { X: rootBounds.xMin, Y: rootBounds.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+          { X: rootBounds.xMin, Y: rootBounds.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+          { X: rootBounds.xMax, Y: rootBounds.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+          { X: rootBounds.xMax, Y: rootBounds.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+        ]];
+      } else if (backPocketMode === 'selected' && selectedPanelIndices.size > 0) {
+        backPaths = Array.from(selectedPanelIndices)
+          .filter(idx => idx < subPanelPaths.length)
+          .map(idx => subPanelPaths[idx]);
+      } else {
+        // 'all' — one back op per sub-panel (default)
+        backPaths = subPanelPaths;
+      }
+
+      for (const pathNodes of backPaths) {
         operations.push({
           ID: nextId,
           ToolGroupID: backGroupId,
@@ -102,6 +125,31 @@ export function buildGenericDoor(
         graphOperations.push(buildGraphOperation(nextId, group, toolById, backDepth, true));
         nextId++;
       }
+    }
+  }
+
+  // Edge operations — toolpath is the FULL DOOR PERIMETER
+  if (edgeGroupId !== null) {
+    const edgeGroup = toolGroupById.get(edgeGroupId);
+    if (edgeGroup) {
+      const perimeterNodes: ToolPathNodeData[] = [
+        { X: 0,     Y: doorW, DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: 0,     Y: 0,     DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: doorH, Y: 0,     DepthOR: -9999, PtType: 0, Data: 0 },
+        { X: doorH, Y: doorW, DepthOR: -9999, PtType: 0, Data: 0 },
+      ];
+      operations.push({
+        ID: nextId,
+        ToolGroupID: edgeGroupId,
+        Depth: 0,
+        FlipSideOp: false,
+        ClosedShape: true,
+        InsideOut: false,
+        CCW: false,
+        OperationToolPathNode: perimeterNodes,
+      });
+      graphOperations.push(buildGraphOperation(nextId, edgeGroup, toolById, 0, false));
+      nextId++;
     }
   }
 

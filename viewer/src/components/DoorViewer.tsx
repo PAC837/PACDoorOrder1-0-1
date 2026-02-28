@@ -1,8 +1,11 @@
+import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
 import { MATERIAL_THICKNESS } from '../types.js';
 import { CNCDoorSlab } from './CNCDoorSlab.js';
 import { toolPathToRect } from '../utils/geometry.js';
+import type { PanelTree, PanelBounds } from '../utils/panelTree.js';
+import { enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
 
 interface DoorViewerProps {
   door: DoorData;
@@ -13,29 +16,44 @@ interface DoorViewerProps {
   frontPanelType?: PanelType;
   backPanelType?: PanelType;
   hasBackRabbit?: boolean;
-  selectedPanelIdx?: number | null;
-  onPanelSelect?: (idx: number | null) => void;
+  selectedPanelIndices?: Set<number>;
+  onPanelSelect?: (idx: number, event: { ctrlKey: boolean }) => void;
+  selectedSplitPath?: number[] | null;
+  onSplitSelect?: (path: number[] | null) => void;
+  panelTree?: PanelTree;
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIdx, onPanelSelect }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree }: DoorViewerProps) {
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
-  // Separate front profile ops from back pocket ops
+  // Separate front profile ops from back ops (now an array for multi-panel support)
   const frontOps = operations.filter((op) => !op.FlipSideOp);
-  const backPocketOp = operations.find((op) => op.FlipSideOp);
+  const backPocketOps = operations.filter((op) => op.FlipSideOp);
 
   // Check visibility from overlay toggles
   const frontVisible = frontOps.some(
     (op) => operationVisibility[op.ID] === true
   );
-  const backPocketVisible = backPocketOp
-    ? operationVisibility[backPocketOp.ID] === true
-    : false;
+  const backPocketVisible = backPocketOps.some(
+    (op) => operationVisibility[op.ID] === true
+  );
 
   const thickness = MATERIAL_THICKNESS;
   const doorW = door.DefaultW;
   const doorH = door.DefaultH;
+
+  // Compute split overlay data for divider click targets
+  const splitOverlays = useMemo(() => {
+    if (!panelTree || !onSplitSelect) return [];
+    const rootBounds: PanelBounds = {
+      xMin: door.BottomRailW,
+      xMax: door.DefaultH - door.TopRailW,
+      yMin: door.LeftRightStileW,
+      yMax: door.DefaultW - door.LeftRightStileW,
+    };
+    return enumerateSplitsWithBounds(panelTree, rootBounds);
+  }, [panelTree, onSplitSelect, door.BottomRailW, door.TopRailW, door.LeftRightStileW, door.DefaultW, door.DefaultH]);
 
   return (
     <group>
@@ -44,7 +62,7 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
         doorH={doorH}
         thickness={thickness}
         frontOps={frontOps}
-        backPocketOp={backPocketOp}
+        backPocketOps={backPocketOps}
         graph={graph}
         profiles={profiles}
         frontVisible={frontVisible}
@@ -60,12 +78,12 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
       {onPanelSelect && frontOps.map((op, i) => {
         if (!op.OperationToolPathNode || op.OperationToolPathNode.length < 3) return null;
         const rect = toolPathToRect(op.OperationToolPathNode, doorW, doorH);
-        const isSelected = selectedPanelIdx === i;
+        const isSelected = selectedPanelIndices?.has(i) ?? false;
         return (
           <mesh
             key={`panel-select-${i}`}
             position={[rect.x, rect.y, thickness / 2 + 0.5]}
-            onClick={(e) => { e.stopPropagation(); onPanelSelect(i); }}
+            onClick={(e) => { e.stopPropagation(); onPanelSelect(i, { ctrlKey: e.ctrlKey || e.metaKey }); }}
             onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
             onPointerOut={() => { document.body.style.cursor = 'default'; }}
           >
@@ -74,6 +92,36 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
               color={isSelected ? '#4488ff' : '#ffffff'}
               transparent
               opacity={isSelected ? 0.25 : 0.0}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        );
+      })}
+
+      {/* Clickable divider overlays for split selection */}
+      {onSplitSelect && splitOverlays.map((split, i) => {
+        const b = split.bounds;
+        // Convert Mozaik coords to scene coords: mozY → sceneX, mozX → sceneY
+        const sceneX = ((b.yMin + b.yMax) / 2) - doorW / 2;
+        const sceneY = ((b.xMin + b.xMax) / 2) - doorH / 2;
+        const width = b.yMax - b.yMin;
+        const height = b.xMax - b.xMin;
+        const isSelected = selectedSplitPath !== null && selectedSplitPath !== undefined &&
+          pathsEqual(split.path, selectedSplitPath);
+        return (
+          <mesh
+            key={`split-select-${i}`}
+            position={[sceneX, sceneY, thickness / 2 + 0.6]}
+            onClick={(e) => { e.stopPropagation(); onSplitSelect(split.path); }}
+            onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+            onPointerOut={() => { document.body.style.cursor = 'default'; }}
+          >
+            <planeGeometry args={[width, height]} />
+            <meshStandardMaterial
+              color={isSelected ? '#ff8800' : '#ffaa44'}
+              transparent
+              opacity={isSelected ? 0.3 : 0.0}
               side={THREE.DoubleSide}
               depthWrite={false}
             />
