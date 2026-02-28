@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData } from '../types.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData, RenderMode } from '../types.js';
 import { GLASS_THICKNESS } from '../types.js';
 import { toolPathToRect } from '../utils/geometry.js';
 import { buildCarvedDoor, getBackRabbetDepth } from '../utils/cuttingBodies.js';
@@ -21,6 +22,8 @@ interface CNCDoorSlabProps {
   backPanelType?: PanelType;
   hasBackRabbit?: boolean;
   holes?: HoleData[];
+  renderMode?: RenderMode;
+  textureUrl?: string;
 }
 
 /**
@@ -44,6 +47,8 @@ export function CNCDoorSlab({
   backPanelType,
   hasBackRabbit,
   holes = [],
+  renderMode = 'ghosted',
+  textureUrl,
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
   const meshKey = useMemo(() => {
@@ -54,6 +59,23 @@ export function CNCDoorSlab({
       .join(',');
     return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}-bp${backPocketOps.length}`;
   }, [toolVisibility, frontVisible, backPocketVisible, holes, backPocketOps]);
+
+  // Load texture from URL when provided
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    if (!textureUrl) {
+      setTexture(null);
+      return;
+    }
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(textureUrl, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      setTexture(t);
+    });
+    return () => {
+      tex.dispose();
+    };
+  }, [textureUrl]);
 
   const carvedGeo = useMemo(() => {
     // Build toolpath rects + associated tool entries from graph
@@ -132,11 +154,38 @@ export function CNCDoorSlab({
     };
   }, [showGlass, frontOps, doorW, doorH, graph, thickness, hasBackRabbit]);
 
+  // EdgesGeometry for wireframe mode — mergeVertices fixes CSG boundary artifacts
+  const edgesGeo = useMemo(() => {
+    if (renderMode !== 'wireframe') return null;
+    const merged = mergeVertices(carvedGeo, 1e-3);
+    merged.computeVertexNormals();
+    return new THREE.EdgesGeometry(merged, 30);
+  }, [carvedGeo, renderMode]);
+
   return (
     <>
-      <mesh key={meshKey} geometry={carvedGeo}>
-        <meshStandardMaterial color={color} roughness={0.7} side={THREE.DoubleSide} />
-      </mesh>
+      {renderMode === 'wireframe' ? (
+        <>
+          {edgesGeo && (
+            <lineSegments key={`${meshKey}-wire`} geometry={edgesGeo}>
+              <lineBasicMaterial color={color} />
+            </lineSegments>
+          )}
+        </>
+      ) : (
+        <mesh key={meshKey} geometry={carvedGeo}>
+          <meshStandardMaterial
+            key={`mat-${renderMode}-${textureUrl ?? 'none'}`}
+            color={texture ? '#ffffff' : color}
+            map={texture ?? undefined}
+            roughness={0.7}
+            side={THREE.DoubleSide}
+            transparent={renderMode === 'ghosted'}
+            opacity={renderMode === 'ghosted' ? 0.4 : 1}
+            depthWrite={renderMode !== 'ghosted'}
+          />
+        </mesh>
+      )}
       {showGlass && glassData && (
         <mesh geometry={glassData.geometry} position={glassData.position}>
           <meshStandardMaterial

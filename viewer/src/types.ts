@@ -191,6 +191,22 @@ export type HandlePlacement = 'center' | 'top-rail' | 'two-equidistant';
 export type DoorHandlePlacement = 'top' | 'center-top' | 'middle' | 'bottom' | 'custom';
 export type HandleElevationRef = 'from-top' | 'from-bottom';
 
+export type RenderMode = 'ghosted' | 'solid' | 'wireframe';
+
+/** Texture manifest returned by /api/textures. */
+export interface TextureManifest {
+  painted: Record<string, string[]>;  // brand → filenames (may be empty)
+  primed: string[];
+  raw: string[];
+  sanded: string[];
+  categories: {
+    painted: boolean;
+    primed: boolean;
+    raw: boolean;
+    sanded: boolean;
+  };
+}
+
 /** A single bore hole operation (hinge cup, mounting hole, or handle hole). */
 export interface HoleData {
   X: number;           // Mozaik X (height axis), mm
@@ -211,7 +227,7 @@ export interface HingeConfig {
   edgeDistance: number;     // mm from door top/bottom to first/last hinge center
   cupDia: number;          // default 35mm
   cupDepth: number;        // default 15mm
-  cupBoringDist: number;   // cup center to door edge, default 22.5mm
+  cupBoringDist: number;   // door edge to cup hole edge, default 5mm
   mountDia: number;        // default 8mm
   mountDepth: number;      // default 13mm
   mountSeparation: number; // vertical distance between mounting holes, default 45mm
@@ -243,7 +259,7 @@ export const DEFAULT_HINGE_CONFIG: HingeConfig = {
   edgeDistance: 85.6,      // ~3.37"
   cupDia: 35,
   cupDepth: 15,
-  cupBoringDist: 22.5,
+  cupBoringDist: 4,
   mountDia: 8,
   mountDepth: 13,
   mountSeparation: 45,
@@ -255,7 +271,7 @@ export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
   enabled: true,
   holeDia: 5,
   holeDepth: 19,
-  cutThrough: false,
+  cutThrough: true,
   holeSeparation: 101.6,   // 4"
   insetFromEdge: 28.575,
   elevation: 114.3,        // ~4.5" from top

@@ -50,16 +50,18 @@ export function computeHingeHoles(
     : config.positions.slice(0, config.count);
 
   // Cup position on the cross-axis (perpendicular to hinge line)
-  // In Mozaik coords: Y = width axis (Y=0 is LEFT edge), X = height axis
+  // cupBoringDist = edge-to-edge (door edge to nearest cup edge)
+  // Cup center = cupBoringDist + cupRadius
+  const cupR = config.cupDia / 2;
   let cupCrossPos: number;
   if (config.side === 'left') {
-    cupCrossPos = config.cupBoringDist;         // left edge (low Y)
+    cupCrossPos = config.cupBoringDist + cupR;         // left edge (low Y)
   } else if (config.side === 'right') {
-    cupCrossPos = doorW - config.cupBoringDist; // right edge (high Y)
+    cupCrossPos = doorW - config.cupBoringDist - cupR; // right edge (high Y)
   } else if (config.side === 'top') {
-    cupCrossPos = doorH - config.cupBoringDist; // top edge in Mozaik X
+    cupCrossPos = doorH - config.cupBoringDist - cupR; // top edge in Mozaik X
   } else {
-    cupCrossPos = config.cupBoringDist;         // bottom edge
+    cupCrossPos = config.cupBoringDist + cupR;         // bottom edge
   }
 
   // Mounting holes offset inward from cup (toward door center)
@@ -195,18 +197,19 @@ export function computeHandleHoles(
       handleX = doorH - config.insetFromEdge; // near top edge
     } else {
       // Left/right hinge: use doorPlacement preset
+      // Elevation only used for custom; all others use insetFromEdge
       if (config.doorPlacement === 'middle') {
         handleX = doorH / 2;
-      } else if (config.doorPlacement === 'bottom') {
-        handleX = config.elevation; // from bottom edge
       } else if (config.doorPlacement === 'custom') {
-        handleX = config.elevation; // custom distance from bottom
+        handleX = config.elevation;
+      } else if (config.doorPlacement === 'bottom') {
+        handleX = config.insetFromEdge; // from bottom edge
       } else if (config.doorPlacement === 'center-top') {
-        handleX = doorH - config.elevation; // from top edge
+        handleX = doorH - config.insetFromEdge; // from top edge
         handleY = doorW / 2; // centered width-wise
       } else {
         // 'top' — from top edge (default)
-        handleX = doorH - config.elevation;
+        handleX = doorH - config.insetFromEdge;
       }
     }
 
@@ -251,9 +254,10 @@ export function computeHandleHoles(
           holeType: 'handle',
         });
       } else {
-        // Door handles: separation axis depends on hinge orientation
+        // Door handles: separation axis depends on hinge orientation and placement
         const isVerticalHinge = hingeSide === 'left' || hingeSide === 'right';
-        if (isVerticalHinge) {
+        const useHorizontalSep = !isVerticalHinge || config.doorPlacement === 'center-top';
+        if (!useHorizontalSep) {
           // Vertical handle — holes separated along X (height)
           holes.push({
             X: center.x - halfSep,
@@ -272,7 +276,7 @@ export function computeHandleHoles(
             holeType: 'handle',
           });
         } else {
-          // Horizontal handle (top/bottom hinge) — holes separated along Y (width)
+          // Horizontal handle (top/bottom hinge or center-top) — holes separated along Y (width)
           holes.push({
             X: center.x,
             Y: center.y - halfSep,
@@ -365,27 +369,29 @@ export function validateHardware(
       });
     }
 
-    // Cup boring distance vs cup radius (extends past door edge)
-    if (hingeConfig.cupBoringDist < cupR) {
+    // Cup boring distance < 0 (cup edge past door edge)
+    if (hingeConfig.cupBoringDist < 0) {
       warnings.push({
         severity: 'error',
-        message: `Hinge cup extends ${fmt(cupR - hingeConfig.cupBoringDist)}mm past door edge (boring distance ${fmt(hingeConfig.cupBoringDist)}mm < cup radius ${fmt(cupR)}mm)`,
+        message: `Hinge cup extends ${fmt(-hingeConfig.cupBoringDist)}mm past door edge (boring distance ${fmt(hingeConfig.cupBoringDist)}mm)`,
       });
     }
 
     // Cup extends into panel area (past stile/rail)
+    // boring dist is edge-to-edge, so full cup span = cupBoringDist + cupDia
+    const cupDia = hingeConfig.cupDia;
     const isVertical = hingeConfig.side === 'left' || hingeConfig.side === 'right';
     if (isVertical) {
       const stileW = hingeConfig.side === 'left' ? leftStileW : rightStileW;
-      if (hingeConfig.cupBoringDist + cupR > stileW) {
+      if (hingeConfig.cupBoringDist + cupDia > stileW) {
         warnings.push({
           severity: 'warning',
-          message: `Hinge cup extends into panel area — stile width (${fmt(stileW)}mm) too narrow for cup (boring ${fmt(hingeConfig.cupBoringDist)}mm + radius ${fmt(cupR)}mm = ${fmt(hingeConfig.cupBoringDist + cupR)}mm)`,
+          message: `Hinge cup extends into panel area — stile width (${fmt(stileW)}mm) too narrow for cup (boring ${fmt(hingeConfig.cupBoringDist)}mm + diameter ${fmt(cupDia)}mm = ${fmt(hingeConfig.cupBoringDist + cupDia)}mm)`,
         });
       }
     } else {
       const railW = hingeConfig.side === 'top' ? topRailW : bottomRailW;
-      if (hingeConfig.cupBoringDist + cupR > railW) {
+      if (hingeConfig.cupBoringDist + cupDia > railW) {
         warnings.push({
           severity: 'warning',
           message: `Hinge cup extends into panel area — rail width (${fmt(railW)}mm) too narrow for cup`,
@@ -402,10 +408,11 @@ export function validateHardware(
     }
 
     // Mount holes cross-axis clearance (past stile/rail boundary)
+    // Cup center = cupBoringDist + cupR, mount = cupCenter + mountInset
     const mountR = hingeConfig.mountDia / 2;
     if (isVertical) {
       const stileW = hingeConfig.side === 'left' ? leftStileW : rightStileW;
-      const mountCross = hingeConfig.cupBoringDist + hingeConfig.mountInset;
+      const mountCross = hingeConfig.cupBoringDist + cupR + hingeConfig.mountInset;
       if (mountCross + mountR > stileW) {
         warnings.push({
           severity: 'warning',

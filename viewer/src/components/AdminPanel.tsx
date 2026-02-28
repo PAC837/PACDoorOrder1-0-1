@@ -1,13 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
 
+import type { TextureManifest } from '../types.js';
+
+interface SelectedTextures {
+  painted: string | null;
+  primed: string | null;
+  raw: string | null;
+  sanded: string | null;
+}
+
 interface AdminPanelProps {
   onDataReloaded: () => void;
+  selectedTextures: SelectedTextures;
+  onTextureSelected: (category: string, texturePath: string | null) => void;
 }
 
 interface PacConfig {
   toolsFolderPath: string | null;
   librariesFolderPath: string | null;
   selectedLibrary: string | null;
+  texturesFolderPath: string | null;
+  selectedTextures: SelectedTextures;
+  activeTextureCategory: string;
   lastLoadedAt: string | null;
   lastLoadError: string | null;
 }
@@ -26,17 +40,22 @@ interface LoadStats {
   profilesCount: number;
 }
 
-export function AdminPanel({ onDataReloaded }: AdminPanelProps) {
+export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected }: AdminPanelProps) {
   const [toolsPath, setToolsPath] = useState('');
   const [librariesPath, setLibrariesPath] = useState('');
+  const [texturesPath, setTexturesPath] = useState('');
   const [toolsStatus, setToolsStatus] = useState<ToolsStatus | null>(null);
   const [librariesList, setLibrariesList] = useState<string[]>([]);
+  const [texturesValid, setTexturesValid] = useState<boolean | null>(null);
+  const [textureManifest, setTextureManifest] = useState<TextureManifest | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [loadStats, setLoadStats] = useState<LoadStats | null>(null);
   const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [browsingTools, setBrowsingTools] = useState(false);
   const [browsingLibraries, setBrowsingLibraries] = useState(false);
+  const [browsingTextures, setBrowsingTextures] = useState(false);
 
   // Load saved config on mount
   useEffect(() => {
@@ -45,6 +64,7 @@ export function AdminPanel({ onDataReloaded }: AdminPanelProps) {
       .then((config: PacConfig) => {
         if (config.toolsFolderPath) setToolsPath(config.toolsFolderPath);
         if (config.librariesFolderPath) setLibrariesPath(config.librariesFolderPath);
+        if (config.texturesFolderPath) setTexturesPath(config.texturesFolderPath);
         if (config.lastLoadedAt) setLastLoaded(config.lastLoadedAt);
         if (config.lastLoadError) setError(config.lastLoadError);
       })
@@ -88,6 +108,83 @@ export function AdminPanel({ onDataReloaded }: AdminPanelProps) {
     }, 400);
     return () => clearTimeout(timer);
   }, [librariesPath]);
+
+  // Validate textures folder when path changes (debounced)
+  useEffect(() => {
+    if (!texturesPath.trim()) {
+      setTexturesValid(null);
+      setTextureManifest(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const valRes = await fetch('/api/validate-textures', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderPath: texturesPath.trim() }),
+        });
+        const val = await valRes.json();
+        setTexturesValid(val.valid);
+
+        if (val.valid) {
+          // Save path to config
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texturesFolderPath: texturesPath.trim() }),
+          });
+          // Fetch manifest
+          const manRes = await fetch('/api/textures');
+          const manifest: TextureManifest = await manRes.json();
+          setTextureManifest(manifest);
+        } else {
+          setTextureManifest(null);
+        }
+      } catch {
+        setTexturesValid(false);
+        setTextureManifest(null);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [texturesPath]);
+
+  const handleBrowseTextures = useCallback(async () => {
+    setBrowsingTextures(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/browse-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialPath: texturesPath, description: 'Select Textures Folder' }),
+      });
+      const result = await res.json();
+      if (result.success && result.folderPath) {
+        setTexturesPath(result.folderPath);
+      } else if (result.error && result.error !== 'No folder selected') {
+        setError(result.error);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Browse request failed');
+    } finally {
+      setBrowsingTextures(false);
+    }
+  }, [texturesPath]);
+
+  const handleTextureSelect = useCallback(async (category: string, relPath: string) => {
+    const currentSelection = selectedTextures[category as keyof SelectedTextures];
+    const newValue = currentSelection === relPath ? null : relPath;
+    onTextureSelected(category, newValue);
+    // Persist to config
+    await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedTextures: { [category]: newValue } }),
+    }).catch(() => {});
+  }, [selectedTextures, onTextureSelected]);
+
+  const toggleCategory = useCallback((key: string) => {
+    setExpandedCategories(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const handleBrowseTools = useCallback(async () => {
     setBrowsingTools(true);
@@ -297,6 +394,180 @@ export function AdminPanel({ onDataReloaded }: AdminPanelProps) {
           </div>
         )}
 
+        {/* Textures Folder */}
+        <div style={styles.section}>
+          <label style={styles.label}>Textures Folder</label>
+          <div style={styles.pathRow}>
+            <input
+              type="text"
+              value={texturesPath}
+              onChange={(e) => setTexturesPath(e.target.value)}
+              placeholder="Folder containing PAC Door Order/ subfolder"
+              style={styles.pathInput}
+            />
+            <button
+              onClick={handleBrowseTextures}
+              disabled={browsingTextures}
+              style={styles.browseButton}
+            >
+              {browsingTextures ? '...' : 'Browse'}
+            </button>
+          </div>
+        </div>
+
+        {texturesPath.trim() && texturesValid !== null && (
+          <div style={styles.section}>
+            <label style={styles.label}>Texture Status</label>
+            <div style={styles.fileList}>
+              <div style={styles.fileRow}>
+                <Dot ok={texturesValid} />
+                <span style={{ color: texturesValid ? '#e0e0e0' : '#f87171' }}>
+                  PAC Door Order/
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {textureManifest && (
+          <div style={styles.section}>
+            <label style={styles.label}>Textures</label>
+            <div style={styles.textureCategories}>
+              {/* Painted — has brand sub-sections */}
+              {textureManifest.categories.painted && (
+                <TextureCategory
+                  label="Painted"
+                  expanded={expandedCategories['painted'] ?? false}
+                  onToggle={() => toggleCategory('painted')}
+                >
+                  {Object.keys(textureManifest.painted).length > 0 ? (
+                    Object.entries(textureManifest.painted).map(([brand, files]) => (
+                      <div key={brand} style={{ marginLeft: 8 }}>
+                        <div
+                          style={styles.brandHeader}
+                          onClick={() => toggleCategory(`painted-${brand}`)}
+                        >
+                          <span style={{ marginRight: 6 }}>
+                            {expandedCategories[`painted-${brand}`] ? '\u25BC' : '\u25B6'}
+                          </span>
+                          {brand}
+                          <span style={styles.countBadge}>{files.length}</span>
+                        </div>
+                        {expandedCategories[`painted-${brand}`] && (
+                          files.length > 0 ? (
+                            <div style={styles.swatchGrid}>
+                              {files.map((f) => {
+                                const relPath = `Painted/${brand}/${f}`;
+                                return (
+                                  <TextureSwatch
+                                    key={relPath}
+                                    relPath={relPath}
+                                    filename={f}
+                                    selected={selectedTextures.painted === relPath}
+                                    onClick={() => handleTextureSelect('painted', relPath)}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={styles.emptyText}>No textures</div>
+                          )
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={styles.emptyText}>No brand folders</div>
+                  )}
+                </TextureCategory>
+              )}
+
+              {/* Primed */}
+              {textureManifest.categories.primed && (
+                <TextureCategory
+                  label="Primed"
+                  expanded={expandedCategories['primed'] ?? false}
+                  onToggle={() => toggleCategory('primed')}
+                >
+                  {textureManifest.primed.length > 0 ? (
+                    <div style={styles.swatchGrid}>
+                      {textureManifest.primed.map((f) => {
+                        const relPath = `Primed/${f}`;
+                        return (
+                          <TextureSwatch
+                            key={relPath}
+                            relPath={relPath}
+                            filename={f}
+                            selected={selectedTextures.primed === relPath}
+                            onClick={() => handleTextureSelect('primed', relPath)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyText}>No textures</div>
+                  )}
+                </TextureCategory>
+              )}
+
+              {/* Raw */}
+              {textureManifest.categories.raw && (
+                <TextureCategory
+                  label="Raw"
+                  expanded={expandedCategories['raw'] ?? false}
+                  onToggle={() => toggleCategory('raw')}
+                >
+                  {textureManifest.raw.length > 0 ? (
+                    <div style={styles.swatchGrid}>
+                      {textureManifest.raw.map((f) => {
+                        const relPath = `Raw/${f}`;
+                        return (
+                          <TextureSwatch
+                            key={relPath}
+                            relPath={relPath}
+                            filename={f}
+                            selected={selectedTextures.raw === relPath}
+                            onClick={() => handleTextureSelect('raw', relPath)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyText}>No textures</div>
+                  )}
+                </TextureCategory>
+              )}
+
+              {/* Sanded */}
+              {textureManifest.categories.sanded && (
+                <TextureCategory
+                  label="Sanded"
+                  expanded={expandedCategories['sanded'] ?? false}
+                  onToggle={() => toggleCategory('sanded')}
+                >
+                  {textureManifest.sanded.length > 0 ? (
+                    <div style={styles.swatchGrid}>
+                      {textureManifest.sanded.map((f) => {
+                        const relPath = `Sanded/${f}`;
+                        return (
+                          <TextureSwatch
+                            key={relPath}
+                            relPath={relPath}
+                            filename={f}
+                            selected={selectedTextures.sanded === relPath}
+                            onClick={() => handleTextureSelect('sanded', relPath)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyText}>No textures</div>
+                  )}
+                </TextureCategory>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div style={styles.buttonRow}>
           <button
@@ -359,6 +630,51 @@ function StatRow({ label, value }: { label: string; value: number }) {
     <div style={styles.statRow}>
       <span style={styles.statLabel}>{label}:</span>
       <span style={styles.statValue}>{value}</span>
+    </div>
+  );
+}
+
+function TextureCategory({ label, expanded, onToggle, children }: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={styles.categorySection}>
+      <div style={styles.categoryHeader} onClick={onToggle}>
+        <span style={{ marginRight: 6 }}>{expanded ? '\u25BC' : '\u25B6'}</span>
+        {label}
+      </div>
+      {expanded && <div style={{ paddingLeft: 4 }}>{children}</div>}
+    </div>
+  );
+}
+
+function TextureSwatch({ relPath, filename, selected, onClick }: {
+  relPath: string;
+  filename: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const imgUrl = `/api/texture-image?path=${encodeURIComponent(relPath)}`;
+  const displayName = filename.replace(/\.jpe?g$/i, '');
+  return (
+    <div
+      style={{
+        ...styles.swatchItem,
+        border: selected ? '2px solid #5577aa' : '2px solid transparent',
+      }}
+      onClick={onClick}
+      title={displayName}
+    >
+      <div
+        style={{
+          ...styles.swatchImage,
+          backgroundImage: `url(${imgUrl})`,
+        }}
+      />
+      <div style={styles.swatchLabel}>{displayName}</div>
     </div>
   );
 }
@@ -489,5 +805,77 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#666688',
     fontStyle: 'italic' as const,
     marginTop: 8,
+  },
+  textureCategories: {
+    background: '#252545',
+    borderRadius: 6,
+    padding: '8px 12px',
+    maxHeight: 400,
+    overflowY: 'auto' as const,
+  },
+  categorySection: {
+    marginBottom: 4,
+  },
+  categoryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#ccccee',
+    cursor: 'pointer',
+    padding: '4px 0',
+    userSelect: 'none' as const,
+  },
+  brandHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '12px',
+    fontWeight: 500,
+    color: '#aaaacc',
+    cursor: 'pointer',
+    padding: '3px 0',
+    userSelect: 'none' as const,
+  },
+  countBadge: {
+    marginLeft: 6,
+    fontSize: '11px',
+    color: '#666688',
+  },
+  swatchGrid: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 6,
+    padding: '6px 0',
+  },
+  swatchItem: {
+    width: 56,
+    cursor: 'pointer',
+    borderRadius: 4,
+    overflow: 'hidden' as const,
+    textAlign: 'center' as const,
+  },
+  swatchImage: {
+    width: 48,
+    height: 48,
+    margin: '2px auto 0',
+    borderRadius: 3,
+    backgroundSize: 'cover' as const,
+    backgroundPosition: 'center',
+    backgroundColor: '#333355',
+  },
+  swatchLabel: {
+    fontSize: '9px',
+    color: '#8888aa',
+    marginTop: 2,
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
+    padding: '0 2px',
+  },
+  emptyText: {
+    fontSize: '11px',
+    color: '#666688',
+    fontStyle: 'italic' as const,
+    padding: '4px 8px',
   },
 };

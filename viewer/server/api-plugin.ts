@@ -2,9 +2,9 @@ import type { Plugin } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, readFileSync, existsSync } from 'node:fs';
 import { readConfig, writeConfig } from './config.js';
-import { loadFromFolders, validateToolsFolder, listLibraries } from './pipeline.js';
+import { loadFromFolders, validateToolsFolder, listLibraries, validateTexturesFolder, scanTextures } from './pipeline.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -49,6 +49,9 @@ export function pacAdminPlugin(): Plugin {
             if ('toolsFolderPath' in body) config.toolsFolderPath = body.toolsFolderPath;
             if ('librariesFolderPath' in body) config.librariesFolderPath = body.librariesFolderPath;
             if ('selectedLibrary' in body) config.selectedLibrary = body.selectedLibrary;
+            if ('texturesFolderPath' in body) config.texturesFolderPath = body.texturesFolderPath;
+            if ('selectedTextures' in body) config.selectedTextures = { ...config.selectedTextures, ...body.selectedTextures };
+            if ('activeTextureCategory' in body) config.activeTextureCategory = body.activeTextureCategory;
             writeConfig(viewerRoot, config);
             jsonResponse(res, 200, { success: true, config });
           } catch {
@@ -127,6 +130,81 @@ export function pacAdminPlugin(): Plugin {
           writeConfig(viewerRoot, config);
 
           jsonResponse(res, result.success ? 200 : 500, result);
+          return;
+        }
+
+        // POST /api/validate-textures — check for PAC Door Order/ subfolder
+        if (req.method === 'POST' && req.url === '/api/validate-textures') {
+          try {
+            const body = await readJsonBody(req);
+            const result = validateTexturesFolder(body.folderPath || '');
+            jsonResponse(res, 200, result);
+          } catch {
+            jsonResponse(res, 400, { valid: false, pacPath: '' });
+          }
+          return;
+        }
+
+        // GET /api/textures — scan texture categories and return manifest
+        if (req.method === 'GET' && req.url === '/api/textures') {
+          const config = readConfig(viewerRoot);
+          if (!config.texturesFolderPath) {
+            jsonResponse(res, 200, { painted: {}, primed: [], raw: [], sanded: [], categories: { painted: false, primed: false, raw: false, sanded: false } });
+            return;
+          }
+          const { valid, pacPath } = validateTexturesFolder(config.texturesFolderPath);
+          if (!valid) {
+            jsonResponse(res, 200, { painted: {}, primed: [], raw: [], sanded: [], categories: { painted: false, primed: false, raw: false, sanded: false } });
+            return;
+          }
+          const manifest = scanTextures(pacPath);
+          jsonResponse(res, 200, manifest);
+          return;
+        }
+
+        // GET /api/texture-image?path=... — serve texture JPG from disk
+        if (req.method === 'GET' && req.url?.startsWith('/api/texture-image?')) {
+          const config = readConfig(viewerRoot);
+          const url = new URL(req.url, 'http://localhost');
+          const relPath = url.searchParams.get('path');
+
+          if (!config.texturesFolderPath || !relPath) {
+            res.statusCode = 400;
+            res.end('Missing texture path');
+            return;
+          }
+
+          const { valid, pacPath } = validateTexturesFolder(config.texturesFolderPath);
+          if (!valid) {
+            res.statusCode = 404;
+            res.end('PAC Door Order folder not found');
+            return;
+          }
+
+          const filePath = resolve(pacPath, relPath);
+          // Security: ensure resolved path is within the PAC Door Order folder
+          if (!filePath.startsWith(pacPath)) {
+            res.statusCode = 403;
+            res.end('Forbidden');
+            return;
+          }
+
+          if (!existsSync(filePath)) {
+            res.statusCode = 404;
+            res.end('Texture not found');
+            return;
+          }
+
+          try {
+            const data = readFileSync(filePath);
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.end(data);
+          } catch {
+            res.statusCode = 500;
+            res.end('Error reading texture file');
+          }
           return;
         }
 

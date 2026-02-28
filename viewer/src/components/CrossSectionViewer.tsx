@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { buildCrossSectionPoints, getBackRabbetDepth } from '../utils/cuttingBodies.js';
+import { buildCrossSectionPoints, buildUnclippedCrossSectionPoints, getBackRabbetDepth } from '../utils/cuttingBodies.js';
 import { drawArrowHead, drawLinearDim, drawAngleDim, drawRadiusDim, drawDiagonalHatch, drawSnapIndicator, drawMeasurePreview, drawGeneralDim } from '../utils/canvasDrawing.js';
 import { useMeasureTool } from '../hooks/useMeasureTool.js';
 import type { SnapTarget, SnapLine } from '../hooks/useMeasureTool.js';
@@ -68,13 +68,14 @@ function adjustForAlignment(
   for (const p of pts) p.x += adj;
 }
 
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const VIEW_WIDTH = 152.4; // 6 inches in mm
 const VIEW_HALF = VIEW_WIDTH / 2;
-const EXTEND_ABOVE = 25.4; // 1 inch above surface for tool shape display
+const EXTEND_ABOVE = 38.1; // 1.5 inches above surface for tool shape display
 
 // ---------------------------------------------------------------------------
 // Composite depth profile — sample the deepest cut at each X position
@@ -399,11 +400,12 @@ function CrossSectionCanvas({
   showUserDimensions,
   units,
   showGlass,
+  showFullToolShape,
   edgeGroupId: edgeGroupIdProp,
   thickness: thicknessCanvasProp,
   toolOverlayList,
   toolOverlayVisibility,
-}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean; edgeGroupId?: number | null }) {
+}: CrossSectionViewerProps & { showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean; showFullToolShape: boolean; edgeGroupId?: number | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -477,9 +479,14 @@ function CrossSectionCanvas({
     const overlayList = toolOverlayList ?? [];
     for (const info of overlayList) {
       const toolEntry = { ...info, flipSide: false };
-      const pts = buildCrossSectionPoints(toolEntry, profiles, thickness);
+      let pts: { x: number; y: number }[] | null;
+      if (showFullToolShape) {
+        pts = buildUnclippedCrossSectionPoints(toolEntry, profiles, thickness, EXTEND_ABOVE, info.alignment);
+      } else {
+        pts = buildCrossSectionPoints(toolEntry, profiles, thickness);
+        if (pts) adjustForAlignment(pts, info.alignment, -info.entryOffset, info.toolDiameter);
+      }
       if (!pts) continue;
-      adjustForAlignment(pts, info.alignment, -info.entryOffset, info.toolDiameter);
       const halfTh = thickness / 2;
       for (const pt of pts) {
         const depth = halfTh - pt.y;
@@ -491,7 +498,7 @@ function CrossSectionCanvas({
       }
     }
     return targets;
-  }, [thickness, stileW, frontPocketDepth, backPocketDepth, frontPanelType, backPanelType, toolOverlayList, profiles]);
+  }, [thickness, stileW, frontPocketDepth, backPocketDepth, frontPanelType, backPanelType, toolOverlayList, profiles, showFullToolShape]);
 
   const snapLines = useMemo((): SnapLine[] => [
     { x1: -VIEW_HALF, y1: 0, x2: stileW, y2: 0, label: 'front face' },
@@ -642,7 +649,7 @@ function CrossSectionCanvas({
     }
 
     // --- Per-tool cross-section outlines (for colored overlays) ---
-    const perToolShapes: { key: string; color: string; isFront: boolean; path: { x: number; y: number }[] }[] = [];
+    const perToolShapes: { key: string; color: string; isFront: boolean; open: boolean; path: { x: number; y: number }[] }[] = [];
     const overlayList = toolOverlayList ?? [];
     const overlayVis = toolOverlayVisibility ?? {};
     if (overlayList.length > 0) {
@@ -650,29 +657,53 @@ function CrossSectionCanvas({
       for (const info of overlayList) {
         if (overlayVis[info.key] === false) continue;
         const toolEntry = { ...info, flipSide: false };
-        const pts = buildCrossSectionPoints(toolEntry, profiles, thickness);
-        if (!pts || pts.length < 3) continue;
-        // Apply alignment adjustment
-        adjustForAlignment(pts, info.alignment, -info.entryOffset, info.toolDiameter);
 
-        // Convert to depth-from-front-face coordinates, extend above surface
-        const path: { x: number; y: number }[] = [];
-        for (const pt of pts) {
-          let depth = halfTh - pt.y; // negative = above surface
-          // Extend top to 1" above surface (surfaceZ points are at depth ≈ -1)
-          if (depth < -0.5) depth = -EXTEND_ABOVE;
-          let x = pt.x;
-          if (info.isEdge) x += stileW; // shift edge tools to door perimeter
-          path.push({ x, y: depth });
-        }
+        if (showFullToolShape) {
+          // Full tool shape — closed polygon with fill extending above surface
+          const pts = buildUnclippedCrossSectionPoints(toolEntry, profiles, thickness, EXTEND_ABOVE, info.alignment);
+          if (!pts || pts.length < 3) continue;
+          const path: { x: number; y: number }[] = [];
+          for (const pt of pts) {
+            const depth = halfTh - pt.y;
+            let x = pt.x;
+            if (info.isEdge) x += stileW;
+            path.push({ x, y: depth });
+          }
+          if (path.length >= 3) {
+            perToolShapes.push({ key: info.key, color: info.color, isFront: info.face === 'front', open: false, path });
+          }
+        } else {
+          // Contact only — show where this tool sits on the composite profile
+          const csPoints = buildCrossSectionPoints(toolEntry, profiles, thickness);
+          if (!csPoints || csPoints.length < 3) continue;
+          adjustForAlignment(csPoints, info.alignment, -info.entryOffset, info.toolDiameter);
+          if (info.isEdge) {
+            for (const p of csPoints) p.x += stileW;
+          }
+          const toolEdges = buildEdgesFromPoints(csPoints);
 
-        if (path.length >= 3) {
-          perToolShapes.push({
-            key: info.key,
-            color: info.color,
-            isFront: info.face === 'front',
-            path,
-          });
+          // Compare tool depth against composite at each sample point
+          const profile = info.face === 'front' ? outline : backProfile;
+          const contactPath: { x: number; y: number }[] = [];
+          const tolerance = 0.15; // mm — accounts for floating-point sampling differences
+
+          for (const sample of profile) {
+            const toolMinY = getMinYAtX(toolEdges, sample.x);
+            if (toolMinY === null) continue;
+            const toolDepth = halfTh - toolMinY;
+            if (toolDepth >= sample.y - tolerance) {
+              // This tool is the deepest (or tied) at this X — it's on the profile
+              contactPath.push({ x: sample.x, y: sample.y });
+            }
+          }
+
+          if (contactPath.length >= 2) {
+            perToolShapes.push({
+              key: info.key, color: info.color,
+              isFront: info.face === 'front', open: true,
+              path: contactPath,
+            });
+          }
         }
       }
     }
@@ -702,50 +733,47 @@ function CrossSectionCanvas({
     ctx.fillRect(0, 0, cw, ch);
 
     // --- 2. Build solid material clip path and draw hatching ---
-    if (showHatching || true) {
-      // Clip to the actual material outline: front profile (top boundary) →
-      // left edge → back profile reversed (bottom boundary) → right edge.
-      // Never goes through slabBot explicitly, preventing the back groove
-      // from being enclosed as material.
-      ctx.save();
-      ctx.beginPath();
+    // Clip to the actual material outline: front profile (top boundary) →
+    // left edge → back profile reversed (bottom boundary) → right edge.
+    // Never goes through slabBot explicitly, preventing the back groove
+    // from being enclosed as material.
+    ctx.save();
+    ctx.beginPath();
 
-      if (outline.length > 1 && backProfile.length > 1) {
-        // Front profile from right to left (top boundary of material)
-        ctx.moveTo(toX(outline[0].x), toY(outline[0].y));
-        for (let i = 1; i < outline.length; i++) {
-          ctx.lineTo(toX(outline[i].x), toY(outline[i].y));
-        }
-        // Left edge: from front profile's leftmost down to back profile's leftmost
-        const lastIdx = backProfile.length - 1;
-        ctx.lineTo(toX(backProfile[lastIdx].x), toY(thickness - backProfile[lastIdx].y));
-        // Back profile from left to right (bottom boundary, reversed order)
-        for (let i = lastIdx - 1; i >= 0; i--) {
-          ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
-        }
-        // Right edge: closePath connects back to front profile start
-        ctx.closePath();
-      } else {
-        // Fallback: plain slab rectangle
-        ctx.moveTo(slabRight, slabTop);
-        ctx.lineTo(slabRight, slabBot);
-        ctx.lineTo(slabLeft, slabBot);
-        ctx.lineTo(slabLeft, slabTop);
-        ctx.closePath();
+    if (outline.length > 1 && backProfile.length > 1) {
+      // Front profile from right to left (top boundary of material)
+      ctx.moveTo(toX(outline[0].x), toY(outline[0].y));
+      for (let i = 1; i < outline.length; i++) {
+        ctx.lineTo(toX(outline[i].x), toY(outline[i].y));
       }
-
-      ctx.clip(); // nonzero (default)
-
-      if (showHatching) {
-        const hatchSpacing = Math.max(3, 2 * scale);
-        drawDiagonalHatch(ctx, cw, ch, hatchSpacing);
-      } else {
-        // Light gray fill when hatching is off
-        ctx.fillStyle = '#f0f0f0';
-        ctx.fillRect(0, 0, cw, ch);
+      // Left edge: from front profile's leftmost down to back profile's leftmost
+      const lastIdx = backProfile.length - 1;
+      ctx.lineTo(toX(backProfile[lastIdx].x), toY(thickness - backProfile[lastIdx].y));
+      // Back profile from left to right (bottom boundary, reversed order)
+      for (let i = lastIdx - 1; i >= 0; i--) {
+        ctx.lineTo(toX(backProfile[i].x), toY(thickness - backProfile[i].y));
       }
-      ctx.restore();
+      // Right edge: closePath connects back to front profile start
+      ctx.closePath();
+    } else {
+      // Fallback: plain slab rectangle
+      ctx.moveTo(slabRight, slabTop);
+      ctx.lineTo(slabRight, slabBot);
+      ctx.lineTo(slabLeft, slabBot);
+      ctx.lineTo(slabLeft, slabTop);
+      ctx.closePath();
     }
+
+    ctx.clip(); // nonzero (default)
+
+    if (showHatching) {
+      const hatchSpacing = Math.max(3, 2 * scale);
+      drawDiagonalHatch(ctx, cw, ch, hatchSpacing);
+    } else {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, cw, ch);
+    }
+    ctx.restore();
 
     // --- 3. Draw outlines ---
     ctx.strokeStyle = '#000000';
@@ -794,7 +822,7 @@ function CrossSectionCanvas({
 
     // --- 3b. Per-tool cross-section shape overlays ---
     for (const tp of perToolShapes) {
-      if (tp.path.length < 3) continue;
+      if (tp.path.length < 2) continue;
       ctx.save();
       ctx.strokeStyle = tp.color;
       ctx.lineWidth = 2;
@@ -804,14 +832,26 @@ function CrossSectionCanvas({
         : (d: number) => toY(thickness - d);
       ctx.moveTo(toX(tp.path[0].x), yFn(tp.path[0].y));
       for (let i = 1; i < tp.path.length; i++) {
+        if (tp.open) {
+          const xGap = Math.abs(tp.path[i].x - tp.path[i - 1].x);
+          if (xGap > 0.2) {
+            // Gap in the contact region — start a new sub-path
+            ctx.moveTo(toX(tp.path[i].x), yFn(tp.path[i].y));
+            continue;
+          }
+        }
         ctx.lineTo(toX(tp.path[i].x), yFn(tp.path[i].y));
       }
-      ctx.closePath();
+      if (!tp.open) {
+        ctx.closePath();
+      }
       ctx.stroke();
-      // Light fill for visibility
-      ctx.globalAlpha = 0.08;
-      ctx.fillStyle = tp.color;
-      ctx.fill();
+      if (!tp.open) {
+        // Light fill for visibility on closed shapes
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = tp.color;
+        ctx.fill();
+      }
       ctx.restore();
     }
 
@@ -1004,7 +1044,7 @@ function CrossSectionCanvas({
       ctx.restore();
     }
 
-  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
+  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, showFullToolShape, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -1124,7 +1164,7 @@ function CrossSectionCanvas({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
-      {/* Measure toolbar */}
+      {/* Toolbar */}
       <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
         <button
           onClick={measure.toggleMeasure}
@@ -1171,6 +1211,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
   const [showDimensions, setShowDimensions] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
   const [showGlass, setShowGlass] = useState(true);
+  const [showFullToolShape, setShowFullToolShape] = useState(true);
   const [toolOverlayVisibility, setToolOverlayVisibility] = useState<Record<string, boolean>>({});
 
   const isGlass = frontPanelType === 'glass' || backPanelType === 'glass';
@@ -1369,6 +1410,11 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
               onChange={(e) => setShowUserDimensions(e.target.checked)} />
             User Dimensions
           </label>
+          <label style={styles.toggleLabel}>
+            <input type="checkbox" checked={showFullToolShape}
+              onChange={(e) => setShowFullToolShape(e.target.checked)} />
+            Full Tool Shape
+          </label>
           {isGlass && (
             <label style={styles.toggleLabel}>
               <input type="checkbox" checked={showGlass}
@@ -1395,6 +1441,7 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           door={door} graph={graph} profiles={profiles}
           frontPanelType={frontPanelType} backPanelType={backPanelType} hasBackRabbit={hasBackRabbit}
           showHatching={showHatching} showDimensions={showDimensions} showUserDimensions={showUserDimensions}
+          showFullToolShape={showFullToolShape}
           units={units} showGlass={showGlass} edgeGroupId={edgeGroupId}
           thickness={thicknessProp}
           toolOverlayList={toolOverlayList}

@@ -15,8 +15,9 @@ import { PanelSplitControls } from './components/PanelSplitControls.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import type { PanelTree } from './utils/panelTree.js';
 import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual } from './utils/panelTree.js';
-import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig } from './types.js';
+import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode } from './types.js';
 import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
+import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
 
 type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
@@ -60,6 +61,12 @@ export default function App() {
   const [libraries, setLibraries] = useState<string[]>([]);
   const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [doorRenderMode, setDoorRenderMode] = useState<RenderMode>('ghosted');
+  const [elevationRenderMode, setElevationRenderMode] = useState<RenderMode>('ghosted');
+  const [selectedTextures, setSelectedTextures] = useState<{
+    painted: string | null; primed: string | null; raw: string | null; sanded: string | null;
+  }>({ painted: null, primed: null, raw: null, sanded: null });
+  const [activeTextureCategory, setActiveTextureCategory] = useState<'painted' | 'primed' | 'raw' | 'sanded'>('raw');
 
   // Unit conversion helpers for number inputs (internal state always mm)
   const toDisplay = useCallback((mm: number) => units === 'in' ? parseFloat((mm / 25.4).toFixed(4)) : mm, [units]);
@@ -75,6 +82,8 @@ export default function App() {
       .then(([libData, config]) => {
         setLibraries(libData.libraries || []);
         if (config.selectedLibrary) setSelectedLibrary(config.selectedLibrary);
+        if (config.selectedTextures) setSelectedTextures(prev => ({ ...prev, ...config.selectedTextures }));
+        if (config.activeTextureCategory) setActiveTextureCategory(config.activeTextureCategory);
       })
       .catch(() => {});
   }, [dataVersion]);
@@ -294,6 +303,21 @@ export default function App() {
     });
   }, []);
 
+  // Texture URL for 3D door — uses active category's selection
+  const activeTexturePath = selectedTextures[activeTextureCategory];
+  const textureUrl = activeTexturePath
+    ? `/api/texture-image?path=${encodeURIComponent(activeTexturePath)}`
+    : undefined;
+
+  const handleActiveTextureCategoryChange = useCallback(async (cat: 'painted' | 'primed' | 'raw' | 'sanded') => {
+    setActiveTextureCategory(cat);
+    await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activeTextureCategory: cat }),
+    }).catch(() => {});
+  }, []);
+
   // --- Tab: Tool Shapes ---
   if (currentTab === 'tools') {
     return (
@@ -309,7 +333,13 @@ export default function App() {
     return (
       <div style={styles.container}>
         <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
-        <AdminPanel onDataReloaded={() => setDataVersion((v) => v + 1)} />
+        <AdminPanel
+          onDataReloaded={() => setDataVersion((v) => v + 1)}
+          selectedTextures={selectedTextures}
+          onTextureSelected={(category, path) => {
+            setSelectedTextures(prev => ({ ...prev, [category]: path }));
+          }}
+        />
       </div>
     );
   }
@@ -347,6 +377,8 @@ export default function App() {
           units={units}
           panelTree={elevationTree}
           handleConfig={isGenericDoor ? handleConfig : undefined}
+          renderMode={elevationRenderMode}
+          onRenderModeChange={setElevationRenderMode}
           selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
           onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
           onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
@@ -365,6 +397,7 @@ export default function App() {
 
       {/* 3D Canvas — always mounted to prevent WebGL context loss */}
       <Canvas
+        gl={{ logarithmicDepthBuffer: true }}
         camera={{
           position: [camDist * 0.3, camDist * 0.2, camDist],
           fov: 40,
@@ -374,7 +407,7 @@ export default function App() {
         style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
         onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
       >
-        <color attach="background" args={['#1a1a2e']} />
+        <color attach="background" args={['#ffffff']} />
 
         {/* Lighting */}
         <ambientLight intensity={0.4} />
@@ -398,21 +431,24 @@ export default function App() {
             onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
             panelTree={isGenericDoor ? panelTree : undefined}
             thickness={thickness}
+            renderMode={doorRenderMode}
+            textureUrl={textureUrl}
           />
         )}
 
-        {/* Grid on the back plane */}
-        <Grid
-          args={[2000, 2000]}
-          position={[0, 0, -thickness]}
-          rotation={[0, 0, 0]}
-          cellSize={50}
-          cellColor="#333355"
-          sectionSize={100}
-          sectionColor="#444477"
-          fadeDistance={3000}
-          infiniteGrid
-        />
+        {/* Grid — below the door's bottom rail */}
+        {activeDoor && (
+          <Grid
+            args={[2000, 2000]}
+            position={[0, -activeDoor.DefaultH / 2 - 10, 0]}
+            cellSize={50}
+            cellColor="#e0e0e0"
+            sectionSize={100}
+            sectionColor="#cccccc"
+            fadeDistance={3000}
+            infiniteGrid
+          />
+        )}
 
         {/* Controls */}
         <OrbitControls
@@ -436,6 +472,39 @@ export default function App() {
                   ? 'No CNC doors in this library. Select a different library or use Generic Door.'
                   : 'Select a door or configure the Generic Door.'}
           </p>
+        </div>
+      )}
+
+      {/* Render mode toggle + texture category picker for 3D door view */}
+      {activeDoor && (
+        <div style={{ position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {(['painted', 'primed', 'raw', 'sanded'] as const).map((cat) => {
+              const hasTexture = selectedTextures[cat] !== null;
+              const isActive = activeTextureCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => handleActiveTextureCategoryChange(cat)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 4,
+                    border: isActive ? '1px solid #5577aa' : '1px solid #444466',
+                    background: isActive ? 'rgba(42, 74, 110, 0.9)' : 'rgba(26, 26, 46, 0.7)',
+                    color: isActive ? '#ffffff' : hasTexture ? '#aaaacc' : '#666688',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textTransform: 'capitalize',
+                  }}
+                  title={hasTexture ? selectedTextures[cat]! : `No ${cat} texture selected`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -588,7 +657,8 @@ export default function App() {
               <select
                 value={backPanelType}
                 onChange={(e) => setBackPanelType(e.target.value as PanelType)}
-                style={styles.typeSelect}
+                style={{ ...styles.typeSelect, ...(backGroupId === null ? { opacity: 0.5 } : {}) }}
+                disabled={backGroupId === null}
               >
                 <option value="pocket">Pocket</option>
                 <option value="raised">Raised Panel</option>
@@ -598,7 +668,9 @@ export default function App() {
                 value={backGroupId ?? ''}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setBackGroupId(val ? Number(val) : null);
+                  const newId = val ? Number(val) : null;
+                  setBackGroupId(newId);
+                  if (!newId) setBackPanelType('raised');
                   setToolVisibility({});
                 }}
                 style={styles.groupSelect}
@@ -623,17 +695,19 @@ export default function App() {
                 </select>
               </div>
             )}
-            <div style={styles.selector}>
-              <label style={styles.label}>Back Depth:</label>
-              <CommitNumberInput
-                value={toDisplay(backPanelType === 'pocket' ? backDepth : effectiveBackDepth)}
-                step={inputStep}
-                min={0}
-                onCommit={(v) => setBackDepth(Math.min(fromDisplay(v), thickness))}
-                disabled={backPanelType !== 'pocket'}
-                style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
-              />
-            </div>
+            {backGroupId !== null && (
+              <div style={styles.selector}>
+                <label style={styles.label}>Back Depth:</label>
+                <CommitNumberInput
+                  value={toDisplay(backPanelType === 'pocket' ? backDepth : effectiveBackDepth)}
+                  step={inputStep}
+                  min={0}
+                  onCommit={(v) => setBackDepth(Math.min(fromDisplay(v), thickness))}
+                  disabled={backPanelType !== 'pocket'}
+                  style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
+                />
+              </div>
+            )}
 
             {/* Edge Profile */}
             <div style={styles.sideRow}>

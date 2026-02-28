@@ -26,6 +26,90 @@ export function validateToolsFolder(toolsFolder: string): ToolsValidateResult {
   return { toolGroups, toolLib, allPresent: toolGroups && toolLib };
 }
 
+// ---------------------------------------------------------------------------
+// Texture scanning
+// ---------------------------------------------------------------------------
+
+export interface TexturesValidateResult {
+  valid: boolean;
+  pacPath: string;
+}
+
+export interface TextureManifest {
+  painted: Record<string, string[]>;  // brand → filenames (may be empty)
+  primed: string[];
+  raw: string[];
+  sanded: string[];
+  categories: {
+    painted: boolean;
+    primed: boolean;
+    raw: boolean;
+    sanded: boolean;
+  };
+}
+
+const TEXTURE_CATEGORIES = ['Painted', 'Primed', 'Raw', 'Sanded'] as const;
+
+export function validateTexturesFolder(folderPath: string): TexturesValidateResult {
+  const pacPath = resolve(folderPath, 'PAC Door Order');
+  return { valid: existsSync(pacPath), pacPath };
+}
+
+function listJpgFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter(e => e.isFile() && /\.jpe?g$/i.test(e.name))
+      .map(e => e.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+export function scanTextures(pacDoorOrderPath: string): TextureManifest {
+  const paintedDir = resolve(pacDoorOrderPath, 'Painted');
+  const primedDir = resolve(pacDoorOrderPath, 'Primed');
+  const rawDir = resolve(pacDoorOrderPath, 'Raw');
+  const sandedDir = resolve(pacDoorOrderPath, 'Sanded');
+
+  const manifest: TextureManifest = {
+    painted: {},
+    primed: [],
+    raw: [],
+    sanded: [],
+    categories: {
+      painted: existsSync(paintedDir),
+      primed: existsSync(primedDir),
+      raw: existsSync(rawDir),
+      sanded: existsSync(sandedDir),
+    },
+  };
+
+  // Painted: enumerate brand sub-folders (always include, even if empty)
+  if (manifest.categories.painted) {
+    try {
+      const brands = readdirSync(paintedDir, { withFileTypes: true })
+        .filter(e => e.isDirectory())
+        .map(e => e.name)
+        .sort((a, b) => a.localeCompare(b));
+      for (const brand of brands) {
+        manifest.painted[brand] = listJpgFiles(resolve(paintedDir, brand));
+      }
+    } catch { /* read error */ }
+  }
+
+  // Primed, Raw, Sanded: flat file lists
+  manifest.primed = listJpgFiles(primedDir);
+  manifest.raw = listJpgFiles(rawDir);
+  manifest.sanded = listJpgFiles(sandedDir);
+
+  return manifest;
+}
+
+// ---------------------------------------------------------------------------
+// Library scanning
+// ---------------------------------------------------------------------------
+
 export function listLibraries(librariesFolder: string): string[] {
   try {
     return readdirSync(librariesFolder, { withFileTypes: true })

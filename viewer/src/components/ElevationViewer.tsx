@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { DoorData, UnitSystem, HoleData, HandleConfig } from '../types.js';
+import type { DoorData, UnitSystem, HoleData, HandleConfig, RenderMode } from '../types.js';
 import { formatUnit } from '../types.js';
+import { RenderModeButton, nextRenderMode } from './RenderModeButton.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
 import { flattenTree, enumerateSplits, enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
 import { drawArrowHead, drawLinearDim, drawSnapIndicator, drawMeasurePreview, drawGeneralDim } from '../utils/canvasDrawing.js';
@@ -12,6 +13,8 @@ interface ElevationViewerProps {
   units: UnitSystem;
   panelTree: PanelTree;
   handleConfig?: HandleConfig;
+  renderMode: RenderMode;
+  onRenderModeChange: (mode: RenderMode) => void;
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   onSplitDragEnd?: (path: number[], newPos: number) => void;
@@ -73,7 +76,7 @@ function getDragRange(split: SplitInfoWithBounds): { min: number; max: number } 
 }
 
 export function ElevationViewer({
-  door, units, panelTree, handleConfig,
+  door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -474,41 +477,43 @@ export function ElevationViewer({
     const leaves = flattenTree(panelTree, rootBounds);
 
     // Panel areas (light gray fill with hatching)
-    ctx.fillStyle = '#f0f0f0';
-    for (const pb of leaves) {
-      drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
-      drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
-    }
-
-    // Frame members (stile/rail fill)
-    ctx.fillStyle = '#e8dcc8';
-
-    // Left stile
-    drawRect(0, 0, leftStileW, doorH);
-    // Right stile
-    drawRect(doorW - rightStileW, 0, doorW, doorH);
-    // Bottom rail
-    drawRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
-    // Top rail
-    drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
-
-    // Divider bars — recursive
-    function drawDividers(tree: PanelTree, bounds: PanelBounds) {
-      if (tree.type === 'leaf') return;
-      const half = tree.width / 2;
-      if (tree.type === 'hsplit') {
-        // Horizontal mid-rail bar within this node's Y bounds
-        drawRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
-        drawDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
-        drawDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
-      } else {
-        // Vertical mid-stile bar within this node's X bounds
-        drawRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
-        drawDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
-        drawDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+    if (renderMode !== 'wireframe') {
+      if (renderMode === 'ghosted') ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#f0f0f0';
+      for (const pb of leaves) {
+        drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+        if (renderMode === 'solid') drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
       }
+
+      // Frame members (stile/rail fill)
+      ctx.fillStyle = '#e8dcc8';
+
+      // Left stile
+      drawRect(0, 0, leftStileW, doorH);
+      // Right stile
+      drawRect(doorW - rightStileW, 0, doorW, doorH);
+      // Bottom rail
+      drawRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
+      // Top rail
+      drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
+
+      // Divider bars — recursive
+      function drawDividers(tree: PanelTree, bounds: PanelBounds) {
+        if (tree.type === 'leaf') return;
+        const half = tree.width / 2;
+        if (tree.type === 'hsplit') {
+          drawRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
+          drawDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+          drawDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+        } else {
+          drawRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
+          drawDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+          drawDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+        }
+      }
+      drawDividers(panelTree, rootBounds);
+      if (renderMode === 'ghosted') ctx.globalAlpha = 1.0;
     }
-    drawDividers(panelTree, rootBounds);
 
     // Outlines
     ctx.strokeStyle = '#333333';
@@ -755,7 +760,7 @@ export function ElevationViewer({
     }
 
   }, [cw, ch, toX, toY, scale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, fmtDim,
+      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim,
       selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds,
       measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
 
@@ -830,8 +835,9 @@ export function ElevationViewer({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         />
-        {/* Measure toolbar */}
+        {/* Toolbar */}
         <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
+          <RenderModeButton mode={renderMode} onToggle={() => onRenderModeChange(nextRenderMode(renderMode))} />
           <button
             onClick={measure.toggleMeasure}
             style={{

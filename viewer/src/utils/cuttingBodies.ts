@@ -112,6 +112,77 @@ export function buildCrossSectionPoints(
   return pts.map(p => ({ x: p.x, y: p.y }));
 }
 
+/**
+ * Return the 2D cross-section polygon for a tool with the full shape extending
+ * above the door surface. Unlike buildCrossSectionPoints (which clips at the
+ * surface), this preserves the actual profile contour above the surface so
+ * callers can display the complete tool shape.
+ *
+ * Coordinates: X = across-path, Y = world Z.
+ */
+export function buildUnclippedCrossSectionPoints(
+  tool: GraphToolEntry,
+  profiles: ToolProfileData[],
+  thickness: number,
+  extendAbove = 38.1,  // 1.5" above surface
+  alignment = 1,
+): { x: number; y: number }[] | null {
+  let offset = -tool.entryOffset;
+  if (alignment === 0 && offset !== 0) {
+    offset += -Math.sign(offset) * (tool.toolDiameter / 2);
+  }
+  const tipZ = thickness / 2 - tool.entryDepth;
+  const surfaceZ = thickness / 2 + 1.0; // SURFACE_OVERSHOOT
+  const direction = 1; // always front-face perspective for display
+  const clipLocalY = Math.abs(surfaceZ - tipZ) + extendAbove;
+
+  // Profile tool
+  const profile = profiles.find((p) => p.toolId === tool.toolId);
+  if (tool.isCNCDoor && profile && profile.points.length >= 2) {
+    const fullPts = profileToLinePoints(profile.points, 64, true);
+    if (fullPts.length < 3) return null;
+
+    const clipped: { x: number; y: number }[] = [];
+    for (const p of fullPts) {
+      const wx = offset + p.x;
+      const wy = tipZ + direction * Math.min(p.y, clipLocalY);
+      const prev = clipped[clipped.length - 1];
+      if (prev && Math.abs(wx - prev.x) < 0.05 && Math.abs(wy - prev.y) < 0.05) continue;
+      clipped.push({ x: wx, y: wy });
+    }
+    if (clipped.length > 1) {
+      const last = clipped[clipped.length - 1];
+      const first = clipped[0];
+      if (Math.abs(last.x - first.x) < 0.05 && Math.abs(last.y - first.y) < 0.05) clipped.pop();
+    }
+    return clipped.length >= 3 ? clipped : null;
+  }
+
+  // V-bit
+  if (tool.sharpCornerAngle > 0) {
+    const halfAngle = (tool.sharpCornerAngle / 2) * (Math.PI / 180);
+    const r = tool.toolDiameter / 2;
+    const cutHeight = Math.abs(surfaceZ - tipZ) + extendAbove;
+    const halfW = Math.min(cutHeight * Math.tan(halfAngle), r);
+    const topY = tipZ + cutHeight;
+    return [
+      { x: offset, y: tipZ },
+      { x: offset + halfW, y: topY },
+      { x: offset - halfW, y: topY },
+    ];
+  }
+
+  // Flat tool
+  const r = tool.toolDiameter / 2;
+  const topY = surfaceZ + extendAbove;
+  return [
+    { x: offset - r, y: tipZ },
+    { x: offset - r, y: topY },
+    { x: offset + r, y: topY },
+    { x: offset + r, y: tipZ },
+  ];
+}
+
 function buildProfileCrossSection(
   points: ProfilePointData[],
   offset: number,
