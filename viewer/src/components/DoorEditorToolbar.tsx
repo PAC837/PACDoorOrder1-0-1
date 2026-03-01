@@ -1,4 +1,5 @@
-import type { DoorPartType, PanelType, RawToolGroup } from '../types.js';
+import { useState, useEffect, useRef } from 'react';
+import type { DoorHandlePlacement, DoorPartType, HingeSide, PanelType, RawToolGroup } from '../types.js';
 
 interface DoorEditorToolbarProps {
   // Material/texture
@@ -29,6 +30,20 @@ interface DoorEditorToolbarProps {
   // Door part type
   doorPartType: DoorPartType;
   onDoorPartTypeChange: (type: DoorPartType) => void;
+
+  // Hinges (only shown when doorPartType === 'door')
+  hingeSide: HingeSide;
+  onHingeSideChange: (side: HingeSide) => void;
+  hingeCount: number;
+  onHingeCountChange: (count: number) => void;
+  onHingeAdvancedClick: () => void;
+
+  // Handle controls (Row 8)
+  isKnob: boolean;
+  onHandleTypeChange: (isKnob: boolean) => void;
+  doorPlacement: DoorHandlePlacement;
+  onDoorPlacementChange: (placement: DoorHandlePlacement) => void;
+  onHandleAdvancedClick: () => void;
 }
 
 const MATERIAL_CATS = ['raw', 'sanded', 'primed', 'painted'] as const;
@@ -46,6 +61,13 @@ const BACK_PRESETS = [
   { value: 'custom', label: 'Custom' },
 ] as const;
 
+const DOOR_PLACEMENTS: { value: DoorHandlePlacement; label: string }[] = [
+  { value: 'top', label: 'Up' },
+  { value: 'bottom', label: 'Down' },
+  { value: 'middle', label: 'Center' },
+  { value: 'center-top', label: 'Top Rail' },
+];
+
 const DOOR_TYPES: { value: DoorPartType; label: string }[] = [
   { value: 'door', label: 'Door' },
   { value: 'drawer', label: 'Drawer' },
@@ -61,7 +83,24 @@ export function DoorEditorToolbar({
   edgeGroupId, onEdgeGroupChange, edgeToolGroups,
   backPreset, onBackPresetChange, customBackGroupId, onCustomBackGroupChange,
   doorPartType, onDoorPartTypeChange,
+  hingeSide, onHingeSideChange, hingeCount, onHingeCountChange, onHingeAdvancedClick,
+  isKnob, onHandleTypeChange, doorPlacement, onDoorPlacementChange, onHandleAdvancedClick,
 }: DoorEditorToolbarProps) {
+  const [showPlacementPopup, setShowPlacementPopup] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!showPlacementPopup) return;
+    const handler = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        setShowPlacementPopup(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPlacementPopup]);
+
   return (
     <div style={containerStyle}>
       {/* Row 1: Material buttons */}
@@ -215,6 +254,124 @@ export function DoorEditorToolbar({
           );
         })}
       </div>
+
+      {/* Row 7: Hinge controls (only for doors) */}
+      {doorPartType === 'door' && (
+        <div style={rowStyle}>
+          <button
+            onClick={() => onHingeSideChange('left')}
+            style={{
+              ...btnBase,
+              flex: 1,
+              justifyContent: 'center',
+              ...(hingeSide === 'left' ? btnActive : {}),
+            }}
+          >
+            Left
+          </button>
+          <button
+            onClick={() => onHingeSideChange('right')}
+            style={{
+              ...btnBase,
+              flex: 1,
+              justifyContent: 'center',
+              ...(hingeSide === 'right' ? btnActive : {}),
+            }}
+          >
+            Right
+          </button>
+          <input
+            type="number"
+            value={hingeCount}
+            min={2}
+            max={5}
+            onChange={(e) => onHingeCountChange(Math.max(2, Math.min(5, Number(e.target.value))))}
+            style={{ ...selectStyle, width: 44, textAlign: 'center' }}
+            title="Hinge quantity"
+          />
+          <button
+            onClick={onHingeAdvancedClick}
+            style={{ ...btnBase, fontSize: '10px', padding: '3px 6px' }}
+            title="Advanced hinge settings"
+          >
+            Adv
+          </button>
+        </div>
+      )}
+
+      {/* Row 8: Handle / Knob controls */}
+      <div style={rowStyle}>
+        <button
+          onClick={() => onHandleTypeChange(false)}
+          style={{
+            ...btnBase,
+            flex: 1,
+            justifyContent: 'center',
+            ...(!isKnob ? btnActive : {}),
+          }}
+        >
+          Handle
+        </button>
+        <button
+          onClick={() => onHandleTypeChange(true)}
+          style={{
+            ...btnBase,
+            flex: 1,
+            justifyContent: 'center',
+            ...(isKnob ? btnActive : {}),
+          }}
+        >
+          Knob
+        </button>
+
+        {/* Placement popup button (door type only) */}
+        {doorPartType === 'door' && (
+          <div ref={popupRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowPlacementPopup(prev => !prev)}
+              style={{
+                ...btnBase,
+                fontSize: '10px',
+                padding: '3px 6px',
+                minWidth: 56,
+              }}
+              title="Handle placement"
+            >
+              {DOOR_PLACEMENTS.find(p => p.value === doorPlacement)?.label ?? 'Up'}
+              {' \u25BE'}
+            </button>
+            {showPlacementPopup && (
+              <div style={popupPanelStyle}>
+                {DOOR_PLACEMENTS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => {
+                      onDoorPlacementChange(value);
+                      setShowPlacementPopup(false);
+                    }}
+                    style={{
+                      ...btnBase,
+                      width: '100%',
+                      justifyContent: 'center',
+                      ...(doorPlacement === value ? btnActive : {}),
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={onHandleAdvancedClick}
+          style={{ ...btnBase, fontSize: '10px', padding: '3px 6px' }}
+          title="Advanced handle settings"
+        >
+          Adv
+        </button>
+      </div>
     </div>
   );
 }
@@ -271,4 +428,21 @@ const selectStyle: React.CSSProperties = {
   fontSize: '11px',
   cursor: 'pointer',
   width: '100%',
+};
+
+const popupPanelStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: '100%',
+  left: 0,
+  marginTop: 2,
+  zIndex: 100,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  background: 'rgba(255, 255, 255, 0.97)',
+  borderRadius: 4,
+  padding: 4,
+  border: '1px solid #999',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+  minWidth: 70,
 };

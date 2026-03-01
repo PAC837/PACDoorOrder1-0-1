@@ -10,14 +10,15 @@ import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ElevationViewer } from './components/ElevationViewer.js';
 import { CommitNumberInput } from './components/CommitNumberInput.js';
-import { HingePanel } from './components/HingePanel.js';
-import { HandlePanel } from './components/HandlePanel.js';
 import { PanelSplitControls } from './components/PanelSplitControls.js';
 import { DoorEditorToolbar } from './components/DoorEditorToolbar.js';
+import { HingeAdvancedDialog } from './components/HingeAdvancedDialog.js';
+import { HandleAdvancedDialog } from './components/HandleAdvancedDialog.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
+import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
 import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf } from './utils/panelTree.js';
-import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode } from './types.js';
+import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode } from './types.js';
 import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
@@ -53,8 +54,8 @@ export default function App() {
   const [handleConfig, setHandleConfig] = useState<HandleConfig>({ ...DEFAULT_HANDLE_CONFIG });
   const [backPocketMode, setBackPocketMode] = useState<BackPocketMode>('all');
   const [backPreset, setBackPreset] = useState<string>('');
-  const [showHingeAdvanced, setShowHingeAdvanced] = useState(false);
-  const [showHandleAdvanced, setShowHandleAdvanced] = useState(false);
+  const [showHingeDialog, setShowHingeDialog] = useState(false);
+  const [showHandleDialog, setShowHandleDialog] = useState(false);
   const [savedSep, setSavedSep] = useState(101.6); // preserve last handle separation when switching to knob
   const [thickness, setThickness] = useState(MATERIAL_THICKNESS);
   const [panelTree, setPanelTree] = useState<PanelTree>({ type: 'leaf' });
@@ -126,6 +127,49 @@ export default function App() {
     setPanelTree({ type: 'leaf' });
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
+  }, []);
+
+  const handleHingeSideChange = useCallback((side: 'left' | 'right' | 'top' | 'bottom') => {
+    setHingeConfig(prev => ({ ...prev, side }));
+  }, []);
+
+  const handleHingeCountChange = useCallback((count: number) => {
+    setHingeConfig(prev => ({ ...prev, count }));
+  }, []);
+
+  const handleHingePositionChange = useCallback((index: number, newPosMm: number) => {
+    setHingeConfig(prev => {
+      const next = { ...prev };
+      // Transition from equidistant to manual: populate current positions
+      if (next.equidistant) {
+        const axisLength = (next.side === 'left' || next.side === 'right') ? doorH : doorW;
+        next.positions = equidistantPositions(next.count, axisLength, next.edgeDistance);
+        next.equidistant = false;
+      }
+      const positions = [...next.positions];
+      positions[index] = Math.max(0, newPosMm);
+      next.positions = positions;
+      return next;
+    });
+  }, [doorH, doorW]);
+
+  const handleHandleTypeChange = useCallback((isKnob: boolean) => {
+    if (isKnob) {
+      setHandleConfig(prev => {
+        if (prev.holeSeparation > 0) setSavedSep(prev.holeSeparation);
+        return { ...prev, holeSeparation: 0 };
+      });
+    } else {
+      setHandleConfig(prev => ({ ...prev, holeSeparation: savedSep || 101.6 }));
+    }
+  }, [savedSep]);
+
+  const handleDoorPlacementChange = useCallback((placement: DoorHandlePlacement) => {
+    setHandleConfig(prev => ({ ...prev, doorPlacement: placement }));
+  }, []);
+
+  const handleHandleElevationChange = useCallback((newPosMm: number) => {
+    setHandleConfig(prev => ({ ...prev, elevation: Math.max(0, newPosMm), doorPlacement: 'custom' as DoorHandlePlacement }));
   }, []);
 
   const handleLibraryChange = useCallback(async (library: string) => {
@@ -545,6 +589,16 @@ export default function App() {
                     onCustomBackGroupChange={(id) => { setBackGroupId(id); setToolVisibility({}); }}
                     doorPartType={doorPartType}
                     onDoorPartTypeChange={handleDoorPartTypeChange}
+                    hingeSide={hingeConfig.side}
+                    onHingeSideChange={handleHingeSideChange}
+                    hingeCount={hingeConfig.count}
+                    onHingeCountChange={handleHingeCountChange}
+                    onHingeAdvancedClick={() => setShowHingeDialog(true)}
+                    isKnob={handleConfig.holeSeparation === 0}
+                    onHandleTypeChange={handleHandleTypeChange}
+                    doorPlacement={handleConfig.doorPlacement}
+                    onDoorPlacementChange={handleDoorPlacementChange}
+                    onHandleAdvancedClick={() => setShowHandleDialog(true)}
                   />
                 )}
 
@@ -810,26 +864,9 @@ export default function App() {
             </div>
             </>)}
 
-            {/* Hinge Configuration — only for doors */}
-            {doorPartType === 'door' && (
-              <HingePanel
-                hingeConfig={hingeConfig} setHingeConfig={setHingeConfig}
-                showAdvanced={showHingeAdvanced} setShowAdvanced={setShowHingeAdvanced}
-                thickness={thickness}
-                toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
-                styles={styles}
-              />
-            )}
+            {/* Hinge Configuration moved to DoorEditorToolbar Row 7 + HingeAdvancedDialog */}
 
-            {/* Handle Configuration */}
-            <HandlePanel
-              handleConfig={handleConfig} setHandleConfig={setHandleConfig}
-              showAdvanced={showHandleAdvanced} setShowAdvanced={setShowHandleAdvanced}
-              doorPartType={doorPartType} savedSep={savedSep} setSavedSep={setSavedSep}
-              thickness={thickness}
-              toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
-              styles={styles}
-            />
+            {/* Handle Configuration moved to DoorEditorToolbar Row 8 + HandleAdvancedDialog */}
           </div>
         )}
 
@@ -965,6 +1002,9 @@ export default function App() {
                   onAddMidRail={isGenericDoor ? handleAddMidRail : undefined}
                   onAddMidStile={isGenericDoor ? handleAddMidStile : undefined}
                   onDeselectAll={isGenericDoor ? handleDeselectAll : undefined}
+                  hingeConfig={isGenericDoor ? hingeConfig : undefined}
+                  onHingePositionChange={isGenericDoor ? handleHingePositionChange : undefined}
+                  onHandleElevationChange={isGenericDoor ? handleHandleElevationChange : undefined}
                 />
               ) : (
                 <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -984,6 +1024,35 @@ export default function App() {
           </PanelGroup>
         </Panel>
       </PanelGroup>
+
+      {/* Hinge Advanced Dialog */}
+      {showHingeDialog && (
+        <HingeAdvancedDialog
+          hingeConfig={hingeConfig}
+          setHingeConfig={setHingeConfig}
+          thickness={thickness}
+          toDisplay={toDisplay}
+          fromDisplay={fromDisplay}
+          inputStep={inputStep}
+          onClose={() => setShowHingeDialog(false)}
+        />
+      )}
+
+      {/* Handle Advanced Dialog */}
+      {showHandleDialog && (
+        <HandleAdvancedDialog
+          handleConfig={handleConfig}
+          setHandleConfig={setHandleConfig}
+          doorPartType={doorPartType}
+          savedSep={savedSep}
+          setSavedSep={setSavedSep}
+          thickness={thickness}
+          toDisplay={toDisplay}
+          fromDisplay={fromDisplay}
+          inputStep={inputStep}
+          onClose={() => setShowHandleDialog(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { DoorData, UnitSystem, HoleData, HandleConfig, RenderMode } from '../types.js';
+import type { DoorData, UnitSystem, HoleData, HandleConfig, HingeConfig, RenderMode } from '../types.js';
 import { formatUnit } from '../types.js';
 import { RenderModeButton, nextRenderMode } from './RenderModeButton.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
@@ -30,6 +30,9 @@ interface ElevationViewerProps {
   onAddMidRail?: (panelIdx: number) => void;
   onAddMidStile?: (panelIdx: number) => void;
   onDeselectAll?: () => void;
+  hingeConfig?: HingeConfig;
+  onHingePositionChange?: (index: number, newPositionMm: number) => void;
+  onHandleElevationChange?: (newElevationMm: number) => void;
   compact?: boolean;
 }
 
@@ -101,7 +104,8 @@ export function ElevationViewer({
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
   onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
   onSplitWidthChange, overrideLeftStileW, overrideRightStileW,
-  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile, onDeselectAll, compact,
+  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile, onDeselectAll,
+  hingeConfig, onHingePositionChange, onHandleElevationChange, compact,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,6 +128,18 @@ export function ElevationViewer({
   const [editingMember, setEditingMember] = useState<EditingMember>(null);
   const [selectedFrameMember, setSelectedFrameMember] = useState<string | null>(null);
   const pendingClick = useRef<{ path: number[]; type: 'hsplit' | 'vsplit'; pos: number; startX: number; startY: number } | null>(null);
+
+  // Hinge interaction state
+  const [selectedHingeIdx, setSelectedHingeIdx] = useState<number | null>(null);
+  const [draggingHinge, setDraggingHinge] = useState<{ index: number; currentPos: number } | null>(null);
+  const [editingHinge, setEditingHinge] = useState<{ index: number; screenX: number; screenY: number; currentValue: number } | null>(null);
+  const pendingHingeClick = useRef<{ index: number; startX: number; startY: number } | null>(null);
+
+  // Handle interaction state
+  const [selectedHandleIdx, setSelectedHandleIdx] = useState<number | null>(null);
+  const [draggingHandle, setDraggingHandle] = useState<{ currentPos: number } | null>(null);
+  const [editingHandle, setEditingHandle] = useState<{ screenX: number; screenY: number; currentValue: number } | null>(null);
+  const pendingHandleClick = useRef<{ startX: number; startY: number } | null>(null);
 
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
@@ -256,6 +272,7 @@ export function ElevationViewer({
   // Cursor
   const cursor = useMemo(() => {
     if (measure.measureMode) return measure.draggingIdx !== null ? 'grabbing' : 'crosshair';
+    if (draggingHinge || draggingHandle) return 'ns-resize';
     if (draggingSplit) {
       return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
     }
@@ -264,7 +281,7 @@ export function ElevationViewer({
     }
     if (isPanning) return 'grabbing';
     return 'grab';
-  }, [measure.measureMode, measure.draggingIdx, draggingSplit, hoveredSplit, isPanning]);
+  }, [measure.measureMode, measure.draggingIdx, draggingHinge, draggingHandle, draggingSplit, hoveredSplit, isPanning]);
 
   // Wheel zoom (center-anchored)
   // Hit-test fixed frame members (returns member type and width, or null)
@@ -304,6 +321,48 @@ export function ElevationViewer({
     return -1;
   }, [leaves, fromX, fromY]);
 
+  // Hit-test hinge cups — returns cup index or -1
+  const hitTestHingeCup = useCallback((sx: number, sy: number): number => {
+    if (!onHingePositionChange) return -1;
+    const cupHoles = holes.filter(h => h.holeType === 'hinge-cup');
+    const hitRadius = 8; // screen pixels
+    for (let i = 0; i < cupHoles.length; i++) {
+      const hole = cupHoles[i];
+      // Cups are FlipSideOp=true (back face)
+      // In dual view, they appear in the back half (right side) — use toXBack
+      // In single view, they appear as dotted outlines in front half — use toX
+      const hsx = singleView ? toX(hole.Y) : toXBack(hole.Y);
+      const hsy = toY(hole.X);
+      const sr = (hole.Diameter / 2) * scale;
+      const dist = Math.hypot(sx - hsx, sy - hsy);
+      if (dist <= Math.max(sr, hitRadius)) {
+        return i;
+      }
+    }
+    return -1;
+  }, [holes, toX, toXBack, toY, scale, singleView, onHingePositionChange]);
+
+  // Hit-test handle holes — returns first handle hole index or -1
+  const hitTestHandle = useCallback((sx: number, sy: number): number => {
+    if (!onHandleElevationChange) return -1;
+    const handleHoles = holes.filter(h => h.holeType === 'handle');
+    const hitRadius = 8;
+    for (let i = 0; i < handleHoles.length; i++) {
+      const hole = handleHoles[i];
+      // Handles can be on front or back
+      const hsx = hole.FlipSideOp
+        ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
+        : toX(hole.Y);
+      const hsy = toY(hole.X);
+      const sr = (hole.Diameter / 2) * scale;
+      const dist = Math.hypot(sx - hsx, sy - hsy);
+      if (dist <= Math.max(sr, hitRadius)) {
+        return i;
+      }
+    }
+    return -1;
+  }, [holes, toX, toXBack, toY, scale, singleView, onHandleElevationChange]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -325,6 +384,8 @@ export function ElevationViewer({
 
     // Close any open editor on new click
     setEditingMember(null);
+    setEditingHinge(null);
+    setEditingHandle(null);
 
     // Measure mode has highest priority
     if (measure.measureMode) {
@@ -332,6 +393,36 @@ export function ElevationViewer({
       measure.handleMouseDown(sx, sy);
       return;
     }
+
+    // Hit-test hinge cups (back half in dual view, front half in single view)
+    {
+      const hingeIdx = hitTestHingeCup(sx, sy);
+      if (hingeIdx >= 0) {
+        e.preventDefault();
+        setSelectedHingeIdx(hingeIdx);
+        setSelectedHandleIdx(null);
+        pendingHingeClick.current = { index: hingeIdx, startX: e.clientX, startY: e.clientY };
+        lastMouse.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+    }
+
+    // Hit-test handle holes
+    {
+      const handleIdx = hitTestHandle(sx, sy);
+      if (handleIdx >= 0) {
+        e.preventDefault();
+        setSelectedHandleIdx(handleIdx);
+        setSelectedHingeIdx(null);
+        pendingHandleClick.current = { startX: e.clientX, startY: e.clientY };
+        lastMouse.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+    }
+
+    // Deselect hinge/handle when clicking elsewhere
+    setSelectedHingeIdx(null);
+    setSelectedHandleIdx(null);
 
     // Only interact in front half (left side)
     if (sx < halfW) {
@@ -379,7 +470,7 @@ export function ElevationViewer({
     // Start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll]);
+  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -393,6 +484,61 @@ export function ElevationViewer({
       if (measure.draggingIdx !== null) {
         measure.handleDimMouseMove(sx, sy);
       }
+      return;
+    }
+
+    // Check if pending hinge click should convert to drag (3px threshold)
+    if (pendingHingeClick.current && !draggingHinge) {
+      const dx = e.clientX - pendingHingeClick.current.startX;
+      const dy = e.clientY - pendingHingeClick.current.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        const cupHoles = holes.filter(h => h.holeType === 'hinge-cup');
+        const cup = cupHoles[pendingHingeClick.current.index];
+        if (cup) {
+          // Hinge axis position is cup.X for left/right, cup.Y for top/bottom
+          const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
+          const currentPos = isVerticalAxis ? cup.X : cup.Y;
+          setDraggingHinge({ index: pendingHingeClick.current.index, currentPos });
+        }
+        pendingHingeClick.current = null;
+      }
+    }
+
+    // Handle hinge dragging — constrain to hinge axis
+    if (draggingHinge) {
+      const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
+      let newPos: number;
+      if (isVerticalAxis) {
+        newPos = fromY(sy); // screen Y → model height (X axis in Mozaik)
+      } else {
+        // For top/bottom hinges, drag along width
+        // Use appropriate inverse transform based on which half we're in
+        newPos = fromX(sx);
+      }
+      newPos = Math.max(0, Math.min(isVerticalAxis ? doorH : doorW, newPos));
+      setDraggingHinge(prev => prev ? { ...prev, currentPos: newPos } : null);
+      return;
+    }
+
+    // Check if pending handle click should convert to drag (3px threshold)
+    if (pendingHandleClick.current && !draggingHandle) {
+      const dx = e.clientX - pendingHandleClick.current.startX;
+      const dy = e.clientY - pendingHandleClick.current.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        const handleHoles = holes.filter(h => h.holeType === 'handle');
+        if (handleHoles.length > 0) {
+          // Handle elevation = X in Mozaik coords (height axis)
+          setDraggingHandle({ currentPos: handleHoles[0].X });
+        }
+        pendingHandleClick.current = null;
+      }
+    }
+
+    // Handle dragging — constrain to height axis (screen Y)
+    if (draggingHandle) {
+      let newPos = fromY(sy);
+      newPos = Math.max(0, Math.min(doorH, newPos));
+      setDraggingHandle({ currentPos: newPos });
       return;
     }
 
@@ -443,12 +589,60 @@ export function ElevationViewer({
     } else if (hoveredSplit && sx >= halfW) {
       setHoveredSplit(null);
     }
-  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit]);
+  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, draggingHinge, draggingHandle, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit, holes, hingeConfig, doorH, doorW]);
 
   const handleMouseUp = useCallback(() => {
     if (measure.draggingIdx !== null) {
       measure.handleDimMouseUp();
     }
+
+    // Handle hinge drag commit or click-to-edit
+    if (draggingHinge) {
+      onHingePositionChange?.(draggingHinge.index, draggingHinge.currentPos);
+      setDraggingHinge(null);
+      pendingHingeClick.current = null;
+    } else if (pendingHingeClick.current) {
+      // Click without drag → open inline position editor
+      const cupHoles = holes.filter(h => h.holeType === 'hinge-cup');
+      const cup = cupHoles[pendingHingeClick.current.index];
+      if (cup) {
+        const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
+        const currentValue = isVerticalAxis ? cup.X : cup.Y;
+        const hsx = singleView ? toX(cup.Y) : toXBack(cup.Y);
+        const hsy = toY(cup.X);
+        setEditingHinge({
+          index: pendingHingeClick.current.index,
+          screenX: hsx,
+          screenY: hsy,
+          currentValue,
+        });
+      }
+      pendingHingeClick.current = null;
+    }
+
+    // Handle drag commit or click-to-edit
+    if (draggingHandle) {
+      onHandleElevationChange?.(draggingHandle.currentPos);
+      setDraggingHandle(null);
+      pendingHandleClick.current = null;
+    } else if (pendingHandleClick.current) {
+      // Click without drag → open inline elevation editor
+      const handleHoles = holes.filter(h => h.holeType === 'handle');
+      if (handleHoles.length > 0) {
+        const hole = handleHoles[0];
+        const hsx = hole.FlipSideOp
+          ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
+          : toX(hole.Y);
+        const hsy = toY(hole.X);
+        setEditingHandle({
+          screenX: hsx,
+          screenY: hsy,
+          currentValue: hole.X, // elevation = Mozaik X (height axis)
+        });
+      }
+      pendingHandleClick.current = null;
+    }
+
     if (draggingSplit) {
       onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
       setDraggingSplit(null);
@@ -472,7 +666,7 @@ export function ElevationViewer({
       pendingClick.current = null;
     }
     setIsPanning(false);
-  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, onSplitDragEnd, splitsWithBounds, onSplitWidthChange, toX, toY]);
+  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, draggingHinge, draggingHandle, onSplitDragEnd, splitsWithBounds, onSplitWidthChange, toX, toY, toXBack, holes, hingeConfig, singleView, onHingePositionChange, onHandleElevationChange]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -933,6 +1127,106 @@ export function ElevationViewer({
       ctx.restore();
     }
 
+    // Hinge selection highlight + drag ghost
+    if (showHardware && holes.length > 0) {
+      const cupHoles = holes.filter(h => h.holeType === 'hinge-cup');
+
+      // Selection highlight on selected cup
+      if (selectedHingeIdx !== null && selectedHingeIdx < cupHoles.length && !draggingHinge) {
+        const cup = cupHoles[selectedHingeIdx];
+        const hsx = singleView ? toX(cup.Y) : toXBack(cup.Y);
+        const hsy = toY(cup.X);
+        const sr = (cup.Diameter / 2) * scale;
+        ctx.strokeStyle = '#ff8800';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(hsx, hsy, sr + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Ghost circle during drag
+      if (draggingHinge && draggingHinge.index < cupHoles.length) {
+        const cup = cupHoles[draggingHinge.index];
+        const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
+        const ghostX = isVerticalAxis ? cup.Y : draggingHinge.currentPos;
+        const ghostY = isVerticalAxis ? draggingHinge.currentPos : cup.X;
+        const hsx = singleView ? toX(ghostX) : toXBack(ghostX);
+        const hsy = toY(ghostY);
+        const sr = (cup.Diameter / 2) * scale;
+
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#ff8800';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(hsx, hsy, sr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Position label
+        const posVal = draggingHinge.currentPos;
+        const label = fmtDim(posVal);
+        ctx.fillStyle = '#ff8800';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, hsx, hsy - sr - 8);
+      }
+    }
+
+    // Handle selection highlight + drag ghost
+    if (showHardware && holes.length > 0) {
+      const handleHoles = holes.filter(h => h.holeType === 'handle');
+
+      // Selection highlight on selected handle hole
+      if (selectedHandleIdx !== null && selectedHandleIdx < handleHoles.length && !draggingHandle) {
+        const hole = handleHoles[selectedHandleIdx];
+        const hsx = hole.FlipSideOp
+          ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
+          : toX(hole.Y);
+        const hsy = toY(hole.X);
+        const sr = (hole.Diameter / 2) * scale;
+        ctx.strokeStyle = '#2266cc';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(hsx, hsy, sr + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Ghost circles during handle drag (all handle holes move together)
+      if (draggingHandle && handleHoles.length > 0) {
+        const firstHole = handleHoles[0];
+        const elevationDelta = draggingHandle.currentPos - firstHole.X;
+
+        for (const hole of handleHoles) {
+          const ghostX = hole.Y;
+          const ghostY = hole.X + elevationDelta;
+          const hsx = hole.FlipSideOp
+            ? (singleView ? toX(ghostX) : toXBack(ghostX))
+            : toX(ghostX);
+          const hsy = toY(ghostY);
+          const sr = (hole.Diameter / 2) * scale;
+
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = '#2266cc';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(hsx, hsy, sr, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Position label on first hole
+        const labelHsx = firstHole.FlipSideOp
+          ? (singleView ? toX(firstHole.Y) : toXBack(firstHole.Y))
+          : toX(firstHole.Y);
+        const labelHsy = toY(draggingHandle.currentPos);
+        const sr = (firstHole.Diameter / 2) * scale;
+        ctx.fillStyle = '#2266cc';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(fmtDim(draggingHandle.currentPos), labelHsx, labelHsy - sr - 8);
+      }
+    }
+
     // Dimensions (front view only)
     if (showDimensions) {
       ctx.save();
@@ -1035,7 +1329,9 @@ export function ElevationViewer({
   }, [cw, ch, halfW, toX, toXBack, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
       panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
       selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView,
-      measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
+      measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase,
+      selectedHingeIdx, draggingHinge, hingeConfig,
+      selectedHandleIdx, draggingHandle]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
 
@@ -1147,6 +1443,90 @@ export function ElevationViewer({
                 }
               }}
               onBlur={() => setEditingMember(null)}
+            />
+          </div>
+        )}
+        {/* Inline hinge position editor */}
+        {editingHinge && (
+          <div style={{
+            position: 'absolute',
+            left: editingHinge.screenX - 32,
+            top: editingHinge.screenY - 14,
+            zIndex: 20,
+          }}>
+            <input
+              autoFocus
+              type="number"
+              defaultValue={units === 'in'
+                ? parseFloat((editingHinge.currentValue / 25.4).toFixed(4))
+                : parseFloat(editingHinge.currentValue.toFixed(2))}
+              step={units === 'in' ? 0.125 : 0.5}
+              style={{
+                width: 64,
+                fontSize: 12,
+                textAlign: 'center',
+                padding: '2px 4px',
+                borderRadius: 4,
+                border: '2px solid #ff8800',
+                background: '#fff',
+                outline: 'none',
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const raw = parseFloat(e.currentTarget.value);
+                  if (!isNaN(raw)) {
+                    const mm = units === 'in' ? raw * 25.4 : raw;
+                    onHingePositionChange?.(editingHinge.index, mm);
+                  }
+                  setEditingHinge(null);
+                }
+                if (e.key === 'Escape') {
+                  setEditingHinge(null);
+                }
+              }}
+              onBlur={() => setEditingHinge(null)}
+            />
+          </div>
+        )}
+        {/* Inline handle elevation editor */}
+        {editingHandle && (
+          <div style={{
+            position: 'absolute',
+            left: editingHandle.screenX - 32,
+            top: editingHandle.screenY - 14,
+            zIndex: 20,
+          }}>
+            <input
+              autoFocus
+              type="number"
+              defaultValue={units === 'in'
+                ? parseFloat((editingHandle.currentValue / 25.4).toFixed(4))
+                : parseFloat(editingHandle.currentValue.toFixed(2))}
+              step={units === 'in' ? 0.125 : 0.5}
+              style={{
+                width: 64,
+                fontSize: 12,
+                textAlign: 'center',
+                padding: '2px 4px',
+                borderRadius: 4,
+                border: '2px solid #2266cc',
+                background: '#fff',
+                outline: 'none',
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const raw = parseFloat(e.currentTarget.value);
+                  if (!isNaN(raw)) {
+                    const mm = units === 'in' ? raw * 25.4 : raw;
+                    onHandleElevationChange?.(mm);
+                  }
+                  setEditingHandle(null);
+                }
+                if (e.key === 'Escape') {
+                  setEditingHandle(null);
+                }
+              }}
+              onBlur={() => setEditingHandle(null)}
             />
           </div>
         )}
