@@ -1,9 +1,8 @@
 import type { RenderMode } from '../types.js';
 
-const MODES: RenderMode[] = ['ghosted', 'solid', 'wireframe'];
+const MODES: RenderMode[] = ['solid', 'wireframe'];
 
 const MODE_LABELS: Record<RenderMode, string> = {
-  ghosted: 'Ghost',
   solid: 'Solid',
   wireframe: 'Wire',
 };
@@ -15,18 +14,6 @@ function ModeIcon({ mode }: { mode: RenderMode }) {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" strokeWidth="0.5">
         <polygon points="7,1 13,4 13,10 7,13 1,10 1,4" />
-      </svg>
-    );
-  }
-  if (mode === 'ghosted') {
-    // Semi-transparent cube (outlined with interior line)
-    return (
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="7,1 13,4 13,10 7,13 1,10 1,4" opacity="0.3" fill="currentColor" />
-        <polygon points="7,1 13,4 13,10 7,13 1,10 1,4" />
-        <line x1="7" y1="7" x2="7" y2="13" />
-        <line x1="7" y1="7" x2="1" y2="4" />
-        <line x1="7" y1="7" x2="13" y2="4" />
       </svg>
     );
   }

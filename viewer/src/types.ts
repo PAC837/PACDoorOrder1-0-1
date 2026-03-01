@@ -181,7 +181,7 @@ export interface RawTool {
 // ---------------------------------------------------------------------------
 
 /** Part type for generic door configuration. */
-export type DoorPartType = 'door' | 'drawer' | 'reduced-rail' | 'slab';
+export type DoorPartType = 'door' | 'drawer' | 'reduced-rail' | 'end-panel' | 'slab';
 
 /** How back operations apply to split panels. */
 export type BackPocketMode = 'all' | 'selected' | 'full';
@@ -191,7 +191,7 @@ export type HandlePlacement = 'center' | 'top-rail' | 'two-equidistant';
 export type DoorHandlePlacement = 'top' | 'center-top' | 'middle' | 'bottom' | 'custom';
 export type HandleElevationRef = 'from-top' | 'from-bottom';
 
-export type RenderMode = 'ghosted' | 'solid' | 'wireframe';
+export type RenderMode = 'solid' | 'wireframe';
 
 /** Texture manifest returned by /api/textures. */
 export interface TextureManifest {

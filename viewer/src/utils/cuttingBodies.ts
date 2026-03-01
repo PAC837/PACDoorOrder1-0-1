@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
-import { profileToLinePoints } from './profileShape.js';
+import { profileToLinePoints, profileToLinePointsWithArcs } from './profileShape.js';
+import type { ArcAnnotation } from './profileShape.js';
 import { expandRect, mozaikToScene } from './geometry.js';
 import type { ToolProfileData, ProfilePointData, DoorGraphData, HoleData } from '../types.js';
 import type { SceneRect } from './geometry.js';
@@ -182,6 +183,42 @@ export function buildUnclippedCrossSectionPoints(
     { x: offset + r, y: tipZ },
   ];
 }
+
+/**
+ * Return arc annotations for a tool's cross-section profile, transformed into
+ * the same coordinate space as buildUnclippedCrossSectionPoints.
+ * Only returns arcs for CNC profile tools (isCNCDoor=true).
+ */
+export function buildCrossSectionArcs(
+  tool: GraphToolEntry,
+  profiles: ToolProfileData[],
+  thickness: number,
+  alignment = 1,
+): ArcAnnotation[] {
+  if (!tool.isCNCDoor) return [];
+
+  const profile = profiles.find((p) => p.toolId === tool.toolId);
+  if (!profile || profile.points.length < 2) return [];
+
+  let offset = -tool.entryOffset;
+  if (alignment === 0 && offset !== 0) {
+    offset += -Math.sign(offset) * (tool.toolDiameter / 2);
+  }
+  const tipZ = thickness / 2 - tool.entryDepth;
+
+  const { arcs } = profileToLinePointsWithArcs(profile.points, 64, true);
+
+  // Transform arc centers and chord points through same transforms as points
+  return arcs.map(a => ({
+    ...a,
+    centerX: offset + a.centerX,
+    centerY: tipZ + a.centerY,
+    chordP1: a.chordP1 ? { x: offset + a.chordP1.x, y: tipZ + a.chordP1.y } : undefined,
+    chordP2: a.chordP2 ? { x: offset + a.chordP2.x, y: tipZ + a.chordP2.y } : undefined,
+  }));
+}
+
+export type { ArcAnnotation };
 
 function buildProfileCrossSection(
   points: ProfilePointData[],

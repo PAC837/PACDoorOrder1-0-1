@@ -423,6 +423,17 @@ function CrossSectionCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const onPrint = useCallback(() => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL('image/png');
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<img src="${dataUrl}" style="max-width:100%" />`);
+    win.document.close();
+    win.focus();
+    win.print();
+  }, []);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -1183,36 +1194,7 @@ function CrossSectionCanvas({
       />
       {/* Toolbar */}
       <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
-        {/* Tool Overlays — 3-state cycle: off → full → outline */}
-        <button
-          onClick={onCycleToolOverlay}
-          style={{
-            ...measureBtnStyle,
-            background: toolOverlayMode !== 'off' ? '#0088cc' : '#fff',
-            color: toolOverlayMode !== 'off' ? '#fff' : '#333',
-            borderColor: toolOverlayMode !== 'off' ? '#0077b3' : '#999',
-          }}
-          title={`Tool Overlays: ${toolOverlayMode === 'off' ? 'Off' : toolOverlayMode === 'full' ? 'Full Shape' : 'Outline'}`}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 12 L5 2 L7 8 L9 4 L12 12" />
-          </svg>
-          {toolOverlayMode !== 'off' && (
-            <span style={{ fontSize: '9px' }}>{toolOverlayMode === 'full' ? 'F' : 'O'}</span>
-          )}
-        </button>
-        {/* Export DXF */}
-        <button
-          onClick={onExportDxf}
-          style={measureBtnStyle}
-          title="Export DXF"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M7 2 L7 10 M4 7 L7 10 L10 7" />
-            <path d="M2 11 L2 12 L12 12 L12 11" />
-          </svg>
-        </button>
-        {/* Hatching */}
+        {/* 1. Hatching (hash marks) */}
         <button
           onClick={onToggleHatching}
           style={{
@@ -1234,7 +1216,7 @@ function CrossSectionCanvas({
             <line x1="13" y1="12" x2="12" y2="13" />
           </svg>
         </button>
-        {/* Dimensions */}
+        {/* 2. Dimension visibility */}
         <button
           onClick={onToggleDimensions}
           style={{
@@ -1253,7 +1235,7 @@ function CrossSectionCanvas({
             <polyline points="10,5.5 12,7 10,8.5" />
           </svg>
         </button>
-        {/* Measure Tool */}
+        {/* 3. Measure Tool (user dimension) */}
         <button
           onClick={measure.toggleMeasure}
           style={{
@@ -1272,7 +1254,7 @@ function CrossSectionCanvas({
             <line x1="13" y1="1" x2="9" y2="1" />
           </svg>
         </button>
-        {/* User Dimensions */}
+        {/* 4. User dimension visibility */}
         <button
           onClick={onToggleUserDimensions}
           style={{
@@ -1292,6 +1274,48 @@ function CrossSectionCanvas({
             <circle cx="7" cy="4" r="2" />
           </svg>
         </button>
+        {/* 5. Export DXF (download) */}
+        <button
+          onClick={onExportDxf}
+          style={measureBtnStyle}
+          title="Export DXF"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M7 2 L7 10 M4 7 L7 10 L10 7" />
+            <path d="M2 11 L2 12 L12 12 L12 11" />
+          </svg>
+        </button>
+        {/* 6. Print */}
+        <button
+          onClick={onPrint}
+          style={measureBtnStyle}
+          title="Print Cross Section"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="1" width="8" height="3" />
+            <rect x="1" y="4" width="12" height="5" />
+            <rect x="3" y="8" width="8" height="5" />
+          </svg>
+        </button>
+        {/* 7. Tool Overlays — 3-state cycle: off → full → outline */}
+        <button
+          onClick={onCycleToolOverlay}
+          style={{
+            ...measureBtnStyle,
+            background: toolOverlayMode !== 'off' ? '#0088cc' : '#fff',
+            color: toolOverlayMode !== 'off' ? '#fff' : '#333',
+            borderColor: toolOverlayMode !== 'off' ? '#0077b3' : '#999',
+          }}
+          title={`Tool Overlays: ${toolOverlayMode === 'off' ? 'Off' : toolOverlayMode === 'full' ? 'Full Shape' : 'Outline'}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12 L5 2 L7 8 L9 4 L12 12" />
+          </svg>
+          {toolOverlayMode !== 'off' && (
+            <span style={{ fontSize: '9px' }}>{toolOverlayMode === 'full' ? 'F' : 'O'}</span>
+          )}
+        </button>
+        {/* 8. Clear measurements */}
         {measure.measurements.length > 0 && (
           <button
             onClick={measure.clearMeasurements}

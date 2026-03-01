@@ -18,6 +18,18 @@ interface ElevationViewerProps {
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   onSplitDragEnd?: (path: number[], newPos: number) => void;
+  onLeftStileWidthChange?: (w: number) => void;
+  onRightStileWidthChange?: (w: number) => void;
+  onTopRailWidthChange?: (w: number) => void;
+  onBottomRailWidthChange?: (w: number) => void;
+  onSplitWidthChange?: (path: number[], w: number) => void;
+  overrideLeftStileW?: number;
+  overrideRightStileW?: number;
+  onPanelSelect?: (idx: number, event: { ctrlKey: boolean }) => void;
+  selectedPanelIndices?: Set<number>;
+  onAddMidRail?: (panelIdx: number) => void;
+  onAddMidStile?: (panelIdx: number) => void;
+  onDeselectAll?: () => void;
   compact?: boolean;
 }
 
@@ -76,9 +88,20 @@ function getDragRange(split: SplitInfoWithBounds): { min: number; max: number } 
   };
 }
 
+type EditingMember = {
+  type: 'left-stile' | 'right-stile' | 'top-rail' | 'bottom-rail' | 'split';
+  path?: number[];
+  screenX: number;
+  screenY: number;
+  currentValue: number;
+} | null;
+
 export function ElevationViewer({
   door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
-  selectedSplitPath, onSplitSelect, onSplitDragEnd, compact,
+  selectedSplitPath, onSplitSelect, onSplitDragEnd,
+  onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
+  onSplitWidthChange, overrideLeftStileW, overrideRightStileW,
+  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile, onDeselectAll, compact,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,20 +113,24 @@ export function ElevationViewer({
   const [isPanning, setIsPanning] = useState(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
-  const [showDimensions, setShowDimensions] = useState(true);
+  const [showDimensions, setShowDimensions] = useState(false);
   const [showHatching, setShowHatching] = useState(true);
   const [showHardware, setShowHardware] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
+  const [singleView, setSingleView] = useState(false);
 
   const [hoveredSplit, setHoveredSplit] = useState<{ path: number[]; type: 'hsplit' | 'vsplit' } | null>(null);
   const [draggingSplit, setDraggingSplit] = useState<DragState | null>(null);
+  const [editingMember, setEditingMember] = useState<EditingMember>(null);
+  const [selectedFrameMember, setSelectedFrameMember] = useState<string | null>(null);
+  const pendingClick = useRef<{ path: number[]; type: 'hsplit' | 'vsplit'; pos: number; startX: number; startY: number } | null>(null);
 
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
   const doorW = door.DefaultW;
   const doorH = door.DefaultH;
-  const leftStileW = door.LeftRightStileW;
-  const rightStileW = door.LeftRightStileW;
+  const leftStileW = overrideLeftStileW ?? door.LeftRightStileW;
+  const rightStileW = overrideRightStileW ?? door.LeftRightStileW;
   const topRailW = door.TopRailW;
   const bottomRailW = door.BottomRailW;
 
@@ -139,20 +166,24 @@ export function ElevationViewer({
     return () => ro.disconnect();
   }, []);
 
-  // Coordinate transforms (extracted so mouse handlers can use them)
+  // Coordinate transforms — front view occupies left half, back view occupies right half
   const pad = 80;
-  const scaleX = (cw - 2 * pad) / doorW;
+  const halfW = singleView ? cw : cw / 2;
+  const scaleX = (halfW - 2 * pad) / doorW;
   const scaleY = (ch - 2 * pad) / doorH;
   const baseScale = Math.min(scaleX, scaleY);
   const scale = baseScale * zoom;
-  const cx = cw / 2;
+  const cx = halfW / 2; // center of left half
   const cy = ch / 2;
 
+  // Front view transforms (left half) — used by mouse handlers and measure tool
   const toX = useCallback((x: number) => cx + (x - doorW / 2) * scale + panX, [cx, doorW, scale, panX]);
   const toY = useCallback((y: number) => cy - (y - doorH / 2) * scale + panY, [cy, doorH, scale, panY]);
-  // Inverse transforms: screen → model
+  // Inverse transforms: screen → model (front half)
   const fromX = useCallback((sx: number) => (sx - panX - cx) / scale + doorW / 2, [cx, doorW, scale, panX]);
   const fromY = useCallback((sy: number) => -(sy - panY - cy) / scale + doorH / 2, [cy, doorH, scale, panY]);
+  // Back view X transform (right half, mirrored)
+  const toXBack = useCallback((x: number) => halfW + halfW / 2 + (doorW / 2 - x) * scale + panX, [halfW, doorW, scale, panX]);
   const fmtDim = useCallback((mm: number) => formatUnit(mm, units), [units]);
 
   // Panel leaves for snap targets
@@ -236,6 +267,43 @@ export function ElevationViewer({
   }, [measure.measureMode, measure.draggingIdx, draggingSplit, hoveredSplit, isPanning]);
 
   // Wheel zoom (center-anchored)
+  // Hit-test fixed frame members (returns member type and width, or null)
+  const hitTestFrame = useCallback((mx: number, my: number): EditingMember => {
+    // mx, my are model coords (from fromX/fromY)
+    if (mx < 0 || mx > doorW || my < 0 || my > doorH) return null;
+    // Left stile
+    if (mx >= 0 && mx <= leftStileW && onLeftStileWidthChange) {
+      return { type: 'left-stile', screenX: toX(leftStileW / 2), screenY: toY(doorH / 2), currentValue: leftStileW };
+    }
+    // Right stile
+    if (mx >= doorW - rightStileW && mx <= doorW && onRightStileWidthChange) {
+      return { type: 'right-stile', screenX: toX(doorW - rightStileW / 2), screenY: toY(doorH / 2), currentValue: rightStileW };
+    }
+    // Top rail (between stiles)
+    if (mx > leftStileW && mx < doorW - rightStileW && my >= doorH - topRailW && my <= doorH && onTopRailWidthChange) {
+      return { type: 'top-rail', screenX: toX(doorW / 2), screenY: toY(doorH - topRailW / 2), currentValue: topRailW };
+    }
+    // Bottom rail (between stiles)
+    if (mx > leftStileW && mx < doorW - rightStileW && my >= 0 && my <= bottomRailW && onBottomRailWidthChange) {
+      return { type: 'bottom-rail', screenX: toX(doorW / 2), screenY: toY(bottomRailW / 2), currentValue: bottomRailW };
+    }
+    return null;
+  }, [doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, toX, toY,
+      onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange]);
+
+  // Hit-test panels — returns leaf index or -1
+  const hitTestPanels = useCallback((sx: number, sy: number): number => {
+    const mx = fromX(sx);
+    const my = fromY(sy);
+    for (let i = 0; i < leaves.length; i++) {
+      const pb = leaves[i];
+      if (mx >= pb.yMin && mx <= pb.yMax && my >= pb.xMin && my <= pb.xMax) {
+        return i;
+      }
+    }
+    return -1;
+  }, [leaves, fromX, fromY]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -248,12 +316,15 @@ export function ElevationViewer({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Mouse handlers — measure mode > split hit-testing > pan
+  // Mouse handlers — measure mode > split hit-testing > frame hit-testing > pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    // Close any open editor on new click
+    setEditingMember(null);
 
     // Measure mode has highest priority
     if (measure.measureMode) {
@@ -262,28 +333,53 @@ export function ElevationViewer({
       return;
     }
 
-    // Hit-test dividers first (only when interactive)
-    if (onSplitSelect) {
-      const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
-      if (hit) {
+    // Only interact in front half (left side)
+    if (sx < halfW) {
+      // Hit-test dividers first (only when interactive)
+      if (onSplitSelect) {
+        const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+        if (hit) {
+          e.preventDefault();
+          onSplitSelect(hit.path);
+          setSelectedFrameMember(null);
+          pendingClick.current = { path: hit.path, type: hit.type, pos: hit.pos, startX: e.clientX, startY: e.clientY };
+          lastMouse.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+      }
+
+      // Hit-test panels
+      if (onPanelSelect) {
+        const panelIdx = hitTestPanels(sx, sy);
+        if (panelIdx >= 0) {
+          e.preventDefault();
+          onPanelSelect(panelIdx, { ctrlKey: e.ctrlKey });
+          setSelectedFrameMember(null);
+          lastMouse.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+      }
+
+      // Hit-test fixed frame members
+      const mx = fromX(sx), my = fromY(sy);
+      const frameHit = hitTestFrame(mx, my);
+      if (frameHit) {
         e.preventDefault();
-        onSplitSelect(hit.path);
-        const range = getDragRange(hit);
-        setDraggingSplit({
-          path: hit.path,
-          type: hit.type,
-          currentPos: hit.pos,
-          range,
-        });
-        lastMouse.current = { x: e.clientX, y: e.clientY };
+        setEditingMember(frameHit);
+        setSelectedFrameMember(frameHit.type);
+        onDeselectAll?.();
         return;
       }
     }
 
-    // Otherwise start canvas pan
+    // Nothing hit — deselect everything
+    setSelectedFrameMember(null);
+    onDeselectAll?.();
+
+    // Start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, onSplitSelect]);
+  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -300,13 +396,27 @@ export function ElevationViewer({
       return;
     }
 
+    // Check if pending click should convert to drag (3px threshold)
+    if (pendingClick.current && !draggingSplit) {
+      const dx = e.clientX - pendingClick.current.startX;
+      const dy = e.clientY - pendingClick.current.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        const pc = pendingClick.current;
+        const hitForRange = splitsWithBounds.find(s => pathsEqual(s.path, pc.path));
+        if (hitForRange) {
+          const range = getDragRange(hitForRange);
+          setDraggingSplit({ path: pc.path, type: pc.type, currentPos: pc.pos, range });
+        }
+        pendingClick.current = null;
+      }
+    }
+
     if (draggingSplit) {
-      // Compute new position from mouse
       let newPos: number;
       if (draggingSplit.type === 'hsplit') {
-        newPos = fromY(sy); // hsplit moves along height (model Y)
+        newPos = fromY(sy);
       } else {
-        newPos = fromX(sx); // vsplit moves along width (model X)
+        newPos = fromX(sx);
       }
       newPos = Math.max(draggingSplit.range.min, Math.min(draggingSplit.range.max, newPos));
       setDraggingSplit(prev => prev ? { ...prev, currentPos: newPos } : null);
@@ -320,8 +430,8 @@ export function ElevationViewer({
       return;
     }
 
-    // Hover detection for cursor
-    if (onSplitSelect) {
+    // Hover detection for cursor (front half only)
+    if (onSplitSelect && sx < halfW) {
       const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
       if (hit) {
         if (!hoveredSplit || !pathsEqual(hoveredSplit.path, hit.path)) {
@@ -330,8 +440,10 @@ export function ElevationViewer({
       } else if (hoveredSplit) {
         setHoveredSplit(null);
       }
+    } else if (hoveredSplit && sx >= halfW) {
+      setHoveredSplit(null);
     }
-  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, onSplitSelect, hoveredSplit]);
+  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit]);
 
   const handleMouseUp = useCallback(() => {
     if (measure.draggingIdx !== null) {
@@ -341,8 +453,26 @@ export function ElevationViewer({
       onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
       setDraggingSplit(null);
     }
+    // If pending click wasn't converted to drag → open width editor for that split
+    if (pendingClick.current && !draggingSplit) {
+      const pc = pendingClick.current;
+      const splitInfo = splitsWithBounds.find(s => pathsEqual(s.path, pc.path));
+      if (splitInfo && onSplitWidthChange) {
+        const b = splitInfo.bounds;
+        const centerX = pc.type === 'vsplit' ? pc.pos : (b.yMin + b.yMax) / 2;
+        const centerY = pc.type === 'hsplit' ? pc.pos : (b.xMin + b.xMax) / 2;
+        setEditingMember({
+          type: 'split',
+          path: pc.path,
+          screenX: toX(centerX),
+          screenY: toY(centerY),
+          currentValue: splitInfo.width,
+        });
+      }
+      pendingClick.current = null;
+    }
     setIsPanning(false);
-  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, onSplitDragEnd]);
+  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, onSplitDragEnd, splitsWithBounds, onSplitWidthChange, toX, toY]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -409,6 +539,21 @@ export function ElevationViewer({
     lastPinchDist.current = 0;
   }, [draggingSplit, onSplitDragEnd]);
 
+  // Commit an inline width edit
+  const commitEdit = useCallback((mm: number) => {
+    if (!editingMember) return;
+    if (mm <= 0) return;
+    switch (editingMember.type) {
+      case 'left-stile': onLeftStileWidthChange?.(mm); break;
+      case 'right-stile': onRightStileWidthChange?.(mm); break;
+      case 'top-rail': onTopRailWidthChange?.(mm); break;
+      case 'bottom-rail': onBottomRailWidthChange?.(mm); break;
+      case 'split':
+        if (editingMember.path) onSplitWidthChange?.(editingMember.path, mm);
+        break;
+    }
+  }, [editingMember, onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange, onSplitWidthChange]);
+
   // DXF export
   const handleExportDxf = useCallback(() => {
     const dxf = buildElevationDxf(
@@ -439,156 +584,336 @@ export function ElevationViewer({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Helper: draw a filled rect in model space
-    const drawRect = (x1: number, y1: number, x2: number, y2: number) => {
-      const sx1 = toX(x1), sy1 = toY(y2); // toY flips, so y2 (higher) maps to lower screen y
-      const sx2 = toX(x2), sy2 = toY(y1);
-      ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
-    };
-    const strokeRect = (x1: number, y1: number, x2: number, y2: number) => {
-      const sx1 = toX(x1), sy1 = toY(y2);
-      const sx2 = toX(x2), sy2 = toY(y1);
-      ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
-    };
-
-    // Hatching helper
-    const drawHatch = (x1: number, y1: number, x2: number, y2: number) => {
-      if (!showHatching) return;
-      const sx1 = toX(x1), sy1 = toY(y2);
-      const sx2 = toX(x2), sy2 = toY(y1);
-      const w = sx2 - sx1;
-      const h = sy2 - sy1;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(sx1, sy1, w, h);
-      ctx.clip();
-      ctx.strokeStyle = '#cccccc';
-      ctx.lineWidth = 0.5;
-      const spacing = 6;
-      const diag = w + h;
-      for (let d = -diag; d < diag; d += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(sx1 + d, sy1);
-        ctx.lineTo(sx1 + d + h, sy1 + h);
-        ctx.stroke();
-      }
-      ctx.restore();
-    };
-
     const leaves = flattenTree(panelTree, rootBounds);
 
-    // Panel areas (light gray fill with hatching)
-    if (renderMode !== 'wireframe') {
-      if (renderMode === 'ghosted') ctx.globalAlpha = 0.3;
-      ctx.fillStyle = '#f0f0f0';
-      for (const pb of leaves) {
-        drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
-        if (renderMode === 'solid') drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
-      }
+    // --- Draw one elevation view (reused for front and back) ---
+    // simplified=true: solid door outline + hardware only (for back view)
+    function drawElevation(
+      ctx: CanvasRenderingContext2D,
+      localToX: (x: number) => number,
+      clipLeft: number,
+      clipWidth: number,
+      filteredHoles: HoleData[],
+      label: string,
+      simplified: boolean,
+      backPocketRects?: { yMin: number; xMin: number; yMax: number; xMax: number }[],
+      singleViewMode = false,
+    ) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipLeft, 0, clipWidth, ch);
+      ctx.clip();
 
-      // Frame members (stile/rail fill)
-      ctx.fillStyle = '#e8dcc8';
+      // Helper: draw a filled rect in model space
+      const drawRect = (x1: number, y1: number, x2: number, y2: number) => {
+        const sx1 = localToX(x1), sy1 = toY(y2);
+        const sx2 = localToX(x2), sy2 = toY(y1);
+        ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      };
+      const strokeRect = (x1: number, y1: number, x2: number, y2: number) => {
+        const sx1 = localToX(x1), sy1 = toY(y2);
+        const sx2 = localToX(x2), sy2 = toY(y1);
+        ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      };
 
-      // Left stile
-      drawRect(0, 0, leftStileW, doorH);
-      // Right stile
-      drawRect(doorW - rightStileW, 0, doorW, doorH);
-      // Bottom rail
-      drawRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
-      // Top rail
-      drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
+      if (!simplified) {
+        // Hatching helper
+        const drawHatch = (x1: number, y1: number, x2: number, y2: number) => {
+          if (!showHatching) return;
+          const sx1 = localToX(x1), sy1 = toY(y2);
+          const sx2 = localToX(x2), sy2 = toY(y1);
+          const w = sx2 - sx1;
+          const h = sy2 - sy1;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(sx1, sy1, w, h);
+          ctx.clip();
+          ctx.strokeStyle = '#cccccc';
+          ctx.lineWidth = 0.5;
+          const spacing = 6;
+          const diag = Math.abs(w) + h;
+          for (let d = -diag; d < diag; d += spacing) {
+            ctx.beginPath();
+            ctx.moveTo(sx1 + d, sy1);
+            ctx.lineTo(sx1 + d + h, sy1 + h);
+            ctx.stroke();
+          }
+          ctx.restore();
+        };
 
-      // Divider bars — recursive
-      function drawDividers(tree: PanelTree, bounds: PanelBounds) {
-        if (tree.type === 'leaf') return;
-        const half = tree.width / 2;
-        if (tree.type === 'hsplit') {
-          drawRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
-          drawDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
-          drawDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
-        } else {
-          drawRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
-          drawDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
-          drawDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+        // Panel areas
+        if (renderMode !== 'wireframe') {
+          ctx.fillStyle = '#f0f0f0';
+          for (const pb of leaves) {
+            drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+            if (renderMode === 'solid') drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+          }
+
+          // Frame members (stile/rail fill)
+          ctx.fillStyle = '#e8dcc8';
+          drawRect(0, 0, leftStileW, doorH);
+          drawRect(doorW - rightStileW, 0, doorW, doorH);
+          drawRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
+          drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
+
+          // Frame member selection highlight
+          if (selectedFrameMember && !simplified) {
+            ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
+            switch (selectedFrameMember) {
+              case 'left-stile': drawRect(0, 0, leftStileW, doorH); break;
+              case 'right-stile': drawRect(doorW - rightStileW, 0, doorW, doorH); break;
+              case 'top-rail': drawRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH); break;
+              case 'bottom-rail': drawRect(leftStileW, 0, doorW - rightStileW, bottomRailW); break;
+            }
+            ctx.strokeStyle = '#3c78ff';
+            ctx.lineWidth = 2;
+            switch (selectedFrameMember) {
+              case 'left-stile': strokeRect(0, 0, leftStileW, doorH); break;
+              case 'right-stile': strokeRect(doorW - rightStileW, 0, doorW, doorH); break;
+              case 'top-rail': strokeRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH); break;
+              case 'bottom-rail': strokeRect(leftStileW, 0, doorW - rightStileW, bottomRailW); break;
+            }
+          }
+
+          // Divider bars — recursive
+          function drawDividers(tree: PanelTree, bounds: PanelBounds) {
+            if (tree.type === 'leaf') return;
+            const half = tree.width / 2;
+            if (tree.type === 'hsplit') {
+              drawRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
+              drawDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+              drawDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+            } else {
+              drawRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
+              drawDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+              drawDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+            }
+          }
+          drawDividers(panelTree, rootBounds);
+        }
+
+        // Outer door perimeter
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 1.5;
+        strokeRect(0, 0, doorW, doorH);
+
+        // Panel outlines
+        ctx.strokeStyle = '#999999';
+        ctx.lineWidth = 0.5;
+        for (const pb of leaves) {
+          strokeRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+        }
+
+        // Width labels on frame members and dividers
+        if (renderMode !== 'wireframe') {
+          ctx.fillStyle = '#666666';
+          ctx.font = `${Math.max(9, Math.min(12, 10 * scale / baseScale))}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(fmtDim(leftStileW), localToX(leftStileW / 2), toY(doorH / 2));
+          ctx.fillText(fmtDim(rightStileW), localToX(doorW - rightStileW / 2), toY(doorH / 2));
+          ctx.fillText(fmtDim(topRailW), localToX(doorW / 2), toY(doorH - topRailW / 2));
+          ctx.fillText(fmtDim(bottomRailW), localToX(doorW / 2), toY(bottomRailW / 2));
+          function labelDividers(tree: PanelTree, bounds: PanelBounds) {
+            if (tree.type === 'leaf') return;
+            const half = tree.width / 2;
+            if (tree.type === 'hsplit') {
+              const cx = (bounds.yMin + bounds.yMax) / 2;
+              ctx.fillText(fmtDim(tree.width), localToX(cx), toY(tree.pos));
+              labelDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+              labelDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+            } else {
+              const cy = (bounds.xMin + bounds.xMax) / 2;
+              ctx.fillText(fmtDim(tree.width), localToX(tree.pos), toY(cy));
+              labelDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+              labelDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+            }
+          }
+          labelDividers(panelTree, rootBounds);
+        }
+      } else {
+        // Simplified back view — solid door fill + outline only
+        if (renderMode !== 'wireframe') {
+          ctx.fillStyle = '#e8dcc8';
+          drawRect(0, 0, doorW, doorH);
+        }
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 1.5;
+        strokeRect(0, 0, doorW, doorH);
+
+        // Back pocket outlines (solid — this IS the back view)
+        if (backPocketRects && backPocketRects.length > 0) {
+          ctx.strokeStyle = '#888888';
+          ctx.lineWidth = 1;
+          for (const r of backPocketRects) {
+            // r uses Mozaik coords: Y=width, X=height
+            strokeRect(r.yMin, r.xMin, r.yMax, r.xMax);
+          }
         }
       }
-      drawDividers(panelTree, rootBounds);
-      if (renderMode === 'ghosted') ctx.globalAlpha = 1.0;
-    }
 
-    // Outlines
-    ctx.strokeStyle = '#333333';
-    ctx.lineWidth = 1.5;
+      // Hardware holes (always drawn)
+      if (showHardware && filteredHoles.length > 0) {
+        for (const hole of filteredHoles) {
+          const sx = localToX(hole.Y);
+          const sy = toY(hole.X);
+          const sr = (hole.Diameter / 2) * scale;
 
-    // Door perimeter
-    strokeRect(0, 0, doorW, doorH);
+          // In single-view mode, back-face holes render as dotted red outlines
+          const isBackInSingle = singleViewMode && hole.FlipSideOp;
 
-    // Frame member outlines
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = '#555555';
-    strokeRect(0, 0, leftStileW, doorH);
-    strokeRect(doorW - rightStileW, 0, doorW, doorH);
-    strokeRect(leftStileW, 0, doorW - rightStileW, bottomRailW);
-    strokeRect(leftStileW, doorH - topRailW, doorW - rightStileW, doorH);
+          if (isBackInSingle) {
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#cc3333';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            if (hole.holeType === 'hinge-cup') {
+              ctx.fillStyle = 'rgba(180, 120, 60, 0.5)';
+              ctx.strokeStyle = '#8B6914';
+            } else if (hole.holeType === 'hinge-mount') {
+              ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+              ctx.strokeStyle = '#444444';
+            } else {
+              ctx.fillStyle = 'rgba(60, 120, 200, 0.5)';
+              ctx.strokeStyle = '#2255aa';
+            }
 
-    // Divider bar outlines — recursive
-    function strokeDividers(tree: PanelTree, bounds: PanelBounds) {
-      if (tree.type === 'leaf') return;
-      const half = tree.width / 2;
-      if (tree.type === 'hsplit') {
-        strokeRect(bounds.yMin, tree.pos - half, bounds.yMax, tree.pos + half);
-        strokeDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
-        strokeDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
-      } else {
-        strokeRect(tree.pos - half, bounds.xMin, tree.pos + half, bounds.xMax);
-        strokeDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
-        strokeDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+            ctx.lineWidth = renderMode === 'wireframe' ? 1.5 : 1;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+            if (renderMode !== 'wireframe') {
+              ctx.fill();
+            }
+            ctx.stroke();
+
+            ctx.strokeStyle = hole.holeType === 'handle' ? '#2255aa' : '#666666';
+            ctx.lineWidth = 0.5;
+            const ch2 = Math.max(sr * 0.3, 2);
+            ctx.beginPath();
+            ctx.moveTo(sx - ch2, sy); ctx.lineTo(sx + ch2, sy);
+            ctx.moveTo(sx, sy - ch2); ctx.lineTo(sx, sy + ch2);
+            ctx.stroke();
+          }
+        }
       }
-    }
-    strokeDividers(panelTree, rootBounds);
 
-    // Panel outlines
-    ctx.strokeStyle = '#999999';
-    ctx.lineWidth = 0.5;
-    for (const pb of leaves) {
-      strokeRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+      // View label
+      ctx.fillStyle = '#888888';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, clipLeft + clipWidth / 2, 16);
+
+      ctx.restore();
     }
 
-    // --- Divider highlights (selected + hovered) ---
-    // Hovered divider (subtle warm tint, only if not the selected one)
+    // --- Compute back pocket rects from back operations ---
+    const allOps = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
+    const backPocketRects = allOps
+      .filter(op => op.FlipSideOp && op.OperationToolPathNode && op.OperationToolPathNode.length >= 3)
+      .map(op => {
+        const nodes = op.OperationToolPathNode!;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+          if (n.X < minX) minX = n.X;
+          if (n.X > maxX) maxX = n.X;
+          if (n.Y < minY) minY = n.Y;
+          if (n.Y > maxY) maxY = n.Y;
+        }
+        return { xMin: minX, xMax: maxX, yMin: minY, yMax: maxY };
+      });
+
+    // --- Draw front elevation (left half, or full width in single view) ---
+    const frontHoles = singleView ? holes : holes.filter(h => !h.FlipSideOp);
+    drawElevation(ctx, toX, 0, halfW, frontHoles, singleView ? '' : 'FRONT', false, undefined, singleView);
+
+    // --- Draw back elevation (right half, mirrored + simplified) — skip in single view ---
+    if (!singleView) {
+      const backHoles = holes.filter(h => h.FlipSideOp);
+      drawElevation(ctx, toXBack, halfW, halfW, backHoles, 'BACK', true, backPocketRects);
+
+      // --- Divider line between front and back ---
+      ctx.strokeStyle = '#cccccc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(halfW, 0);
+      ctx.lineTo(halfW, ch);
+      ctx.stroke();
+    }
+
+    // --- Divider highlights (front view only) ---
     if (hoveredSplit && (!selectedSplitPath || !pathsEqual(hoveredSplit.path, selectedSplitPath))) {
       const hovered = splitsWithBounds.find(s => pathsEqual(s.path, hoveredSplit.path));
       if (hovered) {
         const b = hovered.bounds;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, halfW, ch);
+        ctx.clip();
         ctx.fillStyle = 'rgba(255, 200, 100, 0.2)';
-        drawRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        const sx1 = toX(b.yMin), sy1 = toY(b.xMax);
+        const sx2 = toX(b.yMax), sy2 = toY(b.xMin);
+        ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
         ctx.strokeStyle = '#ffaa44';
         ctx.lineWidth = 1.5;
-        strokeRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+        ctx.restore();
       }
     }
 
-    // Selected divider (orange highlight)
     if (selectedSplitPath) {
       const selected = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
       if (selected) {
         const b = selected.bounds;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, halfW, ch);
+        ctx.clip();
         ctx.fillStyle = 'rgba(255, 165, 0, 0.35)';
-        drawRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        const sx1 = toX(b.yMin), sy1 = toY(b.xMax);
+        const sx2 = toX(b.yMax), sy2 = toY(b.xMin);
+        ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
         ctx.strokeStyle = '#ff8800';
         ctx.lineWidth = 2;
-        strokeRect(b.yMin, b.xMin, b.yMax, b.xMax);
+        ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+        ctx.restore();
       }
     }
 
-    // Ghost line during drag
+    // Panel selection highlights (front view only)
+    if (selectedPanelIndices && selectedPanelIndices.size > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, halfW, ch);
+      ctx.clip();
+      for (const idx of selectedPanelIndices) {
+        if (idx >= 0 && idx < leaves.length) {
+          const pb = leaves[idx];
+          const sx1 = toX(pb.yMin), sy1 = toY(pb.xMax);
+          const sx2 = toX(pb.yMax), sy2 = toY(pb.xMin);
+          ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
+          ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+          ctx.strokeStyle = '#3c78ff';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Ghost line during drag (front view only)
     if (draggingSplit) {
       ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, halfW, ch);
+      ctx.clip();
       ctx.strokeStyle = '#ff8800';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       if (draggingSplit.type === 'hsplit') {
-        // Horizontal line at new Y position
         const syLine = toY(draggingSplit.currentPos);
         const sxLeft = toX(leftStileW);
         const sxRight = toX(doorW - rightStileW);
@@ -597,7 +922,6 @@ export function ElevationViewer({
         ctx.lineTo(sxRight, syLine);
         ctx.stroke();
       } else {
-        // Vertical line at new X position
         const sxLine = toX(draggingSplit.currentPos);
         const syTop = toY(doorH - topRailW);
         const syBot = toY(bottomRailW);
@@ -609,148 +933,96 @@ export function ElevationViewer({
       ctx.restore();
     }
 
-    // Dimensions
+    // Dimensions (front view only)
     if (showDimensions) {
-      // Door width (bottom)
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, halfW, ch);
+      ctx.clip();
+
       drawLinearDim(ctx, 0, 0, doorW, 0, fmtDim(doorW), 35, 'below', toX, toY);
-      // Door height (right side)
       drawLinearDim(ctx, doorW, 0, doorW, doorH, fmtDim(doorH), 35, 'right', toX, toY);
 
-      // Left stile width (inside, at top)
       drawLinearDim(ctx, 0, doorH, leftStileW, doorH, fmtDim(leftStileW), 15, 'above', toX, toY);
-      // Right stile width (inside, at top)
       drawLinearDim(ctx, doorW - rightStileW, doorH, doorW, doorH, fmtDim(rightStileW), 15, 'above', toX, toY);
-      // Top rail width (inside, at right)
       drawLinearDim(ctx, 0, doorH - topRailW, 0, doorH, fmtDim(topRailW), 15, 'left', toX, toY);
-      // Bottom rail width (inside, at right)
       drawLinearDim(ctx, 0, 0, 0, bottomRailW, fmtDim(bottomRailW), 15, 'left', toX, toY);
 
-      // Split dims — position from origin and width for each split
       const splits = enumerateSplits(panelTree);
       for (const split of splits) {
         if (split.type === 'hsplit') {
-          // Rail position from bottom (left side)
           drawLinearDim(ctx, 0, 0, 0, split.pos, fmtDim(split.pos), 55 + split.depth * 20, 'left', toX, toY);
-          // Rail width (right side)
           drawLinearDim(ctx, doorW, split.pos - split.width / 2, doorW, split.pos + split.width / 2,
             fmtDim(split.width), 15 + split.depth * 20, 'right', toX, toY);
         } else {
-          // Stile position from left (bottom)
           drawLinearDim(ctx, 0, 0, split.pos, 0, fmtDim(split.pos), 55 + split.depth * 20, 'below', toX, toY);
-          // Stile width (top)
           drawLinearDim(ctx, split.pos - split.width / 2, doorH, split.pos + split.width / 2, doorH,
             fmtDim(split.width), 15 + split.depth * 20, 'above', toX, toY);
         }
       }
 
-      // Sub-panel dimensions (drawn inside each panel)
       for (const pb of leaves) {
         const panelH = pb.xMax - pb.xMin;
         const panelW = pb.yMax - pb.yMin;
         const pcx = (pb.yMin + pb.yMax) / 2;
         const pcy = (pb.xMin + pb.xMax) / 2;
         drawLinearDim(ctx, pcx, pb.xMin, pcx, pb.xMax,
-          fmtDim(panelH), 0, 'right', toX, toY);
+          fmtDim(panelH), 10, 'right', toX, toY);
         drawLinearDim(ctx, pb.yMin, pcy, pb.yMax, pcy,
-          fmtDim(panelW), 0, 'above', toX, toY);
+          fmtDim(panelW), 10, 'above', toX, toY);
       }
+
+      ctx.restore();
     }
 
-    // Hardware holes
-    if (showHardware && holes.length > 0) {
-      for (const hole of holes) {
-        // Hole position in model coords: X=height(y-axis), Y=width(x-axis)
-        const sx = toX(hole.Y);
-        const sy = toY(hole.X);
-        const sr = (hole.Diameter / 2) * scale;
+    // Handle dimension annotations (front view only, for front-facing handles)
+    if (showHardware && handleConfig) {
+      const handleHoles = holes.filter(h => h.holeType === 'handle' && !h.FlipSideOp);
+      const dimColor = '#2255aa';
 
-        // Color by type
-        if (hole.holeType === 'hinge-cup') {
-          ctx.fillStyle = 'rgba(180, 120, 60, 0.5)';
-          ctx.strokeStyle = '#8B6914';
-        } else if (hole.holeType === 'hinge-mount') {
-          ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
-          ctx.strokeStyle = '#444444';
-        } else {
-          ctx.fillStyle = 'rgba(60, 120, 200, 0.5)';
-          ctx.strokeStyle = '#2255aa';
-        }
-
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Cross-hair for center
-        ctx.strokeStyle = hole.holeType === 'handle' ? '#2255aa' : '#666666';
-        ctx.lineWidth = 0.5;
-        const ch2 = Math.max(sr * 0.3, 2);
-        ctx.beginPath();
-        ctx.moveTo(sx - ch2, sy); ctx.lineTo(sx + ch2, sy);
-        ctx.moveTo(sx, sy - ch2); ctx.lineTo(sx, sy + ch2);
-        ctx.stroke();
+      if (handleHoles.length === 2) {
+        const h0 = handleHoles[0], h1 = handleHoles[1];
+        drawLinearDim(ctx, h0.Y, h0.X, h1.Y, h1.X,
+          fmtDim(Math.hypot(h1.X - h0.X, h1.Y - h0.Y)),
+          20, 'left', toX, toY, dimColor);
       }
 
-      // Handle dimension annotations
-      if (handleConfig) {
-        const handleHoles = holes.filter(h => h.holeType === 'handle');
-        const dimColor = '#2255aa';
-
-        // Separation dimension between handle hole pair
-        if (handleHoles.length === 2) {
-          const h0 = handleHoles[0], h1 = handleHoles[1];
-          // Model coords: mx = Mozaik Y (width), my = Mozaik X (height)
-          drawLinearDim(ctx, h0.Y, h0.X, h1.Y, h1.X,
-            fmtDim(Math.hypot(h1.X - h0.X, h1.Y - h0.Y)),
-            20, 'left', toX, toY, dimColor);
-        }
-
-        // Elevation dimension — pick first handle hole as reference
-        if (handleHoles.length > 0) {
-          const h = handleHoles[0];
-          const handleMidX = handleHoles.length === 2
-            ? (handleHoles[0].X + handleHoles[1].X) / 2
-            : h.X;
-          const dp = handleConfig.doorPlacement;
-          if (dp === 'top' || dp === 'center-top') {
-            // Elevation from top of door
-            drawLinearDim(ctx, h.Y, handleMidX, h.Y, doorH,
-              fmtDim(doorH - handleMidX), 40, 'left', toX, toY, dimColor);
-          } else if (dp === 'bottom' || dp === 'custom') {
-            // Elevation from bottom of door
-            drawLinearDim(ctx, h.Y, 0, h.Y, handleMidX,
-              fmtDim(handleMidX), 40, 'left', toX, toY, dimColor);
-          }
+      if (handleHoles.length > 0) {
+        const h = handleHoles[0];
+        const handleMidX = handleHoles.length === 2
+          ? (handleHoles[0].X + handleHoles[1].X) / 2
+          : h.X;
+        const dp = handleConfig.doorPlacement;
+        if (dp === 'top' || dp === 'center-top') {
+          drawLinearDim(ctx, h.Y, handleMidX, h.Y, doorH,
+            fmtDim(doorH - handleMidX), 40, 'left', toX, toY, dimColor);
+        } else if (dp === 'bottom' || dp === 'custom') {
+          drawLinearDim(ctx, h.Y, 0, h.Y, handleMidX,
+            fmtDim(handleMidX), 40, 'left', toX, toY, dimColor);
         }
       }
     }
 
-    // --- Measure tool overlays ---
-    // Completed measurements
+    // --- Measure tool overlays (front view only) ---
     if (showUserDimensions) {
       for (const m of measure.measurements) {
         drawGeneralDim(ctx, toX(m.ax), toY(m.ay), toX(m.bx), toY(m.by), m.label, m.perpOffset, '#0088cc');
       }
     }
 
-    // Dimension preview during placing-dim drag
     if (measure.measureMode && measure.dimPreview) {
       const dp = measure.dimPreview;
       drawGeneralDim(ctx, toX(dp.ax), toY(dp.ay), toX(dp.bx), toY(dp.by), dp.label, dp.perpOffset, 'rgba(0, 136, 204, 0.6)');
     }
 
-    // Snap indicator
     if (measure.measureMode && measure.snap && measure.phase !== 'placing-dim') {
       drawSnapIndicator(ctx, toX(measure.snap.x), toY(measure.snap.y), measure.snap.label);
     }
-    // Preview line from point A to cursor (during placing-b)
     if (measure.measureMode && measure.phase === 'placing-b' && measure.pointA && measure.snap) {
       const sax = toX(measure.pointA.x), say = toY(measure.pointA.y);
       const sbx = toX(measure.snap.x), sby = toY(measure.snap.y);
       drawMeasurePreview(ctx, sax, say, sbx, sby, sbx, sby);
     }
-    // Point A marker
     if (measure.measureMode && measure.pointA) {
       ctx.save();
       ctx.fillStyle = '#00aaff';
@@ -760,9 +1032,9 @@ export function ElevationViewer({
       ctx.restore();
     }
 
-  }, [cw, ch, toX, toY, scale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim,
-      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds,
+  }, [cw, ch, halfW, toX, toXBack, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
+      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
+      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView,
       measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
@@ -836,6 +1108,84 @@ export function ElevationViewer({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         />
+        {/* Inline width editor */}
+        {editingMember && (
+          <div style={{
+            position: 'absolute',
+            left: editingMember.screenX - 32,
+            top: editingMember.screenY - 14,
+            zIndex: 20,
+          }}>
+            <input
+              autoFocus
+              type="number"
+              defaultValue={units === 'in'
+                ? parseFloat((editingMember.currentValue / 25.4).toFixed(4))
+                : editingMember.currentValue}
+              step={units === 'in' ? 0.125 : 0.5}
+              style={{
+                width: 64,
+                fontSize: 12,
+                textAlign: 'center',
+                padding: '2px 4px',
+                borderRadius: 4,
+                border: '2px solid #ff8800',
+                background: '#fff',
+                outline: 'none',
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const raw = parseFloat(e.currentTarget.value);
+                  if (!isNaN(raw)) {
+                    const mm = units === 'in' ? raw * 25.4 : raw;
+                    commitEdit(mm);
+                  }
+                  setEditingMember(null);
+                }
+                if (e.key === 'Escape') {
+                  setEditingMember(null);
+                }
+              }}
+              onBlur={() => setEditingMember(null)}
+            />
+          </div>
+        )}
+        {/* MR/MS overlay buttons — show when exactly 1 panel selected */}
+        {selectedPanelIndices && selectedPanelIndices.size === 1 && (onAddMidRail || onAddMidStile) && (() => {
+          const idx = [...selectedPanelIndices][0];
+          if (idx < 0 || idx >= leaves.length) return null;
+          const pb = leaves[idx];
+          const btnX = toX((pb.yMin + pb.yMax) / 2);
+          const btnY = toY((pb.xMin + pb.xMax) / 2);
+          return (
+            <div style={{
+              position: 'absolute',
+              left: btnX,
+              top: btnY,
+              transform: 'translate(-50%, -50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              zIndex: 15,
+              pointerEvents: 'auto',
+            }}>
+              {onAddMidRail && (
+                <button
+                  onClick={() => onAddMidRail(idx)}
+                  style={mrMsBtnStyle}
+                  title="Add Mid Rail"
+                >MR</button>
+              )}
+              {onAddMidStile && (
+                <button
+                  onClick={() => onAddMidStile(idx)}
+                  style={mrMsBtnStyle}
+                  title="Add Mid Stile"
+                >MS</button>
+              )}
+            </div>
+          );
+        })()}
         {/* Toolbar */}
         <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>
           <RenderModeButton mode={renderMode} onToggle={() => onRenderModeChange(nextRenderMode(renderMode))} />
@@ -864,6 +1214,18 @@ export function ElevationViewer({
               title="Clear Measurements"
             >Clear</button>
           )}
+          <button
+            onClick={() => setSingleView(v => !v)}
+            style={{
+              ...measureBtnStyle,
+              background: singleView ? '#0088cc' : '#fff',
+              color: singleView ? '#fff' : '#333',
+              borderColor: singleView ? '#0077b3' : '#999',
+              fontWeight: 700,
+              fontSize: '12px',
+            }}
+            title={singleView ? 'Show Front & Back' : 'Show Front Only'}
+          >{singleView ? '1' : '1|2'}</button>
         </div>
         {isZoomed && (
           <button
@@ -1042,6 +1404,18 @@ const measureBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 4,
+};
+
+const mrMsBtnStyle: React.CSSProperties = {
+  padding: '2px 8px',
+  borderRadius: 4,
+  border: '1px solid #3c78ff',
+  background: 'rgba(60, 120, 255, 0.9)',
+  color: '#fff',
+  fontSize: '11px',
+  fontWeight: 700,
+  cursor: 'pointer',
+  lineHeight: '16px',
 };
 
 const resetBtnStyle: React.CSSProperties = {

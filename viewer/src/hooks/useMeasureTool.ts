@@ -130,6 +130,12 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
   // Raw B point from click 2 (model coords, un-straightened)
   const placingB = useRef<{ x: number; y: number } | null>(null);
 
+  // Movement-direction tracking for placing-dim phase
+  const lastDimPos = useRef<{ x: number; y: number } | null>(null);
+  const accDx = useRef(0);
+  const accDy = useRef(0);
+  const lockedOrientation = useRef<'diagonal' | 'horizontal' | 'vertical' | null>(null);
+
   const nextId = useRef(1);
 
   // ---- Snap detection ----
@@ -160,50 +166,91 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
     return best;
   }, [fromX, fromY, scale, snapTargets, snapLines]);
 
-  // ---- Compute dimension orientation from cursor position ----
-  // Determines H/V/diagonal based on cursor relative to raw A→B midpoint.
+  // ---- Compute dimension orientation from mouse movement direction ----
+  // Tracks accumulated mouse movement to detect diagonal/H/V intent.
+  // Locks to a direction until the user clearly moves in a different direction.
+
+  const updateMovementDirection = useCallback((sx: number, sy: number) => {
+    const last = lastDimPos.current;
+    if (!last) {
+      lastDimPos.current = { x: sx, y: sy };
+      return;
+    }
+
+    const dx = sx - last.x;
+    const dy = sy - last.y;
+    const moveDist = Math.hypot(dx, dy);
+    lastDimPos.current = { x: sx, y: sy };
+
+    // Ignore tiny movements
+    if (moveDist < 1) return;
+
+    // Accumulate with exponential decay (recent movement weighs more)
+    accDx.current = accDx.current * 0.7 + Math.abs(dx);
+    accDy.current = accDy.current * 0.7 + Math.abs(dy);
+
+    const totalAcc = Math.hypot(accDx.current, accDy.current);
+    // Need enough accumulated movement to determine direction (15px equivalent)
+    if (totalAcc < 8) return;
+
+    // Angle of accumulated movement (0° = pure horizontal, 90° = pure vertical)
+    const angle = Math.atan2(accDy.current, accDx.current) * (180 / Math.PI);
+
+    let detected: 'diagonal' | 'horizontal' | 'vertical';
+    if (angle > 25 && angle < 65) {
+      detected = 'diagonal';
+    } else if (angle <= 25) {
+      detected = 'horizontal';
+    } else {
+      detected = 'vertical';
+    }
+
+    // Switch direction only if accumulated movement is strong enough
+    // (higher threshold to switch AWAY from current locked mode for hysteresis)
+    if (lockedOrientation.current === null || totalAcc > 12) {
+      lockedOrientation.current = detected;
+    }
+  }, []);
 
   const computeDimPreview = useCallback((sx: number, sy: number) => {
     const a = pointA;
     const rawB = placingB.current;
     if (!a || !rawB) return;
 
-    const cx = fromX(sx), cy = fromY(sy);
-
     // Screen-space coords of A and B
     const sax = toX(a.x), say = toY(a.y);
     const sbx = toX(rawB.x), sby = toY(rawB.y);
-    const screenLen = Math.hypot(sbx - sax, sby - say);
 
     // Model-space deltas
     const rawDx = Math.abs(rawB.x - a.x);
     const rawDy = Math.abs(rawB.y - a.y);
 
-    // Cursor distance from midpoint (model coords, for H/V fallback)
-    const midX = (a.x + rawB.x) / 2;
-    const midY = (a.y + rawB.y) / 2;
-    const cursorDx = Math.abs(cx - midX);
-    const cursorDy = Math.abs(cy - midY);
-
     let dimAx: number, dimAy: number, dimBx: number, dimBy: number;
     let perpOffset: number;
 
-    // Check if A→B is truly diagonal (not nearly H or V)
+    // Use locked orientation from mouse movement, or determine from geometry
     const isDiagonalLine = rawDx > rawDy * 0.15 && rawDy > rawDx * 0.15;
+    let orientation = lockedOrientation.current;
 
-    // Corridor check: if cursor is close to A→B line, use aligned/diagonal
-    let useAligned = false;
-    if (isDiagonalLine && screenLen > 1e-6) {
-      const perpDist = Math.abs(signedPerpDist(sx, sy, sax, say, sbx, sby));
-      useAligned = perpDist < Math.max(screenLen * 0.20, 25);
+    // If A→B is nearly H or V, override diagonal lock
+    if (orientation === 'diagonal' && !isDiagonalLine) {
+      orientation = rawDx > rawDy ? 'horizontal' : 'vertical';
+    }
+    // If no lock yet (first frame), default to diagonal if line is diagonal, else H/V
+    if (!orientation) {
+      if (isDiagonalLine) {
+        orientation = 'diagonal';
+      } else {
+        orientation = rawDx > rawDy ? 'horizontal' : 'vertical';
+      }
     }
 
-    if (useAligned) {
+    if (orientation === 'diagonal') {
       // ALIGNED/DIAGONAL — perpendicular to raw A→B
       dimAx = a.x; dimAy = a.y;
       dimBx = rawB.x; dimBy = rawB.y;
       perpOffset = -signedPerpDist(sx, sy, sax, say, sbx, sby);
-    } else if (cursorDy > cursorDx && rawDx > 1e-6) {
+    } else if (orientation === 'horizontal' && rawDx > 1e-6) {
       // HORIZONTAL dimension
       dimAx = a.x; dimAy = a.y;
       dimBx = rawB.x; dimBy = a.y;
@@ -234,7 +281,7 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
       perpOffset,
       label: formatDistance(dist),
     });
-  }, [pointA, fromX, fromY, toX, toY, formatDistance]);
+  }, [pointA, toX, toY, formatDistance]);
 
   // ---- Mouse move → update snap or dim preview ----
 
@@ -242,11 +289,12 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
     if (!measureMode) return;
 
     if (phase === 'placing-dim') {
+      updateMovementDirection(sx, sy);
       computeDimPreview(sx, sy);
     } else {
       setSnap(findSnap(sx, sy));
     }
-  }, [measureMode, phase, computeDimPreview, findSnap]);
+  }, [measureMode, phase, computeDimPreview, findSnap, updateMovementDirection]);
 
   // ---- Mouse down → place points or finalize dimension ----
 
@@ -276,6 +324,11 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
 
       // Store raw B (no auto-straighten) and enter placing-dim
       placingB.current = { x: pt.x, y: pt.y };
+      // Reset movement tracking for fresh direction detection
+      lastDimPos.current = null;
+      accDx.current = 0;
+      accDy.current = 0;
+      lockedOrientation.current = null;
       setPhase('placing-dim');
 
       // Initialize preview with default offset

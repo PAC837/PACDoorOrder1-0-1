@@ -47,7 +47,7 @@ export function CNCDoorSlab({
   backPanelType,
   hasBackRabbit,
   holes = [],
-  renderMode = 'ghosted',
+  renderMode = 'solid',
   textureUrl,
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
@@ -135,23 +135,25 @@ export function CNCDoorSlab({
     }
   }, [doorW, doorH, thickness, frontOps, backPocketOps, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes]);
 
-  // Glass pane — shown when either panel type is 'glass'
+  // Glass panes — one per front operation (sub-panel) when panel type is 'glass'
   const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';
-  const glassData = useMemo(() => {
+  const glassPanes = useMemo(() => {
     if (!showGlass) return null;
-    const firstOp = frontOps[0];
-    if (!firstOp?.OperationToolPathNode || firstOp.OperationToolPathNode.length < 3) return null;
-    const rect = toolPathToRect(firstOp.OperationToolPathNode, doorW, doorH);
-    // Glass sits in the back rabbet groove, extending 3/8" into stile/rail
     const backRabbet = hasBackRabbit !== false ? getBackRabbetDepth(graph, thickness) : 0;
     const glassLip = hasBackRabbit !== false ? 9.525 : 0; // 3/8" lip only with back rabbit
     const glassZ = backRabbet > 0
       ? -thickness / 2 + backRabbet - GLASS_THICKNESS / 2
       : 0;
-    return {
-      geometry: new THREE.BoxGeometry(rect.width + 2 * glassLip, rect.height + 2 * glassLip, GLASS_THICKNESS),
-      position: [rect.x, rect.y, glassZ] as [number, number, number],
-    };
+    const panes: { geometry: THREE.BoxGeometry; position: [number, number, number] }[] = [];
+    for (const op of frontOps) {
+      if (!op?.OperationToolPathNode || op.OperationToolPathNode.length < 3) continue;
+      const rect = toolPathToRect(op.OperationToolPathNode, doorW, doorH);
+      panes.push({
+        geometry: new THREE.BoxGeometry(rect.width + 2 * glassLip, rect.height + 2 * glassLip, GLASS_THICKNESS),
+        position: [rect.x, rect.y, glassZ],
+      });
+    }
+    return panes.length > 0 ? panes : null;
   }, [showGlass, frontOps, doorW, doorH, graph, thickness, hasBackRabbit]);
 
   // EdgesGeometry for wireframe mode — mergeVertices fixes CSG boundary artifacts
@@ -180,14 +182,11 @@ export function CNCDoorSlab({
             map={texture ?? undefined}
             roughness={0.7}
             side={THREE.DoubleSide}
-            transparent={renderMode === 'ghosted'}
-            opacity={renderMode === 'ghosted' ? 0.4 : 1}
-            depthWrite={renderMode !== 'ghosted'}
           />
         </mesh>
       )}
-      {showGlass && glassData && (
-        <mesh geometry={glassData.geometry} position={glassData.position}>
+      {showGlass && glassPanes && glassPanes.map((pane, i) => (
+        <mesh key={`glass-${i}`} geometry={pane.geometry} position={pane.position}>
           <meshStandardMaterial
             color="#88ccff"
             transparent
@@ -196,7 +195,7 @@ export function CNCDoorSlab({
             side={THREE.DoubleSide}
           />
         </mesh>
-      )}
+      ))}
     </>
   );
 }

@@ -13,9 +13,10 @@ import { CommitNumberInput } from './components/CommitNumberInput.js';
 import { HingePanel } from './components/HingePanel.js';
 import { HandlePanel } from './components/HandlePanel.js';
 import { PanelSplitControls } from './components/PanelSplitControls.js';
+import { DoorEditorToolbar } from './components/DoorEditorToolbar.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import type { PanelTree } from './utils/panelTree.js';
-import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual } from './utils/panelTree.js';
+import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf } from './utils/panelTree.js';
 import type { DoorData, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode } from './types.js';
 import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
@@ -51,6 +52,7 @@ export default function App() {
   const [hingeConfig, setHingeConfig] = useState<HingeConfig>({ ...DEFAULT_HINGE_CONFIG });
   const [handleConfig, setHandleConfig] = useState<HandleConfig>({ ...DEFAULT_HANDLE_CONFIG });
   const [backPocketMode, setBackPocketMode] = useState<BackPocketMode>('all');
+  const [backPreset, setBackPreset] = useState<string>('');
   const [showHingeAdvanced, setShowHingeAdvanced] = useState(false);
   const [showHandleAdvanced, setShowHandleAdvanced] = useState(false);
   const [savedSep, setSavedSep] = useState(101.6); // preserve last handle separation when switching to knob
@@ -63,8 +65,8 @@ export default function App() {
   const [libraries, setLibraries] = useState<string[]>([]);
   const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [doorRenderMode, setDoorRenderMode] = useState<RenderMode>('ghosted');
-  const [elevationRenderMode, setElevationRenderMode] = useState<RenderMode>('ghosted');
+  const [doorRenderMode, setDoorRenderMode] = useState<RenderMode>('solid');
+  const [elevationRenderMode, setElevationRenderMode] = useState<RenderMode>('solid');
   const [selectedTextures, setSelectedTextures] = useState<{
     painted: string | null; primed: string | null; raw: string | null; sanded: string | null;
   }>({ painted: null, primed: null, raw: null, sanded: null });
@@ -112,6 +114,7 @@ export default function App() {
       case 'door': setDoorH(762); break;
       case 'drawer': setDoorH(203.2); break;
       case 'reduced-rail': setDoorH(152.4); break;
+      case 'end-panel': setDoorH(762); setBottomRailW(139.7); break; // 30" height, 5.5" bottom rail
       case 'slab': setDoorH(152.4); break;
     }
     if (type === 'slab') {
@@ -119,6 +122,10 @@ export default function App() {
       setBackGroupId(null);
       setEdgeGroupId(null);
     }
+    // Reset panel tree (clear mid rails/stiles)
+    setPanelTree({ type: 'leaf' });
+    setSelectedPanels(new Set());
+    setSelectedSplitPath(null);
   }, []);
 
   const handleLibraryChange = useCallback(async (library: string) => {
@@ -293,6 +300,35 @@ export default function App() {
     });
   }, []);
 
+  const handleSplitWidthChange = useCallback((path: number[], newWidth: number) => {
+    setPanelTree(prev => {
+      const splits = enumerateSplits(prev);
+      const split = splits.find(s => pathsEqual(s.path, path));
+      if (!split) return prev;
+      return updateSplit(prev, path, split.pos, newWidth);
+    });
+  }, []);
+
+  // Add split at a panel's center (used by MR/MS buttons in elevation)
+  const handleAddMidRail = useCallback((panelIdx: number) => {
+    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
+    const pb = panelBounds[panelIdx];
+    setPanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'hsplit', (pb.xMin + pb.xMax) / 2, 76.2));
+    setSelectedPanels(new Set());
+  }, [panelBounds]);
+
+  const handleAddMidStile = useCallback((panelIdx: number) => {
+    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
+    const pb = panelBounds[panelIdx];
+    setPanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'vsplit', (pb.yMin + pb.yMax) / 2, 76.2));
+    setSelectedPanels(new Set());
+  }, [panelBounds]);
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedPanels(new Set());
+    setSelectedSplitPath(null);
+  }, []);
+
   // Texture URL for 3D door — uses active category's blob URL
   const activeTexturePath = selectedTextures[activeTextureCategory];
   const textureUrl = activeTexturePath ? textureBlobUrls[activeTexturePath] : undefined;
@@ -371,6 +407,18 @@ export default function App() {
           selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
           onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
           onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
+          onLeftStileWidthChange={isGenericDoor ? setLeftStileW : undefined}
+          onRightStileWidthChange={isGenericDoor ? setRightStileW : undefined}
+          onTopRailWidthChange={isGenericDoor ? setTopRailW : undefined}
+          onBottomRailWidthChange={isGenericDoor ? setBottomRailW : undefined}
+          onSplitWidthChange={isGenericDoor ? handleSplitWidthChange : undefined}
+          overrideLeftStileW={isGenericDoor ? leftStileW : undefined}
+          overrideRightStileW={isGenericDoor ? rightStileW : undefined}
+          onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
+          selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
+          onAddMidRail={isGenericDoor ? handleAddMidRail : undefined}
+          onAddMidStile={isGenericDoor ? handleAddMidStile : undefined}
+          onDeselectAll={isGenericDoor ? handleDeselectAll : undefined}
         />
       </div>
     );
@@ -384,12 +432,12 @@ export default function App() {
     <div style={styles.container}>
       <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
 
-      <PanelGroup orientation="vertical" style={{ position: 'absolute', inset: 0, top: 40 }}>
-        {/* Top row: 3D + Elevation */}
-        <Panel defaultSize="60%" minSize="20%">
-          <PanelGroup orientation="horizontal">
+      <PanelGroup orientation="horizontal" style={{ position: 'absolute', inset: 0, top: 40 }}>
+        {/* Left column: 3D + Cross Section */}
+        <Panel defaultSize="55%" minSize="25%">
+          <PanelGroup orientation="vertical">
             {/* 3D Canvas pane */}
-            <Panel defaultSize="55%" minSize="25%">
+            <Panel defaultSize="60%" minSize="20%">
               <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                 {/* 3D Canvas — always mounted to prevent WebGL context loss */}
                 <Canvas
@@ -418,9 +466,7 @@ export default function App() {
                       backPanelType={isGenericDoor ? backPanelType : undefined}
                       hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
                       selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
-                      onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
                       selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
-                      onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
                       panelTree={isGenericDoor ? panelTree : undefined}
                       thickness={thickness}
                       renderMode={doorRenderMode}
@@ -463,37 +509,43 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Render mode toggle + texture category picker */}
+                {/* Render mode toggle */}
                 {activeDoor && (
-                  <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
                     <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
-                    <div style={{ display: 'flex', gap: 2 }}>
-                      {(['painted', 'primed', 'raw', 'sanded'] as const).map((cat) => {
-                        const hasTexture = selectedTextures[cat] !== null;
-                        const isActive = activeTextureCategory === cat;
-                        return (
-                          <button
-                            key={cat}
-                            onClick={() => handleActiveTextureCategoryChange(cat)}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: 4,
-                              border: isActive ? '1px solid #5577aa' : '1px solid #444466',
-                              background: isActive ? 'rgba(42, 74, 110, 0.9)' : 'rgba(26, 26, 46, 0.7)',
-                              color: isActive ? '#ffffff' : hasTexture ? '#aaaacc' : '#666688',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              textTransform: 'capitalize',
-                            }}
-                            title={hasTexture ? selectedTextures[cat]! : `No ${cat} texture selected`}
-                          >
-                            {cat}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
+                )}
+
+                {/* Door Editor Toolbar (generic door only) */}
+                {isGenericDoor && (
+                  <DoorEditorToolbar
+                    activeTextureCategory={activeTextureCategory}
+                    onTextureCategoryChange={handleActiveTextureCategoryChange}
+                    selectedTextures={selectedTextures}
+                    frontPanelType={frontPanelType}
+                    onFrontPanelTypeChange={setFrontPanelType}
+                    frontGroupId={frontGroupId}
+                    onFrontGroupChange={(id) => { setFrontGroupId(id); setToolVisibility({}); }}
+                    panelToolGroups={panelToolGroups}
+                    edgeGroupId={edgeGroupId}
+                    onEdgeGroupChange={(id) => { setEdgeGroupId(id); setToolVisibility({}); }}
+                    edgeToolGroups={edgeToolGroups}
+                    backPreset={backPreset}
+                    onBackPresetChange={(preset) => {
+                      setBackPreset(preset);
+                      if (preset === '' || preset !== 'custom') {
+                        if (preset === '') {
+                          setBackGroupId(null);
+                          setBackPanelType('raised');
+                        }
+                      }
+                      setToolVisibility({});
+                    }}
+                    customBackGroupId={backGroupId}
+                    onCustomBackGroupChange={(id) => { setBackGroupId(id); setToolVisibility({}); }}
+                    doorPartType={doorPartType}
+                    onDoorPartTypeChange={handleDoorPartTypeChange}
+                  />
                 )}
 
                 {/* Loading overlay */}
@@ -856,10 +908,39 @@ export default function App() {
               </div>{/* end 3D pane wrapper */}
             </Panel>
 
-            <Separator className="resize-handle-h" />
+            <Separator className="resize-handle-v" />
 
+            {/* Cross Section */}
+            <Panel defaultSize="40%" minSize="15%">
+              {activeDoor ? (
+                <CrossSectionViewer
+                  compact
+                  door={activeDoor}
+                  graph={activeGraph}
+                  profiles={profiles}
+                  frontPanelType={isGenericDoor ? frontPanelType : undefined}
+                  backPanelType={isGenericDoor ? backPanelType : undefined}
+                  hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
+                  units={units}
+                  edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
+                  thickness={thickness}
+                />
+              ) : (
+                <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+                  Cross Section
+                </div>
+              )}
+            </Panel>
+          </PanelGroup>
+        </Panel>
+
+        <Separator className="resize-handle-h" />
+
+        {/* Right column: Elevation + Order List */}
+        <Panel defaultSize="45%" minSize="15%">
+          <PanelGroup orientation="vertical">
             {/* Elevation pane */}
-            <Panel defaultSize="45%" minSize="15%">
+            <Panel defaultSize="60%" minSize="20%">
               {activeDoor ? (
                 <ElevationViewer
                   compact
@@ -872,6 +953,18 @@ export default function App() {
                   selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
                   onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
                   onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
+                  onLeftStileWidthChange={isGenericDoor ? setLeftStileW : undefined}
+                  onRightStileWidthChange={isGenericDoor ? setRightStileW : undefined}
+                  onTopRailWidthChange={isGenericDoor ? setTopRailW : undefined}
+                  onBottomRailWidthChange={isGenericDoor ? setBottomRailW : undefined}
+                  onSplitWidthChange={isGenericDoor ? handleSplitWidthChange : undefined}
+                  overrideLeftStileW={isGenericDoor ? leftStileW : undefined}
+                  overrideRightStileW={isGenericDoor ? rightStileW : undefined}
+                  onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
+                  selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
+                  onAddMidRail={isGenericDoor ? handleAddMidRail : undefined}
+                  onAddMidStile={isGenericDoor ? handleAddMidStile : undefined}
+                  onDeselectAll={isGenericDoor ? handleDeselectAll : undefined}
                 />
               ) : (
                 <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -879,31 +972,16 @@ export default function App() {
                 </div>
               )}
             </Panel>
+
+            <Separator className="resize-handle-v" />
+
+            {/* Order List placeholder */}
+            <Panel defaultSize="40%" minSize="10%">
+              <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 14 }}>
+                Order List
+              </div>
+            </Panel>
           </PanelGroup>
-        </Panel>
-
-        <Separator className="resize-handle-v" />
-
-        {/* Bottom row: Cross Section */}
-        <Panel defaultSize="40%" minSize="15%">
-          {activeDoor ? (
-            <CrossSectionViewer
-              compact
-              door={activeDoor}
-              graph={activeGraph}
-              profiles={profiles}
-              frontPanelType={isGenericDoor ? frontPanelType : undefined}
-              backPanelType={isGenericDoor ? backPanelType : undefined}
-              hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-              units={units}
-              edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
-              thickness={thickness}
-            />
-          ) : (
-            <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-              Cross Section
-            </div>
-          )}
         </Panel>
       </PanelGroup>
     </div>
@@ -1194,7 +1272,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   overlay: {
     position: 'absolute',
-    top: 16,
+    top: 110,
     left: 16,
     bottom: 16,
     color: '#e0e0e0',
