@@ -4,4 +4,7 @@ output/
 .DS_Store
 *.log
 .pac-config.json
+.pac-doorstyles.db
+.pac-doorstyles.db-wal
+.pac-doorstyles.db-shm
 .browse-folder.ps1

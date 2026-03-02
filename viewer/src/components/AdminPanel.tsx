@@ -20,6 +20,8 @@ interface AdminPanelProps {
   selectedTextures: SelectedTextures;
   onTextureSelected: (category: string, texturePath: string | null, blobUrl: string | null) => void;
   onLibrariesChanged: (libraries: string[]) => void;
+  textureManifest: TextureManifest | null;
+  onTextureManifestChanged: (manifest: TextureManifest | null) => void;
 }
 
 interface LoadStats {
@@ -30,7 +32,31 @@ interface LoadStats {
   profilesCount: number;
 }
 
-export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged }: AdminPanelProps) {
+function autoSelectTextures(
+  manifest: TextureManifest,
+  blobUrls: Map<string, string>,
+  onTextureSelected: (category: string, path: string | null, blobUrl: string | null) => void,
+) {
+  // Painted — first file from first brand (alphabetical)
+  const brands = Object.entries(manifest.painted).sort(([a], [b]) => a.localeCompare(b));
+  if (brands.length > 0) {
+    const [brand, files] = brands[0];
+    if (files.length > 0) {
+      const path = `Painted/${brand}/${files[0]}`;
+      onTextureSelected('painted', path, blobUrls.get(path) ?? null);
+    }
+  }
+  // Flat categories
+  for (const cat of ['primed', 'raw', 'sanded'] as const) {
+    const cap = cat.charAt(0).toUpperCase() + cat.slice(1);
+    if (manifest[cat].length > 0) {
+      const path = `${cap}/${manifest[cat][0]}`;
+      onTextureSelected(cat, path, blobUrls.get(path) ?? null);
+    }
+  }
+}
+
+export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged, textureManifest, onTextureManifestChanged }: AdminPanelProps) {
   // Folder handles (from IndexedDB or fresh pick)
   const [toolsHandle, setToolsHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [librariesHandle, setLibrariesHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -45,7 +71,6 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
   const [toolsStatus, setToolsStatus] = useState<ToolsStatus | null>(null);
   const [librariesList, setLibrariesList] = useState<string[]>([]);
   const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
-  const [textureManifest, setTextureManifest] = useState<TextureManifest | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const textureBlobUrlsRef = useRef<Map<string, string>>(new Map());
 
@@ -86,9 +111,10 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
         setTexturesName(tex.name);
         const result = await scanTexturesFolder(tex);
         if (result) {
-          setTextureManifest(result.manifest);
+          onTextureManifestChanged(result.manifest);
           revokeTextureUrls(textureBlobUrlsRef.current);
           textureBlobUrlsRef.current = result.blobUrls;
+          autoSelectTextures(result.manifest, result.blobUrls, onTextureSelected);
         }
       }
     })();
@@ -130,11 +156,12 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
     setTexturesName(handle.name);
     const result = await scanTexturesFolder(handle);
     if (result) {
-      setTextureManifest(result.manifest);
+      onTextureManifestChanged(result.manifest);
       revokeTextureUrls(textureBlobUrlsRef.current);
       textureBlobUrlsRef.current = result.blobUrls;
+      autoSelectTextures(result.manifest, result.blobUrls, onTextureSelected);
     } else {
-      setTextureManifest(null);
+      onTextureManifestChanged(null);
       setError('No "PAC Door Order" subfolder found in selected folder.');
     }
   }, []);

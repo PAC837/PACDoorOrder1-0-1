@@ -1,39 +1,83 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import { Group as PanelGroup, Panel, Separator } from 'react-resizable-panels';
 import { useDoorData } from './hooks/useDoorData.js';
 import { DoorViewer } from './components/DoorViewer.js';
-import { OperationOverlay } from './components/OperationOverlay.js';
-import { ToolShapeViewer } from './components/ToolShapeViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
+import type { CrossSectionViewerHandle } from './components/CrossSectionViewer.js';
+import { OrderListPanel } from './components/OrderListPanel.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ElevationViewer } from './components/ElevationViewer.js';
-import { CommitNumberInput } from './components/CommitNumberInput.js';
-import { PanelSplitControls } from './components/PanelSplitControls.js';
-import { DoorEditorToolbar } from './components/DoorEditorToolbar.js';
+import { DoorEditorToolbar, PANEL_TYPES, BACK_PRESETS, DOOR_TYPES } from './components/DoorEditorToolbar.js';
 import { HingeAdvancedDialog } from './components/HingeAdvancedDialog.js';
 import { HandleAdvancedDialog } from './components/HandleAdvancedDialog.js';
+import { StyleEditorDialog } from './components/StyleEditorDialog.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
 import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf } from './utils/panelTree.js';
-import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode } from './types.js';
-import { MATERIAL_THICKNESS, formatUnit, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG } from './types.js';
+import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, TextureManifest } from './types.js';
+import { MATERIAL_THICKNESS, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG, DEFAULT_LAYOUT, COMPACT_LAYOUT, PANEL_DISPLAY_NAMES, ALL_SLOTS } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
-import { restoreLibraries, loadLibraryData } from './utils/folderAccess.js';
+import { LayoutCustomizer } from './components/LayoutCustomizer.js';
+import { ConfigurePanel } from './components/ConfigurePanel.js';
+import { useConfigData } from './hooks/useConfigData.js';
+import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue } from './configParams.js';
 
-type Tab = 'door' | 'tools' | 'cross-section' | 'elevation' | 'admin';
+type Tab = 'door' | 'admin' | 'configure';
 
-const GENERIC_DOOR_VALUE = 'generic';
+export interface OrderItem {
+  id: number;
+  textureCategory: string;
+  frontPanelType: PanelType;
+  styleName: string;
+  edgeName: string;
+  backLabel: string;
+  doorType: string;
+  hingeSummary: string;
+  handleSummary: string;
+  doorW: number;
+  doorH: number;
+  thickness: number;
+  crossSectionImage: string | null;
+}
+
+/** Resets camera position when door dimensions change. Must be inside Canvas. */
+function CameraAutoFit({ maxDim }: { maxDim: number }) {
+  const { camera, controls } = useThree();
+  useEffect(() => {
+    const dist = maxDim * 1.8;
+    camera.position.set(dist * 0.3, dist * 0.2, dist);
+    camera.lookAt(0, 0, 0);
+    if (controls) {
+      (controls as any).target.set(0, 0, 0);
+      (controls as any).update();
+    }
+  }, [maxDim, camera, controls]);
+  return null;
+}
+
+/** Compute hinge count from door height using per-style trigger thresholds. */
+function computeAutoHingeCount(
+  doorH: number,
+  triggers: { h3: number; h4: number; h5: number; h6: number },
+): number {
+  let count = 2;
+  if (triggers.h3 > 0 && doorH >= triggers.h3) count = 3;
+  if (triggers.h4 > 0 && doorH >= triggers.h4) count = 4;
+  if (triggers.h5 > 0 && doorH >= triggers.h5) count = 5;
+  if (triggers.h6 > 0 && doorH >= triggers.h6) count = 6;
+  return count;
+}
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<Tab>('door');
   const [dataVersion, setDataVersion] = useState(0);
   const { doors, graphs, profiles, toolGroups, tools, loading, error } = useDoorData(dataVersion);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isGenericDoor, setIsGenericDoor] = useState(false);
+  const [isGenericDoor, setIsGenericDoor] = useState(true);
   const [frontGroupId, setFrontGroupId] = useState<number | null>(null);
   const [backGroupId, setBackGroupId] = useState<number | null>(null);
   const [edgeGroupId, setEdgeGroupId] = useState<number | null>(null);
@@ -56,6 +100,7 @@ export default function App() {
   const [backPreset, setBackPreset] = useState<string>('');
   const [showHingeDialog, setShowHingeDialog] = useState(false);
   const [showHandleDialog, setShowHandleDialog] = useState(false);
+  const [showStyleEditor, setShowStyleEditor] = useState(false);
   const [savedSep, setSavedSep] = useState(101.6); // preserve last handle separation when switching to knob
   const [thickness, setThickness] = useState(MATERIAL_THICKNESS);
   const [panelTree, setPanelTree] = useState<PanelTree>({ type: 'leaf' });
@@ -64,27 +109,155 @@ export default function App() {
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
   const [libraries, setLibraries] = useState<string[]>([]);
-  const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null);
-  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [selectedConfigStyleId, setSelectedConfigStyleId] = useState<string | null>(null);
+  const configData = useConfigData();
   const [doorRenderMode, setDoorRenderMode] = useState<RenderMode>('solid');
   const [elevationRenderMode, setElevationRenderMode] = useState<RenderMode>('solid');
+  const [layoutMapping, setLayoutMapping] = useState<LayoutMapping>(() => {
+    try { const s = localStorage.getItem('pac-layout-mapping'); if (s) return JSON.parse(s); } catch {}
+    return { ...DEFAULT_LAYOUT };
+  });
+  const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>(() => {
+    try { const s = localStorage.getItem('pac-layout-preset'); if (s === 'compact') return 'compact'; } catch {}
+    return 'default';
+  });
+  const [showLayoutCustomizer, setShowLayoutCustomizer] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const slotRefs = useRef<Record<string, HTMLDivElement | null>>({
+    'left-top': null, 'left-mid': null, 'left-bot': null, 'right-top': null, 'right-bot': null,
+    'right-top-left': null, 'right-top-right': null,
+  });
+  const crossSectionRef = useRef<CrossSectionViewerHandle>(null);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const nextOrderId = useRef(1);
+  const preSlabGroups = useRef<{ frontGroupId: number | null; backGroupId: number | null; edgeGroupId: number | null } | null>(null);
+  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [selectedTextures, setSelectedTextures] = useState<{
     painted: string | null; primed: string | null; raw: string | null; sanded: string | null;
   }>({ painted: null, primed: null, raw: null, sanded: null });
   const [activeTextureCategory, setActiveTextureCategory] = useState<'painted' | 'primed' | 'raw' | 'sanded'>('raw');
   const [textureBlobUrls, setTextureBlobUrls] = useState<Record<string, string>>({});
+  const [textureManifest, setTextureManifest] = useState<TextureManifest | null>(null);
+
+  // Persist layout to localStorage
+  useEffect(() => {
+    localStorage.setItem('pac-layout-mapping', JSON.stringify(layoutMapping));
+  }, [layoutMapping]);
+  useEffect(() => {
+    localStorage.setItem('pac-layout-preset', layoutPreset);
+  }, [layoutPreset]);
+
+  // Which slot currently holds the 3D canvas?
+  const canvasSlot = useMemo(() => {
+    if (layoutPreset === 'compact') return 'right-top-left';
+    for (const [slot, panel] of Object.entries(layoutMapping)) {
+      if (panel === 'canvas3d') return slot;
+    }
+    return 'left-bot';
+  }, [layoutMapping, layoutPreset]);
+
+  // Swap two slots in the layout
+  const swapPanels = useCallback((a: SlotPosition, b: SlotPosition) => {
+    if (a === b) return;
+    setLayoutMapping(prev => ({ ...prev, [a]: prev[b], [b]: prev[a] }));
+  }, []);
+
+  // Close Admin/Configure overlay on Escape
+  useEffect(() => {
+    if (currentTab !== 'admin' && currentTab !== 'configure') return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setCurrentTab('door'); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentTab]);
+
+  // Track canvas slot position with ResizeObserver so the floating canvas overlays correctly
+  useEffect(() => {
+    // Admin is an overlay — keep canvas positioned underneath
+    if (currentTab !== 'door' && currentTab !== 'admin' && currentTab !== 'configure') { setCanvasRect(null); return; }
+    const el = slotRefs.current[canvasSlot];
+    if (!el) return;
+
+    const update = () => {
+      const parent = containerRef.current?.getBoundingClientRect();
+      const slot = el.getBoundingClientRect();
+      if (parent) {
+        setCanvasRect({
+          top: slot.top - parent.top,
+          left: slot.left - parent.left,
+          width: slot.width,
+          height: slot.height,
+        });
+      }
+    };
+
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    // Also observe the container for window resize propagation
+    if (containerRef.current) ro.observe(containerRef.current);
+    update();
+    return () => ro.disconnect();
+  }, [canvasSlot, currentTab]);
 
   // Unit conversion helpers for number inputs (internal state always mm)
   const toDisplay = useCallback((mm: number) => units === 'in' ? parseFloat((mm / 25.4).toFixed(4)) : mm, [units]);
   const fromDisplay = useCallback((val: number) => units === 'in' ? val * 25.4 : val, [units]);
   const inputStep = units === 'in' ? 0.125 : 0.5;  // 1/8" or 0.5mm
 
-  // Restore library list from IndexedDB handles on mount
+  // Auto-compute hinge count from config trigger points when doorH or style changes
   useEffect(() => {
-    restoreLibraries().then((libs) => {
-      if (libs.length > 0) setLibraries(libs);
-    }).catch(() => {});
-  }, []);
+    if (!selectedConfigStyleId) return;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return;
+
+    const h3 = (style.params.hinge3Trigger as NumberValue | undefined)?.value ?? 762;
+    const h4 = (style.params.hinge4Trigger as NumberValue | undefined)?.value ?? 1219.2;
+    const h5 = (style.params.hinge5Trigger as NumberValue | undefined)?.value ?? 1828.8;
+    const h6 = (style.params.hinge6Trigger as NumberValue | undefined)?.value ?? 0;
+    const edgeDist = (style.params.hingeEdgeDistance as NumberValue | undefined)?.value ?? 76.2;
+
+    const autoCount = computeAutoHingeCount(doorH, { h3, h4, h5, h6 });
+
+    setHingeConfig(prev => ({
+      ...prev,
+      count: autoCount,
+      edgeDistance: edgeDist,
+    }));
+  }, [doorH, selectedConfigStyleId, configData.matrix]);
+
+  // Derive which texture categories are available for the selected config style
+  const availableTextureCategories = useMemo(() => {
+    const all: ('painted' | 'primed' | 'raw' | 'sanded')[] = ['raw', 'sanded', 'primed', 'painted'];
+    if (!selectedConfigStyleId) return all;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return all;
+    const enabled = (style.params.textures as TextureCheckboxListValue | undefined)?.enabledTextures ?? [];
+    if (enabled.length === 0) return ['raw', 'sanded'] as typeof all;
+
+    const cats = new Set<'painted' | 'primed' | 'raw' | 'sanded'>(['raw']);
+    for (const path of enabled) {
+      if (path.startsWith('Painted/')) cats.add('painted');
+      else if (path.startsWith('Primed/')) cats.add('primed');
+      else if (path.startsWith('Sanded/')) cats.add('sanded');
+      else if (path.startsWith('Raw/')) cats.add('raw');
+    }
+    return all.filter(c => cats.has(c));
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Auto-switch active texture category when current selection is filtered out
+  useEffect(() => {
+    if (!availableTextureCategories.includes(activeTextureCategory)) {
+      setActiveTextureCategory(
+        availableTextureCategories.includes('primed') ? 'primed' : 'raw',
+      );
+    }
+  }, [availableTextureCategories, activeTextureCategory]);
+
+  // Default to primed on style change (if available)
+  useEffect(() => {
+    setActiveTextureCategory(
+      availableTextureCategories.includes('primed') ? 'primed' : 'raw',
+    );
+  }, [selectedConfigStyleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Panel-type tool groups (Type=0), sorted by name
   const panelToolGroups = useMemo(
@@ -98,15 +271,235 @@ export default function App() {
     [toolGroups],
   );
 
-  const handleDoorChange = useCallback((value: string) => {
-    setToolVisibility({});
-    setEdgeGroupId(null);
-    if (value === GENERIC_DOOR_VALUE) {
-      setIsGenericDoor(true);
-    } else {
-      setIsGenericDoor(false);
-      setSelectedIndex(Number(value));
+  // Config styles for the toolbar dropdown
+  const configStyles = useMemo(
+    () => configData.matrix
+      .filter(s => {
+        const ds = s.params.doorStyles as GroupDepthListValue | undefined;
+        return ds?.entries && ds.entries.length > 0;
+      })
+      .map(s => ({ id: s.id, name: s.displayName })),
+    [configData.matrix],
+  );
+
+  // Filter panel tool groups based on selected config style
+  const filteredPanelToolGroups = useMemo(() => {
+    if (!selectedConfigStyleId) return panelToolGroups;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return panelToolGroups;
+    const doorStylesParam = style.params.doorStyles as GroupDepthListValue | undefined;
+    const entries = doorStylesParam?.entries;
+    if (!entries || entries.length === 0) return [];
+    return panelToolGroups.filter(g => entries.some(e => e.groupId === g.ToolGroupID));
+  }, [panelToolGroups, selectedConfigStyleId, configData.matrix]);
+
+  // Filter edge tool groups based on selected config style
+  const filteredEdgeToolGroups = useMemo(() => {
+    if (!selectedConfigStyleId) return edgeToolGroups;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return edgeToolGroups;
+    const hasEdgesParam = style.params.hasEdges as CheckboxListValue | undefined;
+    const enabledIds = hasEdgesParam?.enabledGroupIds;
+    if (!enabledIds || enabledIds.length === 0) return [];
+    return edgeToolGroups.filter(g => enabledIds.includes(g.ToolGroupID));
+  }, [edgeToolGroups, selectedConfigStyleId, configData.matrix]);
+
+  // Filter panel types based on selected config style
+  const filteredPanelTypes = useMemo(() => {
+    if (!selectedConfigStyleId) return undefined; // undefined = show all
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return undefined;
+    const param = style.params.panelTypes as FixedCheckboxListValue | undefined;
+    const enabled = param?.enabledOptions;
+    if (!enabled || enabled.length === 0) return undefined;
+    return PANEL_TYPES.filter(pt => enabled.includes(pt.value));
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Build full back presets list (including "none") for filtering
+  const BACK_PRESETS_WITH_NONE = useMemo(() => [
+    { value: 'none', label: '\u2298' },
+    ...BACK_PRESETS.map(bp => ({ value: bp.value, label: bp.label })),
+  ], []);
+
+  // Filter back presets based on selected config style
+  const filteredBackPresets = useMemo(() => {
+    if (!selectedConfigStyleId) return undefined;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return undefined;
+    const param = style.params.backOperations as FixedCheckboxListValue | undefined;
+    const enabled = param?.enabledOptions;
+    if (!enabled || enabled.length === 0) return undefined;
+    return BACK_PRESETS_WITH_NONE.filter(bp => enabled.includes(bp.value));
+  }, [selectedConfigStyleId, configData.matrix, BACK_PRESETS_WITH_NONE]);
+
+  // Filter door types based on selected config style
+  const filteredDoorTypes = useMemo(() => {
+    if (!selectedConfigStyleId) return undefined;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return undefined;
+    const param = style.params.doorTypes as FixedCheckboxListValue | undefined;
+    const enabled = param?.enabledOptions;
+    if (!enabled || enabled.length === 0) return undefined;
+    return DOOR_TYPES.filter(dt => enabled.includes(dt.value));
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Extract enabled stile/rail presets from config (sorted, in mm)
+  const stylePresets = useMemo(() => {
+    if (!selectedConfigStyleId) return [];
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return [];
+    const param = style.params.stileRailPresets as PresetCheckboxValue | undefined;
+    const widths = param?.enabledWidths ?? [];
+    return [...widths].sort((a, b) => a - b);
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Extract configured back route groups with resolved names
+  const configuredBackRouteGroups = useMemo(() => {
+    if (!selectedConfigStyleId) return [];
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return [];
+    const param = style.params.backRouteGroups as GroupDepthListValue | undefined;
+    const entries = param?.entries ?? [];
+    return entries
+      .map(e => {
+        const tg = toolGroups.find(g => g.ToolGroupID === e.groupId);
+        return tg ? { groupId: e.groupId, depth: e.depth, groupName: tg.Name } : null;
+      })
+      .filter((x): x is { groupId: number; depth: number; groupName: string } => x !== null);
+  }, [selectedConfigStyleId, configData.matrix, toolGroups]);
+
+  // Extract configured back pocket groups with resolved names
+  const configuredBackPocketGroups = useMemo(() => {
+    if (!selectedConfigStyleId) return [];
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return [];
+    const param = style.params.backPocketGroups as GroupDepthListValue | undefined;
+    const entries = param?.entries ?? [];
+    return entries
+      .map(e => {
+        const tg = toolGroups.find(g => g.ToolGroupID === e.groupId);
+        return tg ? { groupId: e.groupId, depth: e.depth, groupName: tg.Name } : null;
+      })
+      .filter((x): x is { groupId: number; depth: number; groupName: string } => x !== null);
+  }, [selectedConfigStyleId, configData.matrix, toolGroups]);
+
+  // Extract configured back custom groups with resolved names
+  const configuredBackCustomGroups = useMemo(() => {
+    if (!selectedConfigStyleId) return [];
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return [];
+    const param = style.params.backCustomGroups as GroupDepthListValue | undefined;
+    const entries = param?.entries ?? [];
+    return entries
+      .map(e => {
+        const tg = toolGroups.find(g => g.ToolGroupID === e.groupId);
+        return tg ? { groupId: e.groupId, depth: e.depth, groupName: tg.Name } : null;
+      })
+      .filter((x): x is { groupId: number; depth: number; groupName: string } => x !== null);
+  }, [selectedConfigStyleId, configData.matrix, toolGroups]);
+
+  // When config style changes, auto-set front tool group from its enabledGroupIds
+  const handleConfigStyleChange = useCallback((id: string | null) => {
+    setSelectedConfigStyleId(id);
+    if (!id) {
+      setFrontGroupId(null);
+      setEdgeGroupId(null);
+      setToolVisibility({});
+      return;
     }
+    const style = configData.matrix.find(s => s.id === id);
+    const doorStylesParam = style?.params.doorStyles as GroupDepthListValue | undefined;
+    const entries = doorStylesParam?.entries;
+    if (entries && entries.length > 0) {
+      setFrontGroupId(entries[0].groupId);
+      setFrontDepth(entries[0].depth);
+    } else {
+      setFrontGroupId(null);
+    }
+    // Validate edge group against new style's configured edges
+    const hasEdgesParam = style?.params.hasEdges as CheckboxListValue | undefined;
+    const enabledEdgeIds = hasEdgesParam?.enabledGroupIds;
+    if (enabledEdgeIds && enabledEdgeIds.length > 0) {
+      if (edgeGroupId !== null && !enabledEdgeIds.includes(edgeGroupId)) {
+        setEdgeGroupId(null);
+      }
+    } else {
+      setEdgeGroupId(null);
+    }
+    setToolVisibility({});
+    setBackPreset('');
+    setBackGroupId(null);
+  }, [configData.matrix, edgeGroupId]);
+
+  // Auto-select the default style on initial load
+  const defaultAutoSelected = useRef(false);
+  useEffect(() => {
+    if (defaultAutoSelected.current || configData.loading || selectedConfigStyleId) return;
+    const defaultStyle = configData.matrix.find(s => {
+      const v = s.params.isDefault as BooleanRadioValue | undefined;
+      return v?.enabled === true;
+    });
+    if (defaultStyle) {
+      defaultAutoSelected.current = true;
+      handleConfigStyleChange(defaultStyle.id);
+    }
+  }, [configData.matrix, configData.loading, selectedConfigStyleId, handleConfigStyleChange]);
+
+  // When panel type changes to glass, switch to glass tool group if configured
+  const handleFrontPanelTypeChange = useCallback((type: PanelType) => {
+    setFrontPanelType(type);
+    if (!selectedConfigStyleId) return;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return;
+    if (type === 'glass') {
+      const glassParam = style.params.glassToolGroup as CheckboxListValue | undefined;
+      const glassIds = glassParam?.enabledGroupIds;
+      if (glassIds && glassIds.length > 0) {
+        setFrontGroupId(glassIds[0]);
+        setToolVisibility({});
+      }
+    } else {
+      // Switch back to normal door style tool group
+      const doorStylesParam = style.params.doorStyles as GroupDepthListValue | undefined;
+      const entries = doorStylesParam?.entries;
+      if (entries && entries.length > 0) {
+        setFrontGroupId(entries[0].groupId);
+        setFrontDepth(entries[0].depth);
+        setToolVisibility({});
+      }
+    }
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Style editor preset — sets all four stile/rail widths to the same value
+  const handleStylePresetSelect = useCallback((widthMm: number) => {
+    setLeftStileW(widthMm);
+    setRightStileW(widthMm);
+    setTopRailW(widthMm);
+    setBottomRailW(widthMm);
+  }, []);
+
+  // Back route group+depth selection from sub-dropdown
+  const handleBackRouteGroupSelect = useCallback((groupId: number, depth: number) => {
+    setBackGroupId(groupId);
+    setBackDepth(depth);
+    setBackPanelType('pocket');
+    setToolVisibility({});
+  }, []);
+
+  // Back pocket group+depth selection from sub-dropdown
+  const handleBackPocketGroupSelect = useCallback((groupId: number, depth: number) => {
+    setBackGroupId(groupId);
+    setBackDepth(depth);
+    setBackPanelType('pocket');
+    setToolVisibility({});
+  }, []);
+
+  // Back custom group+depth selection from sub-dropdown
+  const handleBackCustomGroupSelect = useCallback((groupId: number, depth: number) => {
+    setBackGroupId(groupId);
+    setBackDepth(depth);
+    setBackPanelType('pocket');
+    setToolVisibility({});
   }, []);
 
   const handleDoorPartTypeChange = useCallback((type: DoorPartType) => {
@@ -119,15 +512,23 @@ export default function App() {
       case 'slab': setDoorH(152.4); break;
     }
     if (type === 'slab') {
+      // Save current tool groups before clearing
+      preSlabGroups.current = { frontGroupId, backGroupId, edgeGroupId };
       setFrontGroupId(null);
       setBackGroupId(null);
       setEdgeGroupId(null);
+    } else if (doorPartType === 'slab' && preSlabGroups.current) {
+      // Restore tool groups when switching away from slab
+      setFrontGroupId(preSlabGroups.current.frontGroupId);
+      setBackGroupId(preSlabGroups.current.backGroupId);
+      setEdgeGroupId(preSlabGroups.current.edgeGroupId);
+      preSlabGroups.current = null;
     }
     // Reset panel tree (clear mid rails/stiles)
     setPanelTree({ type: 'leaf' });
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
-  }, []);
+  }, [frontGroupId, backGroupId, edgeGroupId, doorPartType]);
 
   const handleHingeSideChange = useCallback((side: 'left' | 'right' | 'top' | 'bottom') => {
     setHingeConfig(prev => ({ ...prev, side }));
@@ -170,49 +571,6 @@ export default function App() {
 
   const handleHandleElevationChange = useCallback((newPosMm: number) => {
     setHandleConfig(prev => ({ ...prev, elevation: Math.max(0, newPosMm), doorPlacement: 'custom' as DoorHandlePlacement }));
-  }, []);
-
-  const handleLibraryChange = useCallback(async (library: string) => {
-    setSelectedLibrary(library);
-    setLibraryLoading(true);
-    try {
-      const result = await loadLibraryData(library);
-      if (result.success) {
-        setDataVersion((v) => v + 1);
-        setSelectedIndex(0);
-        setIsGenericDoor(false);
-        setToolVisibility({});
-      }
-    } catch {
-      // load failed — keep current state
-    } finally {
-      setLibraryLoading(false);
-    }
-  }, []);
-
-  const toggleOperation = useCallback((operationId: number) => {
-    setOperationVisibility((prev) => ({
-      ...prev,
-      [operationId]: prev[operationId] === true ? false : true,
-    }));
-  }, []);
-
-  const toggleTool = useCallback((operationId: number, toolIndex: number) => {
-    const key = `${operationId}-${toolIndex}`;
-    setToolVisibility((prev) => ({
-      ...prev,
-      [key]: prev[key] === false ? true : false,
-    }));
-  }, []);
-
-  const setAllTools = useCallback((operationId: number, toolCount: number, visible: boolean) => {
-    setToolVisibility((prev) => {
-      const next = { ...prev };
-      for (let i = 0; i < toolCount; i++) {
-        next[`${operationId}-${i}`] = visible;
-      }
-      return next;
-    });
   }, []);
 
   // Effective depths — computed once, used for both door building and display
@@ -258,11 +616,19 @@ export default function App() {
     });
   }, [thickness]);
 
+  // Route auto-follow: keep back group in sync with front group (only when no route groups configured)
+  useEffect(() => {
+    if (backPreset === 'back-route' && configuredBackRouteGroups.length === 0) {
+      setBackGroupId(frontGroupId);
+    }
+  }, [backPreset, frontGroupId, configuredBackRouteGroups.length]);
+
   // Compute active door + graph (either real door or generic)
   const { activeDoor, activeGraph, panelBounds } = useMemo(() => {
     if (isGenericDoor) {
       const isSlab = doorPartType === 'slab';
-      const effFrontId = isSlab ? null : frontGroupId;
+      const routeOverride = backPreset === 'back-route' && backGroupId !== null;
+      const effFrontId = isSlab ? null : (routeOverride ? backGroupId : frontGroupId);
       const effBackId = isSlab ? null : backGroupId;
       if (effFrontId !== null || isSlab) {
         const result = buildGenericDoor(
@@ -284,10 +650,41 @@ export default function App() {
       return { activeDoor: door, activeGraph: graph, panelBounds: undefined };
     }
     return { activeDoor: undefined, activeGraph: undefined, panelBounds: undefined };
-  }, [isGenericDoor, frontGroupId, backGroupId, effectiveFrontDepth, effectiveBackDepth,
+  }, [isGenericDoor, frontGroupId, backGroupId, backPreset, effectiveFrontDepth, effectiveBackDepth,
       leftStileW, rightStileW, topRailW, bottomRailW, panelTree, holes,
       toolGroups, tools, doors, selectedIndex, graphs, doorW, doorH, doorPartType,
       backPocketMode, selectedPanels, edgeGroupId]);
+
+  // Reference door for cross-section — only reacts to tool/style changes, not dimensions
+  const { crossSectionDoor, crossSectionGraph } = useMemo(() => {
+    if (!isGenericDoor) {
+      return { crossSectionDoor: activeDoor, crossSectionGraph: activeGraph };
+    }
+    const isSlab = doorPartType === 'slab';
+    const routeOverride = backPreset === 'back-route' && backGroupId !== null;
+    const effFrontId = isSlab ? null : (routeOverride ? backGroupId : frontGroupId);
+    const effBackId = isSlab ? null : backGroupId;
+    if (effFrontId === null && !isSlab) {
+      return { crossSectionDoor: undefined, crossSectionGraph: undefined };
+    }
+    const REF_SIZE = 762;       // 30"
+    const REF_STILE = 57.15;   // 2-1/4"
+    const REF_RAIL = 57.15;
+    const result = buildGenericDoor(
+      toolGroups, tools, effFrontId, effBackId,
+      effectiveFrontDepth, effectiveBackDepth,
+      REF_SIZE, REF_SIZE,
+      isSlab ? 0 : REF_STILE, isSlab ? 0 : REF_STILE,
+      isSlab ? 0 : REF_RAIL, isSlab ? 0 : REF_RAIL,
+      undefined, [],
+      backPocketMode, new Set<number>(),
+      isSlab ? null : edgeGroupId,
+    );
+    return { crossSectionDoor: result.door, crossSectionGraph: result.graph };
+  }, [isGenericDoor, frontGroupId, backGroupId, backPreset,
+      effectiveFrontDepth, effectiveBackDepth,
+      toolGroups, tools, doorPartType, backPocketMode, edgeGroupId,
+      activeDoor, activeGraph]);
 
   // Auto-enable all operations when the active graph changes
   useEffect(() => {
@@ -317,6 +714,82 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(url);
   }, [activeDoor, isGenericDoor, frontPanelType, backPanelType, thickness, edgeGroupId]);
+
+  // Add current door config to order list
+  const handleAddToOrder = useCallback(() => {
+    // Build style name from config
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    const styleName = style?.displayName ?? 'None';
+
+    // Edge name
+    const edgeGroup = filteredEdgeToolGroups.find(g => g.ToolGroupID === edgeGroupId);
+    const edgeName = edgeGroup?.Name ?? 'None';
+
+    // Back label
+    let backLabel = 'None';
+    if (backPreset === 'back-route') backLabel = 'Route';
+    else if (backPreset === 'back-pocket') backLabel = 'Pocket';
+    else if (backPreset === 'back-bridge') backLabel = 'Bridge';
+    else if (backPreset === 'custom' && backGroupId !== null) {
+      const bg = filteredPanelToolGroups.find(g => g.ToolGroupID === backGroupId);
+      backLabel = bg?.Name ?? 'Custom';
+    }
+
+    // Hinge summary
+    let hingeSummary = 'None';
+    if (doorPartType === 'door' && hingeConfig.enabled) {
+      const side = hingeConfig.side.charAt(0).toUpperCase() + hingeConfig.side.slice(1);
+      hingeSummary = `${side} \u00D7 ${hingeConfig.count}`;
+    } else if (doorPartType === 'slab') {
+      hingeSummary = '\u2014';
+    }
+
+    // Handle summary
+    let handleSummary = 'None';
+    if (handleConfig.enabled && doorPartType !== 'slab') {
+      const type = handleConfig.holeSeparation === 0 ? 'Knob' : 'Handle';
+      if (doorPartType === 'door') {
+        const placements: Record<string, string> = {
+          top: 'Top', 'center-top': 'Center-Top', middle: 'Middle', bottom: 'Bottom', custom: 'Custom',
+        };
+        handleSummary = `${type} \u2013 ${placements[handleConfig.doorPlacement] || handleConfig.doorPlacement}`;
+      } else {
+        const placements: Record<string, string> = {
+          center: 'Center', 'top-rail': 'Top Rail', 'two-equidistant': 'Two',
+        };
+        handleSummary = `${type} \u2013 ${placements[handleConfig.placement] || handleConfig.placement}`;
+      }
+    } else if (doorPartType === 'slab') {
+      handleSummary = '\u2014';
+    }
+
+    // Door type label
+    const doorTypeLabels: Record<string, string> = {
+      door: 'Door', drawer: 'Drawer', 'reduced-rail': 'Reduced', slab: 'Slab', 'end-panel': 'End Panel',
+    };
+
+    // Capture cross-section
+    const crossSectionImage = crossSectionRef.current?.captureSnapshot() ?? null;
+
+    const item: OrderItem = {
+      id: nextOrderId.current++,
+      textureCategory: activeTextureCategory,
+      frontPanelType,
+      styleName,
+      edgeName,
+      backLabel,
+      doorType: doorTypeLabels[doorPartType] || doorPartType,
+      hingeSummary,
+      handleSummary,
+      doorW,
+      doorH,
+      thickness,
+      crossSectionImage,
+    };
+    setOrderItems(prev => [...prev, item]);
+  }, [configData.matrix, selectedConfigStyleId, filteredEdgeToolGroups, edgeGroupId,
+      backPreset, backGroupId, filteredPanelToolGroups, doorPartType, hingeConfig,
+      handleConfig, activeTextureCategory, frontPanelType, doorW, doorH, thickness]);
 
   const handlePanelSelect = useCallback((idx: number, event: { ctrlKey: boolean }) => {
     setSelectedSplitPath(null);
@@ -386,644 +859,423 @@ export default function App() {
     ? (isGenericDoor ? panelTree : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider))
     : panelTree; // fallback for when no door is active
 
-  // --- Tab: Tool Shapes ---
-  if (currentTab === 'tools') {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
-        <ToolShapeViewer units={units} />
-      </div>
-    );
-  }
+  // Shared toolbar props (rendered in two positions for swap, but only one visible at a time)
+  const toolbarProps = {
+    activeTextureCategory,
+    onTextureCategoryChange: handleActiveTextureCategoryChange,
+    selectedTextures,
+    availableTextureCategories,
+    frontPanelType,
+    onFrontPanelTypeChange: handleFrontPanelTypeChange,
+    configStyles,
+    selectedConfigStyleId,
+    onConfigStyleChange: handleConfigStyleChange,
+    onEditStyleClick: () => setShowStyleEditor(true),
+    panelToolGroups: filteredPanelToolGroups,
+    edgeGroupId,
+    onEdgeGroupChange: (id: number | null) => { setEdgeGroupId(id); setToolVisibility({}); },
+    edgeToolGroups: filteredEdgeToolGroups,
+    backPreset,
+    onBackPresetChange: (preset: string) => {
+      setBackPreset(preset);
+      if (preset === '') {
+        // None — clear back
+        setBackGroupId(null);
+        setBackPanelType('raised');
+      } else if (preset === 'back-route') {
+        // Route — configured groups override front+back; fallback to front group
+        if (configuredBackRouteGroups.length === 1) {
+          setBackGroupId(configuredBackRouteGroups[0].groupId);
+          setBackDepth(configuredBackRouteGroups[0].depth);
+          setBackPanelType('pocket');
+        } else if (configuredBackRouteGroups.length === 0) {
+          setBackGroupId(frontGroupId);
+          setBackPanelType('pocket');
+        } else {
+          setBackGroupId(null);
+        }
+      } else if (preset === 'back-pocket') {
+        // Pocket — auto-select if exactly 1 configured group, else wait for sub-dropdown
+        if (configuredBackPocketGroups.length === 1) {
+          setBackGroupId(configuredBackPocketGroups[0].groupId);
+          setBackDepth(configuredBackPocketGroups[0].depth);
+          setBackPanelType('pocket');
+        } else {
+          setBackGroupId(null);
+        }
+      } else if (preset === 'custom') {
+        // Custom — auto-select if exactly 1 configured group, else wait for sub-dropdown
+        if (configuredBackCustomGroups.length === 1) {
+          setBackGroupId(configuredBackCustomGroups[0].groupId);
+          setBackDepth(configuredBackCustomGroups[0].depth);
+          setBackPanelType('pocket');
+        } else {
+          setBackGroupId(null);
+        }
+      } else {
+        // Bridge or other — clear (TBD)
+        setBackGroupId(null);
+      }
+      setToolVisibility({});
+    },
+    customBackGroupId: backGroupId,
+    onCustomBackGroupChange: (id: number | null) => { setBackGroupId(id); setToolVisibility({}); },
+    backRouteGroups: configuredBackRouteGroups,
+    backPocketGroups: configuredBackPocketGroups,
+    backCustomGroups: configuredBackCustomGroups,
+    onBackRouteGroupSelect: handleBackRouteGroupSelect,
+    onBackPocketGroupSelect: handleBackPocketGroupSelect,
+    onBackCustomGroupSelect: handleBackCustomGroupSelect,
+    doorPartType,
+    onDoorPartTypeChange: handleDoorPartTypeChange,
+    hingeEnabled: hingeConfig.enabled,
+    onHingeEnabledChange: (enabled: boolean) => setHingeConfig(prev => ({ ...prev, enabled })),
+    hingeSide: hingeConfig.side,
+    onHingeSideChange: handleHingeSideChange,
+    hingeCount: hingeConfig.count,
+    onHingeCountChange: handleHingeCountChange,
+    onHingeAdvancedClick: () => setShowHingeDialog(true),
+    handleEnabled: handleConfig.enabled,
+    onHandleEnabledChange: (enabled: boolean) => setHandleConfig(prev => ({ ...prev, enabled })),
+    isKnob: handleConfig.holeSeparation === 0,
+    onHandleTypeChange: handleHandleTypeChange,
+    doorPlacement: handleConfig.doorPlacement,
+    onDoorPlacementChange: handleDoorPlacementChange,
+    onHandleAdvancedClick: () => setShowHandleDialog(true),
+    doorW, doorH, thickness,
+    onDoorWChange: setDoorW,
+    onDoorHChange: setDoorH,
+    onThicknessChange: setThickness,
+    toDisplay, fromDisplay, inputStep,
+    onExport: handleExport,
+    onAddToOrder: handleAddToOrder,
+    hardwareWarnings,
+    filteredPanelTypes,
+    filteredBackPresets,
+    filteredDoorTypes,
+  };
 
-  // --- Tab: Admin ---
-  if (currentTab === 'admin') {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
-        <AdminPanel
-          onDataReloaded={() => setDataVersion((v) => v + 1)}
-          selectedTextures={selectedTextures}
-          onTextureSelected={(category, path, blobUrl) => {
-            setSelectedTextures(prev => ({ ...prev, [category]: path }));
-            if (path && blobUrl) {
-              setTextureBlobUrls(prev => ({ ...prev, [path]: blobUrl }));
-            }
-          }}
-          onLibrariesChanged={setLibraries}
-        />
-      </div>
-    );
-  }
-
-  // --- Tab: Cross Section ---
-  if (currentTab === 'cross-section' && activeDoor) {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
-        <CrossSectionViewer
-          door={activeDoor}
-          graph={activeGraph}
-          profiles={profiles}
-          frontPanelType={isGenericDoor ? frontPanelType : undefined}
-          backPanelType={isGenericDoor ? backPanelType : undefined}
-          hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-          units={units}
-          edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
-          thickness={thickness}
-        />
-      </div>
-    );
-  }
-
-  // --- Tab: Elevation ---
-  if (currentTab === 'elevation' && activeDoor) {
-    return (
-      <div style={styles.container}>
-        <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
-        <ElevationViewer
-          door={activeDoor}
-          units={units}
-          panelTree={elevationTree}
-          handleConfig={isGenericDoor ? handleConfig : undefined}
-          renderMode={elevationRenderMode}
-          onRenderModeChange={setElevationRenderMode}
-          selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
-          onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
-          onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
-          onLeftStileWidthChange={isGenericDoor ? setLeftStileW : undefined}
-          onRightStileWidthChange={isGenericDoor ? setRightStileW : undefined}
-          onTopRailWidthChange={isGenericDoor ? setTopRailW : undefined}
-          onBottomRailWidthChange={isGenericDoor ? setBottomRailW : undefined}
-          onSplitWidthChange={isGenericDoor ? handleSplitWidthChange : undefined}
-          overrideLeftStileW={isGenericDoor ? leftStileW : undefined}
-          overrideRightStileW={isGenericDoor ? rightStileW : undefined}
-          onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
-          selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
-          onAddMidRail={isGenericDoor ? handleAddMidRail : undefined}
-          onAddMidStile={isGenericDoor ? handleAddMidStile : undefined}
-          onDeselectAll={isGenericDoor ? handleDeselectAll : undefined}
-        />
-      </div>
-    );
-  }
-
-  // Camera distance based on door size
-  const maxDim = activeDoor ? Math.max(activeDoor.DefaultW, activeDoor.DefaultH) : 500;
+  // Camera distance based on door size (use actual doorW/doorH for generic mode)
+  const maxDim = activeDoor ? Math.max(doorW, doorH) : 500;
   const camDist = maxDim * 1.8;
+
+  // Render content for a given layout slot
+  const renderSlotContent = useCallback((slot: string) => {
+    const panelId = layoutPreset === 'compact'
+      ? COMPACT_LAYOUT[slot as CompactSlotPosition]
+      : layoutMapping[slot as SlotPosition];
+    const placeholder = (text: string) => (
+      <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+        {text}
+      </div>
+    );
+    return (
+      <div
+        ref={el => { slotRefs.current[slot] = el; }}
+        style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
+      >
+        {panelId === 'canvas3d' ? (
+          // Empty placeholder — the Canvas overlays this via absolute positioning
+          <div style={{ width: '100%', height: '100%' }} />
+        ) : panelId === 'toolbar' ? (
+          <div style={{ width: '100%', height: '100%', overflow: 'auto', background: '#fff' }}>
+            <DoorEditorToolbar {...toolbarProps} />
+          </div>
+        ) : panelId === 'crossSection' ? (
+          crossSectionDoor ? (
+            <CrossSectionViewer
+              ref={crossSectionRef}
+              compact
+              door={crossSectionDoor}
+              graph={crossSectionGraph}
+              profiles={profiles}
+              frontPanelType={frontPanelType}
+              backPanelType={backPanelType}
+              hasBackRabbit={frontPanelType === 'glass' ? hasBackRabbit : undefined}
+              units={units}
+              edgeGroupId={edgeGroupId}
+              thickness={thickness}
+            />
+          ) : placeholder(loading ? 'Loading...' : 'Select a tool group to begin')
+        ) : panelId === 'elevation' ? (
+          activeDoor ? (
+            <ElevationViewer
+              compact
+              door={activeDoor}
+              units={units}
+              panelTree={elevationTree}
+              handleConfig={handleConfig}
+              renderMode={elevationRenderMode}
+              onRenderModeChange={setElevationRenderMode}
+              selectedSplitPath={selectedSplitPath}
+              onSplitSelect={handleSplitSelect}
+              onSplitDragEnd={handleSplitDragEnd}
+              onLeftStileWidthChange={setLeftStileW}
+              onRightStileWidthChange={setRightStileW}
+              onTopRailWidthChange={setTopRailW}
+              onBottomRailWidthChange={setBottomRailW}
+              onSplitWidthChange={handleSplitWidthChange}
+              overrideLeftStileW={leftStileW}
+              overrideRightStileW={rightStileW}
+              onPanelSelect={handlePanelSelect}
+              selectedPanelIndices={selectedPanels}
+              onAddMidRail={handleAddMidRail}
+              onAddMidStile={handleAddMidStile}
+              onDeselectAll={handleDeselectAll}
+              hingeConfig={hingeConfig}
+              onHingePositionChange={handleHingePositionChange}
+              onHandleElevationChange={handleHandleElevationChange}
+            />
+          ) : placeholder('Elevation')
+        ) : (
+          // orderList
+          <OrderListPanel
+            items={orderItems}
+            onRemoveItem={(id) => setOrderItems(prev => prev.filter(i => i.id !== id))}
+            units={units}
+          />
+        )}
+      </div>
+    );
+  }, [layoutMapping, layoutPreset, toolbarProps, activeDoor, activeGraph, crossSectionDoor, crossSectionGraph,
+      profiles, frontPanelType, backPanelType,
+      hasBackRabbit, units, edgeGroupId, thickness, loading, elevationTree, handleConfig,
+      elevationRenderMode, selectedSplitPath, leftStileW, rightStileW, selectedPanels, hingeConfig,
+      orderItems]);
 
   return (
     <div style={styles.container}>
       <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
 
-      <PanelGroup orientation="horizontal" style={{ position: 'absolute', inset: 0, top: 40 }}>
-        {/* Left column: 3D + Cross Section */}
-        <Panel defaultSize="55%" minSize="25%">
-          <PanelGroup orientation="vertical">
-            {/* 3D Canvas pane */}
-            <Panel defaultSize="60%" minSize="20%">
-              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                {/* 3D Canvas — always mounted to prevent WebGL context loss */}
-                <Canvas
-                  gl={{ logarithmicDepthBuffer: true }}
-                  camera={{
-                    position: [camDist * 0.3, camDist * 0.2, camDist],
-                    fov: 40,
-                    near: 1,
-                    far: 50000,
-                  }}
-                  style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
-                  onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
-                >
-                  <color attach="background" args={['#ffffff']} />
-                  <ambientLight intensity={0.4} />
-                  <directionalLight position={[500, 800, 1000]} intensity={0.8} />
-                  <directionalLight position={[-300, 400, -500]} intensity={0.3} />
-                  {activeDoor && (
-                    <DoorViewer
-                      door={activeDoor}
-                      graph={activeGraph}
-                      profiles={profiles}
-                      operationVisibility={operationVisibility}
-                      toolVisibility={toolVisibility}
-                      frontPanelType={isGenericDoor ? frontPanelType : undefined}
-                      backPanelType={isGenericDoor ? backPanelType : undefined}
-                      hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-                      selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
-                      selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
-                      panelTree={isGenericDoor ? panelTree : undefined}
-                      thickness={thickness}
-                      renderMode={doorRenderMode}
-                      textureUrl={textureUrl}
-                    />
-                  )}
-                  {activeDoor && (
-                    <Grid
-                      args={[2000, 2000]}
-                      position={[0, -activeDoor.DefaultH / 2 - 10, 0]}
-                      cellSize={50}
-                      cellColor="#e0e0e0"
-                      sectionSize={100}
-                      sectionColor="#cccccc"
-                      fadeDistance={3000}
-                      infiniteGrid
-                    />
-                  )}
-                  <OrbitControls
-                    makeDefault
-                    enableDamping
-                    dampingFactor={0.1}
-                    minDistance={100}
-                    maxDistance={10000}
-                  />
-                </Canvas>
-
-                {/* Status messages (shown when no door is active) */}
-                {!activeDoor && (
-                  <div style={styles.loading}>
-                    <p>
-                      {loading
-                        ? 'Loading door data...'
-                        : error
-                          ? <span style={{ color: '#ff6b6b' }}>Error: {error}</span>
-                          : doors.length === 0
-                            ? 'No CNC doors in this library. Select a different library or use Generic Door.'
-                            : 'Select a door or configure the Generic Door.'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Render mode toggle */}
-                {activeDoor && (
-                  <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
-                    <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
-                  </div>
-                )}
-
-                {/* Door Editor Toolbar (generic door only) */}
-                {isGenericDoor && (
-                  <DoorEditorToolbar
-                    activeTextureCategory={activeTextureCategory}
-                    onTextureCategoryChange={handleActiveTextureCategoryChange}
-                    selectedTextures={selectedTextures}
-                    frontPanelType={frontPanelType}
-                    onFrontPanelTypeChange={setFrontPanelType}
-                    frontGroupId={frontGroupId}
-                    onFrontGroupChange={(id) => { setFrontGroupId(id); setToolVisibility({}); }}
-                    panelToolGroups={panelToolGroups}
-                    edgeGroupId={edgeGroupId}
-                    onEdgeGroupChange={(id) => { setEdgeGroupId(id); setToolVisibility({}); }}
-                    edgeToolGroups={edgeToolGroups}
-                    backPreset={backPreset}
-                    onBackPresetChange={(preset) => {
-                      setBackPreset(preset);
-                      if (preset === '' || preset !== 'custom') {
-                        if (preset === '') {
-                          setBackGroupId(null);
-                          setBackPanelType('raised');
-                        }
-                      }
-                      setToolVisibility({});
-                    }}
-                    customBackGroupId={backGroupId}
-                    onCustomBackGroupChange={(id) => { setBackGroupId(id); setToolVisibility({}); }}
-                    doorPartType={doorPartType}
-                    onDoorPartTypeChange={handleDoorPartTypeChange}
-                    hingeSide={hingeConfig.side}
-                    onHingeSideChange={handleHingeSideChange}
-                    hingeCount={hingeConfig.count}
-                    onHingeCountChange={handleHingeCountChange}
-                    onHingeAdvancedClick={() => setShowHingeDialog(true)}
-                    isKnob={handleConfig.holeSeparation === 0}
-                    onHandleTypeChange={handleHandleTypeChange}
-                    doorPlacement={handleConfig.doorPlacement}
-                    onDoorPlacementChange={handleDoorPlacementChange}
-                    onHandleAdvancedClick={() => setShowHandleDialog(true)}
-                  />
-                )}
-
-                {/* Loading overlay */}
-                {loading && activeDoor && (
-                  <div style={styles.loadingOverlay}>
-                    Loading...
-                  </div>
-                )}
-
-                {/* Left UI Overlay */}
-                <div style={styles.overlay}>
-        <h2 style={styles.title}>PAC Door Viewer</h2>
-
-        {/* Library Selector */}
-        {libraries.length > 0 && (
-          <div style={styles.selector}>
-            <label style={styles.label}>Library:</label>
-            <select
-              value={selectedLibrary || ''}
-              onChange={(e) => handleLibraryChange(e.target.value)}
-              disabled={libraryLoading}
-              style={styles.select}
-            >
-              {!selectedLibrary && <option value="">-- Select Library --</option>}
-              {libraries.map((lib) => (
-                <option key={lib} value={lib}>
-                  {lib}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0, top: 40 }}>
+        {layoutPreset === 'compact' ? (
+          /* Compact: 2 tall left panels + top-right split (3D | elevation) + bottom-right order list */
+          <PanelGroup orientation="horizontal" style={{ width: '100%', height: '100%' }}>
+            <Panel defaultSize={35} minSize={20}>
+              <PanelGroup orientation="vertical">
+                <Panel defaultSize={50} minSize={20}>
+                  {renderSlotContent('left-top')}
+                </Panel>
+                <Separator className="resize-handle-v" />
+                <Panel defaultSize={50} minSize={20}>
+                  {renderSlotContent('left-bot')}
+                </Panel>
+              </PanelGroup>
+            </Panel>
+            <Separator className="resize-handle-h" />
+            <Panel defaultSize={65} minSize={30}>
+              <PanelGroup orientation="vertical">
+                <Panel defaultSize={60} minSize={20}>
+                  <PanelGroup orientation="horizontal">
+                    <Panel defaultSize={50} minSize={20}>
+                      {renderSlotContent('right-top-left')}
+                    </Panel>
+                    <Separator className="resize-handle-h" />
+                    <Panel defaultSize={50} minSize={20}>
+                      {renderSlotContent('right-top-right')}
+                    </Panel>
+                  </PanelGroup>
+                </Panel>
+                <Separator className="resize-handle-v" />
+                <Panel defaultSize={40} minSize={15}>
+                  {renderSlotContent('right-bot')}
+                </Panel>
+              </PanelGroup>
+            </Panel>
+          </PanelGroup>
+        ) : (
+          /* Default layout: 3 left panels + 2 right panels */
+          <PanelGroup orientation="horizontal" style={{ width: '100%', height: '100%' }}>
+            <Panel defaultSize={50} minSize={33}>
+              <PanelGroup orientation="vertical">
+                <Panel defaultSize={30} minSize={10}>
+                  {renderSlotContent('left-top')}
+                </Panel>
+                <Separator className="resize-handle-v" />
+                <Panel defaultSize={35} minSize={10}>
+                  {renderSlotContent('left-mid')}
+                </Panel>
+                <Separator className="resize-handle-v" />
+                <Panel defaultSize={35} minSize={10}>
+                  {renderSlotContent('left-bot')}
+                </Panel>
+              </PanelGroup>
+            </Panel>
+            <Separator className="resize-handle-h" />
+            <Panel defaultSize={50} minSize={20}>
+              <PanelGroup orientation="vertical">
+                <Panel defaultSize={60} minSize={15}>
+                  {renderSlotContent('right-top')}
+                </Panel>
+                <Separator className="resize-handle-v" />
+                <Panel defaultSize={40} minSize={15}>
+                  {renderSlotContent('right-bot')}
+                </Panel>
+              </PanelGroup>
+            </Panel>
+          </PanelGroup>
         )}
 
-        {/* Door Selector */}
-        <div style={styles.selector}>
-          <label style={styles.label}>Door:</label>
-          <select
-            value={isGenericDoor ? GENERIC_DOOR_VALUE : String(selectedIndex)}
-            onChange={(e) => handleDoorChange(e.target.value)}
-            disabled={libraryLoading}
-            style={styles.select}
+        {/* 3D Canvas — always mounted, absolutely positioned over its assigned slot */}
+        <div style={{
+          position: 'absolute',
+          zIndex: 5,
+          top: canvasRect?.top ?? 0,
+          left: canvasRect?.left ?? 0,
+          width: canvasRect?.width ?? 0,
+          height: canvasRect?.height ?? 0,
+          display: canvasRect ? undefined : 'none',
+        }}>
+          <Canvas
+            gl={{ logarithmicDepthBuffer: true }}
+            camera={{
+              position: [camDist * 0.3, camDist * 0.2, camDist],
+              fov: 40,
+              near: 1,
+              far: 50000,
+            }}
+            style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
+            onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
           >
-            <option value={GENERIC_DOOR_VALUE}>Generic Door</option>
-            {doors.map((d, i) => (
-              <option key={d.Name} value={String(i)}>
-                {d.Name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Generic Door Controls */}
-        {isGenericDoor && (
-          <div style={styles.toolGroupSelectors}>
-            {/* Door Type + Size */}
-            <div style={styles.sideRow}>
-              <label style={styles.label}>Type:</label>
-              <select
-                value={doorPartType}
-                onChange={(e) => handleDoorPartTypeChange(e.target.value as DoorPartType)}
-                style={{ ...styles.typeSelect, width: 120 }}
-              >
-                <option value="door">Door</option>
-                <option value="drawer">Drawer</option>
-                <option value="reduced-rail">Reduced Rail</option>
-                <option value="slab">Slab</option>
-              </select>
-            </div>
-            <div style={styles.sideRow}>
-              <label style={styles.label}>Width:</label>
-              <CommitNumberInput value={toDisplay(doorW)} step={inputStep} min={0}
-                onCommit={(v) => setDoorW(fromDisplay(v))}
-                style={styles.numberInput} />
-              <label style={{ ...styles.label, minWidth: 50 }}>Height:</label>
-              <CommitNumberInput value={toDisplay(doorH)} step={inputStep} min={0}
-                onCommit={(v) => setDoorH(fromDisplay(v))}
-                style={styles.numberInput} />
-            </div>
-            <div style={styles.selector}>
-              <label style={styles.label}>Thickness:</label>
-              <select
-                value={String(thickness)}
-                onChange={(e) => setThickness(Number(e.target.value))}
-                style={styles.select}
-              >
-                <option value="19.05">3/4&quot;</option>
-                <option value="22.225">7/8&quot;</option>
-                <option value="25.4">1&quot;</option>
-              </select>
-            </div>
-
-            {/* Routing controls — hidden for slab */}
-            {doorPartType !== 'slab' && (<>
-            {/* Front: type + depth + tool group */}
-            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
-            <div style={styles.sideRow}>
-              <label style={styles.label}>Front:</label>
-              <select
-                value={frontPanelType}
-                onChange={(e) => setFrontPanelType(e.target.value as PanelType)}
-                style={styles.typeSelect}
-              >
-                <option value="pocket">Pocket</option>
-                <option value="raised">Raised Panel</option>
-                <option value="glass">Glass</option>
-              </select>
-              <select
-                value={frontGroupId ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setFrontGroupId(val ? Number(val) : null);
-                  setToolVisibility({});
-                }}
-                style={styles.groupSelect}
-              >
-                <option value="">-- Select Tool Group --</option>
-                {panelToolGroups.map((g) => (
-                  <option key={g.ToolGroupID} value={g.ToolGroupID}>
-                    {g.Name} ({g.ToolEntry.length} tools)
-                  </option>
-                ))}
-              </select>
-              {frontPanelType === 'glass' && (
-                <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={hasBackRabbit}
-                    onChange={(e) => setHasBackRabbit(e.target.checked)}
-                  />
-                  Back Rabbit
-                </label>
-              )}
-            </div>
-            <div style={styles.selector}>
-              <label style={styles.label}>Front Depth:</label>
-              <CommitNumberInput
-                value={toDisplay(frontPanelType === 'pocket' ? frontDepth : effectiveFrontDepth)}
-                step={inputStep}
-                min={0}
-                onCommit={(v) => setFrontDepth(Math.min(fromDisplay(v), thickness))}
-                disabled={frontPanelType !== 'pocket'}
-                style={{ ...styles.numberInput, ...(frontPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
+            <color attach="background" args={['#ffffff']} />
+            <ambientLight intensity={0.4} />
+            <directionalLight position={[500, 800, 1000]} intensity={0.8} />
+            <directionalLight position={[-300, 400, -500]} intensity={0.3} />
+            {activeDoor && (
+              <DoorViewer
+                door={activeDoor}
+                graph={activeGraph}
+                profiles={profiles}
+                operationVisibility={operationVisibility}
+                toolVisibility={toolVisibility}
+                frontPanelType={frontPanelType}
+                backPanelType={backPanelType}
+                hasBackRabbit={frontPanelType === 'glass' ? hasBackRabbit : undefined}
+                selectedPanelIndices={selectedPanels}
+                selectedSplitPath={selectedSplitPath}
+                panelTree={panelTree}
+                thickness={thickness}
+                renderMode={doorRenderMode}
+                textureUrl={textureUrl}
               />
-            </div>
-
-            {/* Back: type + depth + tool group */}
-            <div style={styles.sideRow}>
-              <label style={styles.label}>Back:</label>
-              <select
-                value={backPanelType}
-                onChange={(e) => setBackPanelType(e.target.value as PanelType)}
-                style={{ ...styles.typeSelect, ...(backGroupId === null ? { opacity: 0.5 } : {}) }}
-                disabled={backGroupId === null}
-              >
-                <option value="pocket">Pocket</option>
-                <option value="raised">Raised Panel</option>
-                <option value="glass">Glass</option>
-              </select>
-              <select
-                value={backGroupId ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const newId = val ? Number(val) : null;
-                  setBackGroupId(newId);
-                  if (!newId) setBackPanelType('raised');
-                  setToolVisibility({});
-                }}
-                style={styles.groupSelect}
-              >
-                <option value="">None</option>
-                {panelToolGroups.map((g) => (
-                  <option key={g.ToolGroupID} value={g.ToolGroupID}>
-                    {g.Name} ({g.ToolEntry.length} tools)
-                  </option>
-                ))}
-              </select>
-            </div>
-            {backGroupId !== null && (
-              <div style={styles.selector}>
-                <label style={styles.label}>Apply:</label>
-                <select value={backPocketMode}
-                  onChange={(e) => setBackPocketMode(e.target.value as BackPocketMode)}
-                  style={{ ...styles.select, flex: 'none', width: 120 }}>
-                  <option value="all">All Panels</option>
-                  <option value="selected">Selected Panel</option>
-                  <option value="full">Full Pocket</option>
-                </select>
-              </div>
             )}
-            {backGroupId !== null && (
-              <div style={styles.selector}>
-                <label style={styles.label}>Back Depth:</label>
-                <CommitNumberInput
-                  value={toDisplay(backPanelType === 'pocket' ? backDepth : effectiveBackDepth)}
-                  step={inputStep}
-                  min={0}
-                  onCommit={(v) => setBackDepth(Math.min(fromDisplay(v), thickness))}
-                  disabled={backPanelType !== 'pocket'}
-                  style={{ ...styles.numberInput, ...(backPanelType !== 'pocket' ? { opacity: 0.5 } : {}) }}
-                />
-              </div>
+            {activeDoor && (
+              <Grid
+                args={[2000, 2000]}
+                position={[0, -activeDoor.DefaultH / 2 - 10, 0]}
+                cellSize={50}
+                cellColor="#e0e0e0"
+                sectionSize={100}
+                sectionColor="#cccccc"
+                fadeDistance={3000}
+                infiniteGrid
+              />
             )}
-
-            {/* Edge Profile */}
-            <div style={styles.sideRow}>
-              <label style={styles.label}>Edge:</label>
-              <select
-                value={edgeGroupId ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setEdgeGroupId(val ? Number(val) : null);
-                  setToolVisibility({});
-                }}
-                style={styles.groupSelect}
-              >
-                <option value="">None</option>
-                {edgeToolGroups.map((g) => (
-                  <option key={g.ToolGroupID} value={g.ToolGroupID}>
-                    {g.Name} ({g.ToolEntry.length} tools)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Stile & Rail Widths */}
-            <div style={{ borderTop: '1px solid #335577', marginTop: 6, paddingTop: 6 }}>
-              <div style={styles.selector}>
-                <label style={styles.label}>Left Stile:</label>
-                <CommitNumberInput value={toDisplay(leftStileW)} step={inputStep} min={0}
-                  onCommit={(v) => setLeftStileW(fromDisplay(v))}
-                  style={styles.numberInput} />
-              </div>
-              <div style={styles.selector}>
-                <label style={styles.label}>Right Stile:</label>
-                <CommitNumberInput value={toDisplay(rightStileW)} step={inputStep} min={0}
-                  onCommit={(v) => setRightStileW(fromDisplay(v))}
-                  style={styles.numberInput} />
-              </div>
-              <div style={styles.selector}>
-                <label style={styles.label}>Top Rail:</label>
-                <CommitNumberInput value={toDisplay(topRailW)} step={inputStep} min={0}
-                  onCommit={(v) => setTopRailW(fromDisplay(v))}
-                  style={styles.numberInput} />
-              </div>
-              <div style={styles.selector}>
-                <label style={styles.label}>Bot Rail:</label>
-                <CommitNumberInput value={toDisplay(bottomRailW)} step={inputStep} min={0}
-                  onCommit={(v) => setBottomRailW(fromDisplay(v))}
-                  style={styles.numberInput} />
-              </div>
-            </div>
-
-            {/* Panel Splitting */}
-            <PanelSplitControls
-              panelTree={panelTree} setPanelTree={setPanelTree}
-              selectedPanels={selectedPanels} setSelectedPanels={setSelectedPanels}
-              selectedSplitPath={selectedSplitPath} onSplitSelect={handleSplitSelect}
-              panelBounds={panelBounds}
-              toDisplay={toDisplay} fromDisplay={fromDisplay} inputStep={inputStep}
-              styles={styles}
+            <OrbitControls
+              makeDefault
+              enableDamping
+              dampingFactor={0.1}
+              minDistance={100}
+              maxDistance={10000}
             />
+            <CameraAutoFit maxDim={maxDim} />
+          </Canvas>
+
+          {!activeDoor && (
+            <div style={styles.loading}>
+              <p>
+                {loading
+                  ? 'Loading door data...'
+                  : error
+                    ? <span style={{ color: '#ff6b6b' }}>Error: {error}</span>
+                    : 'Select a tool group to begin.'}
+              </p>
             </div>
-            </>)}
+          )}
 
-            {/* Hinge Configuration moved to DoorEditorToolbar Row 7 + HingeAdvancedDialog */}
-
-            {/* Handle Configuration moved to DoorEditorToolbar Row 8 + HandleAdvancedDialog */}
-          </div>
-        )}
-
-        {/* Hardware Validation Warnings */}
-        {hardwareWarnings.length > 0 && (
-          <div style={{ background: 'rgba(80, 30, 30, 0.85)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, border: '1px solid #664444' }}>
-            {hardwareWarnings.map((w, i) => (
-              <div key={i} style={{
-                color: w.severity === 'error' ? '#ff6666' : '#ffaa44',
-                fontSize: '11px', padding: '2px 0',
-              }}>
-                {w.severity === 'error' ? '\u2718' : '\u26A0'} {w.message}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Door Info */}
-        {activeDoor && (
-          <div style={styles.info}>
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Size:</span>
-              <span>{formatUnit(activeDoor.DefaultW, units)} x {formatUnit(activeDoor.DefaultH, units)}</span>
+          {activeDoor && (
+            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
+              <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
             </div>
-            {isGenericDoor ? (
-              <>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>L/R Stile:</span>
-                  <span>{formatUnit(leftStileW, units)} / {formatUnit(rightStileW, units)}</span>
-                </div>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>T/B Rail:</span>
-                  <span>{formatUnit(topRailW, units)} / {formatUnit(bottomRailW, units)}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>Rail W:</span>
-                  <span>{formatUnit(activeDoor.TopRailW, units)}</span>
-                </div>
-                <div style={styles.infoRow}>
-                  <span style={styles.infoLabel}>Stile W:</span>
-                  <span>{formatUnit(activeDoor.LeftRightStileW, units)}</span>
-                </div>
-              </>
-            )}
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Recess:</span>
-              <span>{formatUnit(activeDoor.PanelRecess, units)}</span>
-            </div>
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Split:</span>
-              <span>{activeDoor.MainSection.IsSplitSection ? 'Yes (Mid-Rail)' : 'No'}</span>
-            </div>
-            {activeGraph && (
-              <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>Operations:</span>
-                <span>{activeGraph.operationCount}</span>
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* Export Button */}
-        {activeDoor && (
-          <button onClick={handleExport} style={styles.exportBtn}>
-            Export Optimizer XML
-          </button>
-        )}
-
-        <div style={styles.hint}>
-          Drag to orbit / Scroll to zoom / Right-drag to pan
+          {loading && activeDoor && (
+            <div style={styles.loadingOverlay}>
+              Loading...
+            </div>
+          )}
         </div>
+
+        {/* Layout customizer button — top-right corner */}
+        <button
+          onClick={() => setShowLayoutCustomizer(prev => !prev)}
+          style={layoutBtnStyle}
+          title="Customize layout"
+        >
+          {'\u229E'}
+        </button>
+
+        {showLayoutCustomizer && (
+          <LayoutCustomizer
+            layoutMapping={layoutMapping}
+            onSwap={swapPanels}
+            onReset={() => setLayoutMapping({ ...DEFAULT_LAYOUT })}
+            onClose={() => setShowLayoutCustomizer(false)}
+            layoutPreset={layoutPreset}
+            onPresetChange={setLayoutPreset}
+          />
+        )}
       </div>
-              </div>{/* end 3D pane wrapper */}
-            </Panel>
 
-            <Separator className="resize-handle-v" />
+      {/* Admin Panel — overlay on top of the dashboard */}
+      {currentTab === 'admin' && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            background: 'rgba(0, 0, 0, 0.5)',
+          }}
+          onClick={() => setCurrentTab('door')}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', height: '100%' }}>
+            <AdminPanel
+              onDataReloaded={() => setDataVersion(v => v + 1)}
+              selectedTextures={selectedTextures}
+              onTextureSelected={(category, path, blobUrl) => {
+                setSelectedTextures(prev => ({ ...prev, [category]: path }));
+                if (path && blobUrl) {
+                  setTextureBlobUrls(prev => ({ ...prev, [path]: blobUrl }));
+                }
+              }}
+              onLibrariesChanged={setLibraries}
+              textureManifest={textureManifest}
+              onTextureManifestChanged={setTextureManifest}
+            />
+          </div>
+        </div>
+      )}
 
-            {/* Cross Section */}
-            <Panel defaultSize="40%" minSize="15%">
-              {activeDoor ? (
-                <CrossSectionViewer
-                  compact
-                  door={activeDoor}
-                  graph={activeGraph}
-                  profiles={profiles}
-                  frontPanelType={isGenericDoor ? frontPanelType : undefined}
-                  backPanelType={isGenericDoor ? backPanelType : undefined}
-                  hasBackRabbit={isGenericDoor && frontPanelType === 'glass' ? hasBackRabbit : undefined}
-                  units={units}
-                  edgeGroupId={isGenericDoor ? edgeGroupId : undefined}
-                  thickness={thickness}
-                />
-              ) : (
-                <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-                  Cross Section
-                </div>
-              )}
-            </Panel>
-          </PanelGroup>
-        </Panel>
-
-        <Separator className="resize-handle-h" />
-
-        {/* Right column: Elevation + Order List */}
-        <Panel defaultSize="45%" minSize="15%">
-          <PanelGroup orientation="vertical">
-            {/* Elevation pane */}
-            <Panel defaultSize="60%" minSize="20%">
-              {activeDoor ? (
-                <ElevationViewer
-                  compact
-                  door={activeDoor}
-                  units={units}
-                  panelTree={elevationTree}
-                  handleConfig={isGenericDoor ? handleConfig : undefined}
-                  renderMode={elevationRenderMode}
-                  onRenderModeChange={setElevationRenderMode}
-                  selectedSplitPath={isGenericDoor ? selectedSplitPath : undefined}
-                  onSplitSelect={isGenericDoor ? handleSplitSelect : undefined}
-                  onSplitDragEnd={isGenericDoor ? handleSplitDragEnd : undefined}
-                  onLeftStileWidthChange={isGenericDoor ? setLeftStileW : undefined}
-                  onRightStileWidthChange={isGenericDoor ? setRightStileW : undefined}
-                  onTopRailWidthChange={isGenericDoor ? setTopRailW : undefined}
-                  onBottomRailWidthChange={isGenericDoor ? setBottomRailW : undefined}
-                  onSplitWidthChange={isGenericDoor ? handleSplitWidthChange : undefined}
-                  overrideLeftStileW={isGenericDoor ? leftStileW : undefined}
-                  overrideRightStileW={isGenericDoor ? rightStileW : undefined}
-                  onPanelSelect={isGenericDoor ? handlePanelSelect : undefined}
-                  selectedPanelIndices={isGenericDoor ? selectedPanels : undefined}
-                  onAddMidRail={isGenericDoor ? handleAddMidRail : undefined}
-                  onAddMidStile={isGenericDoor ? handleAddMidStile : undefined}
-                  onDeselectAll={isGenericDoor ? handleDeselectAll : undefined}
-                  hingeConfig={isGenericDoor ? hingeConfig : undefined}
-                  onHingePositionChange={isGenericDoor ? handleHingePositionChange : undefined}
-                  onHandleElevationChange={isGenericDoor ? handleHandleElevationChange : undefined}
-                />
-              ) : (
-                <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
-                  Elevation
-                </div>
-              )}
-            </Panel>
-
-            <Separator className="resize-handle-v" />
-
-            {/* Order List placeholder */}
-            <Panel defaultSize="40%" minSize="10%">
-              <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 14 }}>
-                Order List
-              </div>
-            </Panel>
-          </PanelGroup>
-        </Panel>
-      </PanelGroup>
+      {/* Configure Panel — overlay on top of the dashboard */}
+      {currentTab === 'configure' && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            background: 'rgba(0, 0, 0, 0.5)',
+          }}
+          onClick={() => setCurrentTab('door')}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', height: '100%' }}>
+            <ConfigurePanel
+              toolGroups={toolGroups}
+              configData={configData}
+              textureManifest={textureManifest}
+              onClose={() => setCurrentTab('door')}
+              toDisplay={toDisplay}
+              fromDisplay={fromDisplay}
+              inputStep={inputStep}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Hinge Advanced Dialog */}
       {showHingeDialog && (
@@ -1051,6 +1303,20 @@ export default function App() {
           fromDisplay={fromDisplay}
           inputStep={inputStep}
           onClose={() => setShowHandleDialog(false)}
+        />
+      )}
+
+      {showStyleEditor && (
+        <StyleEditorDialog
+          leftStileW={leftStileW}
+          rightStileW={rightStileW}
+          topRailW={topRailW}
+          bottomRailW={bottomRailW}
+          onPresetSelect={handleStylePresetSelect}
+          presets={stylePresets}
+          toDisplay={toDisplay}
+          units={units}
+          onClose={() => setShowStyleEditor(false)}
         />
       )}
     </div>
@@ -1087,36 +1353,18 @@ function TabBar({ currentTab, onTabChange, units, onUnitsChange }: {
       <button
         style={{
           ...tabStyles.tab,
-          ...(currentTab === 'tools' ? tabStyles.activeTab : {}),
+          ...(currentTab === 'configure' ? tabStyles.activeTab : {}),
         }}
-        onClick={() => onTabChange('tools')}
+        onClick={() => onTabChange(currentTab === 'configure' ? 'door' : 'configure')}
       >
-        Tool Shapes
-      </button>
-      <button
-        style={{
-          ...tabStyles.tab,
-          ...(currentTab === 'cross-section' ? tabStyles.activeTab : {}),
-        }}
-        onClick={() => onTabChange('cross-section')}
-      >
-        Cross Section
-      </button>
-      <button
-        style={{
-          ...tabStyles.tab,
-          ...(currentTab === 'elevation' ? tabStyles.activeTab : {}),
-        }}
-        onClick={() => onTabChange('elevation')}
-      >
-        Elevation
+        Configure
       </button>
       <button
         style={{
           ...tabStyles.tab,
           ...(currentTab === 'admin' ? tabStyles.activeTab : {}),
         }}
-        onClick={() => onTabChange('admin')}
+        onClick={() => onTabChange(currentTab === 'admin' ? 'door' : 'admin')}
       >
         Admin
       </button>
@@ -1339,153 +1587,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     zIndex: 50,
   },
-  overlay: {
-    position: 'absolute',
-    top: 110,
-    left: 16,
-    bottom: 16,
-    color: '#e0e0e0',
-    pointerEvents: 'auto',
-    maxWidth: 340,
-    overflowY: 'auto',
-    overflowX: 'hidden',
-  },
-  title: {
-    margin: '0 0 12px 0',
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#ffffff',
-    textShadow: '0 2px 8px rgba(0,0,0,0.5)',
-  },
-  selector: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#aaaacc',
-    minWidth: 80,
-    whiteSpace: 'nowrap',
-  },
-  select: {
-    flex: 1,
-    padding: '6px 8px',
-    borderRadius: 6,
-    border: '1px solid #444466',
-    background: '#2a2a4e',
-    color: '#e0e0e0',
-    fontSize: '13px',
-    cursor: 'pointer',
-  },
-  toolGroupSelectors: {
-    background: 'rgba(26, 26, 46, 0.85)',
-    borderRadius: 8,
-    padding: '10px 14px',
-    marginBottom: 12,
-    border: '1px solid #335577',
-  },
-  sideRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  typeSelect: {
-    padding: '5px 6px',
-    borderRadius: 6,
-    border: '1px solid #444466',
-    background: '#2a2a4e',
-    color: '#e0e0e0',
-    fontSize: '12px',
-    cursor: 'pointer',
-    flexShrink: 0,
-    width: 105,
-  },
-  groupSelect: {
-    flex: 1,
-    padding: '5px 6px',
-    borderRadius: 6,
-    border: '1px solid #444466',
-    background: '#2a2a4e',
-    color: '#e0e0e0',
-    fontSize: '12px',
-    cursor: 'pointer',
-    minWidth: 0,
-  },
-  numberInput: {
-    width: 70,
-    padding: '5px 6px',
-    borderRadius: 6,
-    border: '1px solid #444466',
-    background: '#2a2a4e',
-    color: '#e0e0e0',
-    fontSize: '13px',
-  },
-  unitLabel: {
-    fontSize: '12px',
-    color: '#8888aa',
-    flexShrink: 0,
-  },
-  bulkBtn: {
-    padding: '4px 12px',
-    borderRadius: 4,
-    border: '1px solid #555577',
-    background: 'rgba(42, 42, 72, 0.8)',
-    color: '#aaaacc',
-    fontSize: '11px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  removeBtn: {
-    padding: '3px 8px',
-    borderRadius: 4,
-    border: '1px solid #664444',
-    background: 'rgba(72, 42, 42, 0.8)',
-    color: '#ff8888',
-    fontSize: '10px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginLeft: 4,
-  },
-  info: {
-    background: 'rgba(26, 26, 46, 0.85)',
-    borderRadius: 8,
-    padding: '10px 14px',
-    backdropFilter: 'blur(8px)',
-    border: '1px solid #333355',
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '13px',
-    padding: '2px 0',
-    gap: 12,
-  },
-  infoLabel: {
-    color: '#8888aa',
-    fontWeight: 600,
-    flexShrink: 0,
-  },
-  exportBtn: {
-    marginTop: 12,
-    width: '100%',
-    padding: '8px 12px',
-    borderRadius: 6,
-    border: '1px solid #444466',
-    background: '#2a4a6e',
-    color: '#e0e0e0',
-    fontSize: '13px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'background 0.15s',
-  },
-  hint: {
-    marginTop: 12,
-    fontSize: '11px',
-    color: '#666688',
-    fontStyle: 'italic',
-  },
+};
+
+const layoutBtnStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 6,
+  right: 6,
+  zIndex: 10,
+  width: 28,
+  height: 28,
+  borderRadius: 6,
+  border: '1px solid #444466',
+  background: 'rgba(26, 26, 46, 0.8)',
+  color: '#8888aa',
+  fontSize: 16,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 0,
+  lineHeight: 1,
+  transition: 'background 0.15s, color 0.15s',
 };

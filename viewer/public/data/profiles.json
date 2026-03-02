@@ -1,9 +1,9 @@
 [
   {
-    "toolId": 181,
-    "toolName": "1/8 MDF Edge Detail",
-    "diameter_mm": 3.2004,
-    "diameter_in": 0.126,
+    "toolId": 194,
+    "toolName": "1/8 Ball Nose",
+    "diameter_mm": 3.175,
+    "diameter_in": 0.125,
     "points": [
       {
         "x_mm": 0,
@@ -14,209 +14,17 @@
         "data": 0
       },
       {
-        "x_mm": 1.6002,
+        "x_mm": 1.5875,
         "y_mm": 0,
-        "x_in": 0.063,
+        "x_in": 0.0625,
         "y_in": 0,
         "ptType": 1,
         "data": 1.5875
       },
       {
-        "x_mm": 1.6002,
+        "x_mm": 1.5875,
         "y_mm": 50.8,
-        "x_in": 0.063,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 182,
-    "toolName": "3/16 Roundover",
-    "diameter_mm": 11.1125,
-    "diameter_in": 0.43750000000000006,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0.7873999,
-        "y_mm": 0,
-        "x_in": 0.03099999606299213,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 5.55625,
-        "y_mm": 0,
-        "x_in": 0.21875000000000003,
-        "y_in": 0,
-        "ptType": -1,
-        "data": 4.7752
-      },
-      {
-        "x_mm": 5.55625,
-        "y_mm": 50.8,
-        "x_in": 0.21875000000000003,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 14,
-    "toolName": "3/8 Downshear",
-    "diameter_mm": 9.525,
-    "diameter_in": 0.37500000000000006,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 4.7625,
-        "y_mm": 0,
-        "x_in": 0.18750000000000003,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 4.7625,
-        "y_mm": 50.8,
-        "x_in": 0.18750000000000003,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 190,
-    "toolName": "40MM POCKET",
-    "diameter_mm": 40,
-    "diameter_in": 1.5748031496062993,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 20,
-        "y_mm": 0,
-        "x_in": 0.7874015748031497,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 20,
-        "y_mm": 50.8,
-        "x_in": 0.7874015748031497,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 183,
-    "toolName": "Mid America Edge Tool",
-    "diameter_mm": 15.875,
-    "diameter_in": 0.625,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 7.9375,
-        "y_mm": 0,
-        "x_in": 0.3125,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 7.9375,
-        "y_mm": 14.2875,
-        "x_in": 0.3125,
-        "y_in": 0.5625,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 12.7,
-        "y_mm": 14.3002,
-        "x_in": 0.5,
-        "y_in": 0.5630000000000001,
-        "ptType": -1,
-        "data": 4.7625
-      },
-      {
-        "x_mm": 12.7,
-        "y_mm": 19.05,
-        "x_in": 0.5,
-        "y_in": 0.7500000000000001,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 12.7,
-        "y_mm": 50.8,
-        "x_in": 0.5,
+        "x_in": 0.0625,
         "y_in": 2,
         "ptType": 0,
         "data": 0
@@ -8449,7 +8257,63 @@
   },
   {
     "toolId": 186,
-    "toolName": "Generic 1/8 Downshear",
+    "toolName": "PlaceHolder 1/8 Roundover (125R)",
+    "diameter_mm": 6.35,
+    "diameter_in": 0.25,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0.1778,
+        "y_mm": 0,
+        "x_in": 0.007000000000000001,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 3.175,
+        "x_in": 0,
+        "y_in": 0.125,
+        "ptType": 1,
+        "data": 3.175
+      },
+      {
+        "x_mm": 3.175,
+        "y_mm": 3.175,
+        "x_in": 0.125,
+        "y_in": 0.125,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 3.175,
+        "y_mm": 25.4,
+        "x_in": 0.125,
+        "y_in": 1,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 25.4,
+        "x_in": 0,
+        "y_in": 1,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 191,
+    "toolName": "1/8\" Ball Nose",
     "diameter_mm": 3.175,
     "diameter_in": 0.125,
     "points": [
@@ -8474,8 +8338,8 @@
         "y_mm": 0,
         "x_in": 0.063,
         "y_in": 0,
-        "ptType": 0,
-        "data": 0
+        "ptType": 1,
+        "data": 1.5875
       },
       {
         "x_mm": 1.6002,
@@ -8496,8 +8360,408 @@
     ]
   },
   {
-    "toolId": 188,
-    "toolName": "1/4\" Roundover VTX9357",
+    "toolId": 189,
+    "toolName": "PlaceHolder 3/16\" Roundover -187R-",
+    "diameter_mm": 9.525,
+    "diameter_in": 0.37500000000000006,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0.381,
+        "y_mm": 1.192e-7,
+        "x_in": 0.015000000000000001,
+        "y_in": 4.692913385826771e-9,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 5.1562,
+        "y_mm": 2.384e-7,
+        "x_in": 0.203,
+        "y_in": 9.385826771653543e-9,
+        "ptType": -1,
+        "data": 4.7752
+      },
+      {
+        "x_mm": 4.7752,
+        "y_mm": 4.7752,
+        "x_in": 0.188,
+        "y_in": 0.188,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 4.7752,
+        "y_mm": 9.525,
+        "x_in": 0.188,
+        "y_in": 0.37500000000000006,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 9.525,
+        "x_in": 0,
+        "y_in": 0.37500000000000006,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 192,
+    "toolName": "5/8\" Panel Bit -625PNL-PCD-",
+    "diameter_mm": 34.3916,
+    "diameter_in": 1.3539999999999999,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 14.0716,
+        "y_mm": 0,
+        "x_in": 0.554,
+        "y_in": 0,
+        "ptType": 1,
+        "data": 15.875
+      },
+      {
+        "x_mm": 17.145,
+        "y_mm": 17.526,
+        "x_in": 0.675,
+        "y_in": 0.6900000000000001,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 17.272,
+        "y_mm": 31.75,
+        "x_in": 0.6799999999999999,
+        "y_in": 1.25,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 9.525002,
+        "y_mm": 31.75,
+        "x_in": 0.3750000787401575,
+        "y_in": 1.25,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 9.525,
+        "y_mm": 95.25,
+        "x_in": 0.37500000000000006,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 95.25,
+        "x_in": 0,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 196,
+    "toolName": "PlaceHolder 5/8\" Panel Bit -625PNL-PCD-",
+    "diameter_mm": 31.75,
+    "diameter_in": 1.25,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 15.875,
+        "y_mm": 0,
+        "x_in": 0.625,
+        "y_in": 0,
+        "ptType": 1,
+        "data": 15.875
+      },
+      {
+        "x_mm": 15.875,
+        "y_mm": 17.526,
+        "x_in": 0.625,
+        "y_in": 0.6900000000000001,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 15.875,
+        "y_mm": 95.25,
+        "x_in": 0.625,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 95.25,
+        "x_in": 0,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 198,
+    "toolName": "PlaceHolder 1/8 Roundover -125R-",
+    "diameter_mm": 6.35,
+    "diameter_in": 0.25,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0.1778,
+        "y_mm": 0,
+        "x_in": 0.007000000000000001,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 3.175,
+        "x_in": 0,
+        "y_in": 0.125,
+        "ptType": 1,
+        "data": 3.175
+      },
+      {
+        "x_mm": 3.175,
+        "y_mm": 3.175,
+        "x_in": 0.125,
+        "y_in": 0.125,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 3.175,
+        "y_mm": 25.4,
+        "x_in": 0.125,
+        "y_in": 1,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 25.4,
+        "x_in": 0,
+        "y_in": 1,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 200,
+    "toolName": "125BN",
+    "diameter_mm": 3.175,
+    "diameter_in": 0.125,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 1.5875,
+        "y_mm": 0,
+        "x_in": 0.0625,
+        "y_in": 0,
+        "ptType": 1,
+        "data": 1.5875
+      },
+      {
+        "x_mm": 1.5875,
+        "y_mm": 50.8,
+        "x_in": 0.0625,
+        "y_in": 2,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 50.8,
+        "x_in": 0,
+        "y_in": 2,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 202,
+    "toolName": "7_16DOWN",
+    "diameter_mm": 11.1125,
+    "diameter_in": 0.43750000000000006,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 5.55625,
+        "y_mm": 0,
+        "x_in": 0.21875000000000003,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 5.55625,
+        "y_mm": 50.8,
+        "x_in": 0.21875000000000003,
+        "y_in": 2,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 50.8,
+        "x_in": 0,
+        "y_in": 2,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 203,
+    "toolName": "500BN",
+    "diameter_mm": 12.7,
+    "diameter_in": 0.5,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 6.35,
+        "y_mm": 0,
+        "x_in": 0.25,
+        "y_in": 0,
+        "ptType": 1,
+        "data": 6.35
+      },
+      {
+        "x_mm": 6.35,
+        "y_mm": 95.25,
+        "x_in": 0.25,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 95.25,
+        "x_in": 0,
+        "y_in": 3.75,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 205,
+    "toolName": "PlaceHolder 1/4\" Rough -250R-PCD-R-",
+    "diameter_mm": 32.5374,
+    "diameter_in": 1.281,
+    "points": [
+      {
+        "x_mm": 0,
+        "y_mm": 0,
+        "x_in": 0,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 5.8928,
+        "y_mm": 0,
+        "x_in": 0.232,
+        "y_in": 0,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 5.8928,
+        "y_mm": 5.999997,
+        "x_in": 0.232,
+        "y_in": 0.23622035433070865,
+        "ptType": 1,
+        "data": 6.35
+      },
+      {
+        "x_mm": 12.2428,
+        "y_mm": 6.35,
+        "x_in": 0.48200000000000004,
+        "y_in": 0.25,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 12.2428,
+        "y_mm": 95.4786,
+        "x_in": 0.48200000000000004,
+        "y_in": 3.7590000000000003,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 0,
+        "y_mm": 95.4786,
+        "x_in": 0,
+        "y_in": 3.7590000000000003,
+        "ptType": 0,
+        "data": 0
+      }
+    ]
+  },
+  {
+    "toolId": 206,
+    "toolName": "PlaceHolder 1/4\" Clean -250R-PCD-C-",
     "diameter_mm": 14.2494,
     "diameter_in": 0.561,
     "points": [
@@ -8552,10 +8816,10 @@
     ]
   },
   {
-    "toolId": 191,
-    "toolName": "Frost 93CNR1 Shaker Corner Clean",
-    "diameter_mm": 9.525,
-    "diameter_in": 0.37500000000000006,
+    "toolId": 209,
+    "toolName": "Royce 562R1.026-1W",
+    "diameter_mm": 30.0228,
+    "diameter_in": 1.1820000000000002,
     "points": [
       {
         "x_mm": 0,
@@ -8566,33 +8830,33 @@
         "data": 0
       },
       {
-        "x_mm": 1.19126,
+        "x_mm": 2.11582,
         "y_mm": 0,
-        "x_in": 0.046900000000000004,
+        "x_in": 0.0833,
         "y_in": 0,
         "ptType": 0,
         "data": 0
       },
       {
-        "x_mm": 1.19126,
-        "y_mm": 6.21538,
-        "x_in": 0.046900000000000004,
-        "y_in": 0.2447,
+        "x_mm": 2.11582,
+        "y_mm": 4.10718,
+        "x_in": 0.0833,
+        "y_in": 0.16169999999999998,
         "ptType": 1,
-        "data": 1
+        "data": 5.3086
       },
       {
-        "x_mm": 4.7625,
-        "y_mm": 6.5278,
-        "x_in": 0.18750000000000003,
-        "y_in": 0.257,
-        "ptType": 0,
-        "data": 0
+        "x_mm": 15.0114,
+        "y_mm": 4.10718,
+        "x_in": 0.5910000000000001,
+        "y_in": 0.16169999999999998,
+        "ptType": 1,
+        "data": 1.27
       },
       {
-        "x_mm": 4.7625,
+        "x_mm": 15.0114,
         "y_mm": 50.8,
-        "x_in": 0.18750000000000003,
+        "x_in": 0.5910000000000001,
         "y_in": 2,
         "ptType": 0,
         "data": 0
@@ -8608,47 +8872,39 @@
     ]
   },
   {
-    "toolId": 192,
-    "toolName": "Frost 93CNR1 1/4\" Shaker Clean",
-    "diameter_mm": 9.525,
-    "diameter_in": 0.37500000000000006,
+    "toolId": 210,
+    "toolName": "Royce 5641P.040",
+    "diameter_mm": 15.24,
+    "diameter_in": 0.6000000000000001,
     "points": [
       {
         "x_mm": 0,
         "y_mm": 0,
         "x_in": 0,
         "y_in": 0,
+        "ptType": 2,
+        "data": 0.127
+      },
+      {
+        "x_mm": 6,
+        "y_mm": 1.075865,
+        "x_in": 0.2362204724409449,
+        "y_in": 0.042356889763779534,
+        "ptType": 2,
+        "data": 0.254
+      },
+      {
+        "x_mm": 7.62,
+        "y_mm": 2.3622,
+        "x_in": 0.30000000000000004,
+        "y_in": 0.09300000000000001,
         "ptType": 0,
         "data": 0
       },
       {
-        "x_mm": 1.19126,
-        "y_mm": 0,
-        "x_in": 0.046900000000000004,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 1.19126,
-        "y_mm": 6.21538,
-        "x_in": 0.046900000000000004,
-        "y_in": 0.2447,
-        "ptType": 1,
-        "data": 1
-      },
-      {
-        "x_mm": 4.7625,
-        "y_mm": 6.5278,
-        "x_in": 0.18750000000000003,
-        "y_in": 0.257,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 4.7625,
+        "x_mm": 7.62,
         "y_mm": 50.8,
-        "x_in": 0.18750000000000003,
+        "x_in": 0.30000000000000004,
         "y_in": 2,
         "ptType": 0,
         "data": 0
@@ -8664,10 +8920,10 @@
     ]
   },
   {
-    "toolId": 193,
-    "toolName": "Frost 10DM1 PCD Corner Clean",
-    "diameter_mm": 10,
-    "diameter_in": 0.3937007874015748,
+    "toolId": 211,
+    "toolName": "PlaceHolder Frost Standard Ogee",
+    "diameter_mm": 31.75,
+    "diameter_in": 1.25,
     "points": [
       {
         "x_mm": 0,
@@ -8678,306 +8934,82 @@
         "data": 0
       },
       {
-        "x_mm": 5,
+        "x_mm": 5.95376,
         "y_mm": 0,
-        "x_in": 0.1968503937007874,
-        "y_in": 0,
-        "ptType": 1,
-        "data": 0.5
-      },
-      {
-        "x_mm": 5,
-        "y_mm": 50.8,
-        "x_in": 0.1968503937007874,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 194,
-    "toolName": "Frost 16DM1 PCD Cutout",
-    "diameter_mm": 16,
-    "diameter_in": 0.6299212598425197,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
+        "x_in": 0.2344,
         "y_in": 0,
         "ptType": 0,
         "data": 0
       },
       {
-        "x_mm": 8,
-        "y_mm": 0,
-        "x_in": 0.31496062992125984,
-        "y_in": 0,
+        "x_mm": 6.27888,
+        "y_mm": 1.25222,
+        "x_in": 0.2472,
+        "y_in": 0.04930000000000001,
+        "ptType": 2,
+        "data": 0.58928
+      },
+      {
+        "x_mm": 11.07694,
+        "y_mm": 3.4925,
+        "x_in": 0.43610000000000004,
+        "y_in": 0.1375,
+        "ptType": 2,
+        "data": -0.58928
+      },
+      {
+        "x_mm": 15.875,
+        "y_mm": 5.73278,
+        "x_in": 0.625,
+        "y_in": 0.2257,
         "ptType": 0,
         "data": 0
       },
       {
-        "x_mm": 8,
-        "y_mm": 19.05,
-        "x_in": 0.31496062992125984,
-        "y_in": 0.7500000000000001,
-        "ptType": 1,
-        "data": 1.5875
-      },
-      {
-        "x_mm": 12,
-        "y_mm": 19.304,
-        "x_in": 0.4724409448818898,
-        "y_in": 0.76,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 12,
-        "y_mm": 23.8125,
-        "x_in": 0.4724409448818898,
-        "y_in": 0.9375,
+        "x_mm": 15.875,
+        "y_mm": 10,
+        "x_in": 0.625,
+        "y_in": 0.3937007874015748,
         "ptType": 0,
         "data": 0
       },
       {
         "x_mm": 9.525,
-        "y_mm": 23.8125,
+        "y_mm": 10,
         "x_in": 0.37500000000000006,
-        "y_in": 0.9375,
+        "y_in": 0.3937007874015748,
         "ptType": 0,
         "data": 0
       },
       {
         "x_mm": 9.525,
-        "y_mm": 50.8,
+        "y_mm": 25,
         "x_in": 0.37500000000000006,
-        "y_in": 2,
+        "y_in": 0.984251968503937,
+        "ptType": 0,
+        "data": 0
+      },
+      {
+        "x_mm": 9.525,
+        "y_mm": 69.85,
+        "x_in": 0.37500000000000006,
+        "y_in": 2.75,
         "ptType": 0,
         "data": 0
       },
       {
         "x_mm": 0,
-        "y_mm": 50.8,
+        "y_mm": 69.85,
         "x_in": 0,
-        "y_in": 2,
+        "y_in": 2.75,
         "ptType": 0,
         "data": 0
       }
     ]
   },
   {
-    "toolId": 195,
-    "toolName": "Frost 40DM1 PCD Pocket",
-    "diameter_mm": 39.99992,
-    "diameter_in": 1.5748000000000002,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 19.99996,
-        "y_mm": 0,
-        "x_in": 0.7874000000000001,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 19.99996,
-        "y_mm": 50.8,
-        "x_in": 0.7874000000000001,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 197,
-    "toolName": "1-1/2 inch Surfacing Cutter",
-    "diameter_mm": 39.37,
-    "diameter_in": 1.55,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 25.4,
-        "y_mm": 0,
-        "x_in": 1,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 25.4,
-        "y_mm": 50.8,
-        "x_in": 1,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 198,
-    "toolName": "1/8 Downshear",
-    "diameter_mm": 3.175,
-    "diameter_in": 0.125,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 1.5875,
-        "y_mm": 0,
-        "x_in": 0.0625,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 1.5875,
-        "y_mm": 50.8,
-        "x_in": 0.0625,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 208,
-    "toolName": "1/8 Downshear Legacy",
-    "diameter_mm": 3.175,
-    "diameter_in": 0.125,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 1.5875,
-        "y_mm": 0,
-        "x_in": 0.0625,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 1.5875,
-        "y_mm": 50.8,
-        "x_in": 0.0625,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 200,
-    "toolName": "VTX .125 Radius SC Point Cutting",
-    "diameter_mm": 9.525,
-    "diameter_in": 0.37500000000000006,
-    "points": [
-      {
-        "x_mm": 0,
-        "y_mm": 0,
-        "x_in": 0,
-        "y_in": 0,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 4.7625,
-        "y_mm": 0,
-        "x_in": 0.18750000000000003,
-        "y_in": 0,
-        "ptType": -1,
-        "data": 4.36626
-      },
-      {
-        "x_mm": 4.7625,
-        "y_mm": 50.8,
-        "x_in": 0.18750000000000003,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      },
-      {
-        "x_mm": 0,
-        "y_mm": 50.8,
-        "x_in": 0,
-        "y_in": 2,
-        "ptType": 0,
-        "data": 0
-      }
-    ]
-  },
-  {
-    "toolId": 207,
-    "toolName": "Frost 125R 1/8\" Roundover",
+    "toolId": 214,
+    "toolName": "FROSTCNC-125R 1/8 Roundover",
     "diameter_mm": 6.35,
     "diameter_in": 0.25,
     "points": [
@@ -8990,9 +9022,9 @@
         "data": 0
       },
       {
-        "x_mm": 0.1778,
+        "x_mm": 0.0254,
         "y_mm": 0,
-        "x_in": 0.007000000000000001,
+        "x_in": 0.001,
         "y_in": 0,
         "ptType": 0,
         "data": 0
@@ -9015,17 +9047,17 @@
       },
       {
         "x_mm": 3.175,
-        "y_mm": 25.4,
+        "y_mm": 9.525,
         "x_in": 0.125,
-        "y_in": 1,
+        "y_in": 0.37500000000000006,
         "ptType": 0,
         "data": 0
       },
       {
         "x_mm": 0,
-        "y_mm": 25.4,
+        "y_mm": 9.525,
         "x_in": 0,
-        "y_in": 1,
+        "y_in": 0.37500000000000006,
         "ptType": 0,
         "data": 0
       }

@@ -39,19 +39,51 @@ export function HandleAdvancedDialog({
           <button onClick={onClose} style={closeBtnStyle} title="Close">{'\u2715'}</button>
         </div>
 
-        {/* Separation (handle mode only) */}
-        {handleConfig.holeSeparation > 0 && (
-          <div style={fieldRow}>
-            <label style={labelStyle}>Separation:</label>
-            <CommitNumberInput value={toDisplay(handleConfig.holeSeparation)} step={inputStep} min={0}
-              onCommit={(v) => {
-                const mm = fromDisplay(v);
-                setHandleConfig(prev => ({ ...prev, holeSeparation: mm }));
-                if (mm > 0) setSavedSep(mm);
-              }}
-              style={inputStyle} />
-          </div>
-        )}
+        {/* Handle / Knob toggle */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+          <button
+            onClick={() => {
+              if (handleConfig.holeSeparation === 0) {
+                setHandleConfig(prev => ({ ...prev, holeSeparation: savedSep || 101.6 }));
+              }
+            }}
+            style={{
+              ...toggleBtnStyle,
+              ...(handleConfig.holeSeparation > 0 ? toggleBtnActiveStyle : {}),
+            }}
+          >
+            Handle
+          </button>
+          <button
+            onClick={() => {
+              if (handleConfig.holeSeparation > 0) {
+                setSavedSep(handleConfig.holeSeparation);
+                setHandleConfig(prev => ({ ...prev, holeSeparation: 0 }));
+              }
+            }}
+            style={{
+              ...toggleBtnStyle,
+              ...(handleConfig.holeSeparation === 0 ? toggleBtnActiveStyle : {}),
+            }}
+          >
+            Knob
+          </button>
+        </div>
+
+        {/* Separation — always visible, disabled in knob mode */}
+        <div style={fieldRow}>
+          <label style={{ ...labelStyle, ...(handleConfig.holeSeparation === 0 ? { opacity: 0.5 } : {}) }}>Separation:</label>
+          <CommitNumberInput
+            value={toDisplay(handleConfig.holeSeparation === 0 ? savedSep : handleConfig.holeSeparation)}
+            step={inputStep} min={0}
+            disabled={handleConfig.holeSeparation === 0}
+            onCommit={(v) => {
+              const mm = fromDisplay(v);
+              setHandleConfig(prev => ({ ...prev, holeSeparation: mm }));
+              if (mm > 0) setSavedSep(mm);
+            }}
+            style={{ ...inputStyle, ...(handleConfig.holeSeparation === 0 ? { opacity: 0.5 } : {}) }} />
+        </div>
 
         {/* Inset from edge */}
         <div style={fieldRow}>
@@ -61,14 +93,17 @@ export function HandleAdvancedDialog({
             style={inputStyle} />
         </div>
 
-        {/* Door-specific: elevation (for top/bottom/custom placements) */}
-        {doorPartType === 'door' &&
-          (handleConfig.doorPlacement === 'top' || handleConfig.doorPlacement === 'bottom' || handleConfig.doorPlacement === 'custom') && (
+        {/* Door-specific: elevation (always shown for doors, disabled for middle/center-top) */}
+        {doorPartType === 'door' && (
           <div style={fieldRow}>
             <label style={labelStyle}>Elevation:</label>
             <CommitNumberInput value={toDisplay(handleConfig.elevation)} step={inputStep}
               onCommit={(v) => setHandleConfig(prev => ({ ...prev, elevation: fromDisplay(v) }))}
-              style={inputStyle} />
+              disabled={handleConfig.doorPlacement === 'middle' || handleConfig.doorPlacement === 'center-top'}
+              style={{
+                ...inputStyle,
+                ...(handleConfig.doorPlacement === 'middle' || handleConfig.doorPlacement === 'center-top' ? { opacity: 0.5 } : {}),
+              }} />
           </div>
         )}
 
@@ -214,4 +249,23 @@ const selectStyle: React.CSSProperties = {
 const sectionDivider: React.CSSProperties = {
   borderTop: '1px solid #335577',
   margin: '8px 0',
+};
+
+const toggleBtnStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '5px 0',
+  borderRadius: 4,
+  border: '1px solid #335577',
+  background: '#2a2a4e',
+  color: '#8888aa',
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'background 0.15s, color 0.15s',
+};
+
+const toggleBtnActiveStyle: React.CSSProperties = {
+  background: 'rgba(42, 74, 110, 0.9)',
+  color: '#ffffff',
+  borderColor: '#5577aa',
 };

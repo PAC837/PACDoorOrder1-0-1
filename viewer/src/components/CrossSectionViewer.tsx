@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { buildCrossSectionPoints, buildUnclippedCrossSectionPoints, getBackRabbetDepth } from '../utils/cuttingBodies.js';
 import { drawArrowHead, drawLinearDim, drawAngleDim, drawRadiusDim, drawDiagonalHatch, drawSnapIndicator, drawMeasurePreview, drawGeneralDim } from '../utils/canvasDrawing.js';
 import { useMeasureTool } from '../hooks/useMeasureTool.js';
@@ -9,6 +9,10 @@ import { MATERIAL_THICKNESS, GLASS_THICKNESS, formatUnit } from '../types.js';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface CrossSectionViewerHandle {
+  captureSnapshot: () => string | null;
+}
 
 interface CrossSectionViewerProps {
   door: DoorData;
@@ -411,6 +415,7 @@ function CrossSectionCanvas({
   onToggleUserDimensions,
   onCycleToolOverlay,
   onExportDxf,
+  canvasRefOut,
 }: CrossSectionViewerProps & {
   showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean;
   toolOverlayMode: 'off' | 'full' | 'outline';
@@ -420,9 +425,16 @@ function CrossSectionCanvas({
   onToggleUserDimensions: () => void;
   onCycleToolOverlay: () => void;
   onExportDxf: () => void;
+  canvasRefOut?: React.MutableRefObject<HTMLCanvasElement | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Expose canvas ref to parent for snapshot capture
+  const canvasCallbackRef = useCallback((el: HTMLCanvasElement | null) => {
+    (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = el;
+    if (canvasRefOut) canvasRefOut.current = el;
+  }, [canvasRefOut]);
 
   const onPrint = useCallback(() => {
     if (!canvasRef.current) return;
@@ -463,7 +475,7 @@ function CrossSectionCanvas({
   const thickness = thicknessCanvasProp ?? MATERIAL_THICKNESS;
   const stileW = door.LeftRightStileW;
   const dimSpace = showDimensions ? 50 : 0;
-  const padVal = 60 + dimSpace;
+  const padVal = Math.min(60 + dimSpace, Math.max(20, Math.min(cw, ch) * 0.12));
   const scaleVal = Math.min((cw - 2 * padVal) / VIEW_WIDTH, (cw > 0 && ch > 0 ? (ch - 2 * padVal) / thickness : 1)) * zoom;
   const cxVal = cw / 2;
   const cyVal = ch / 2;
@@ -738,7 +750,7 @@ function CrossSectionCanvas({
 
     // --- Coordinate transform (with zoom + pan) ---
     const dimSpace = showDimensions ? 50 : 0;
-    const pad = 60 + dimSpace;
+    const pad = Math.min(60 + dimSpace, Math.max(20, Math.min(cw, ch) * 0.12));
     const scaleX = (cw - 2 * pad) / VIEW_WIDTH;
     const scaleY = (ch - 2 * pad) / thickness;
     const baseScale = Math.min(scaleX, scaleY);
@@ -1072,7 +1084,7 @@ function CrossSectionCanvas({
       ctx.restore();
     }
 
-  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, toolOverlayMode, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase]);
+  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, toolOverlayMode, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase, cw, ch]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -1182,7 +1194,7 @@ function CrossSectionCanvas({
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
-        ref={canvasRef}
+        ref={canvasCallbackRef}
         style={{ ...canvasStyle, cursor: canvasCursor }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -1338,7 +1350,13 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp, compact }: CrossSectionViewerProps) {
+export const CrossSectionViewer = forwardRef<CrossSectionViewerHandle, CrossSectionViewerProps>(function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp, compact }, ref) {
+  const canvasRefForSnapshot = useRef<HTMLCanvasElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    captureSnapshot: () => canvasRefForSnapshot.current?.toDataURL('image/png') ?? null,
+  }));
+
   const [showHatching, setShowHatching] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
@@ -1595,11 +1613,12 @@ export function CrossSectionViewer({ door, graph, profiles, frontPanelType, back
           onToggleUserDimensions={() => setShowUserDimensions(v => !v)}
           onCycleToolOverlay={() => setToolOverlayMode(m => m === 'off' ? 'full' : m === 'full' ? 'outline' : 'off')}
           onExportDxf={handleExportDxf}
+          canvasRefOut={canvasRefForSnapshot}
         />
       </div>
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Styles

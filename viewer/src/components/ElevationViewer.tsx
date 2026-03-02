@@ -164,10 +164,10 @@ export function ElevationViewer({
     [panelTree, rootBounds],
   );
 
-  // Reset zoom/pan when door changes
+  // Reset zoom/pan when door changes (name or dimensions)
   useEffect(() => {
     setZoom(1); setPanX(0); setPanY(0);
-  }, [door.Name]);
+  }, [door.Name, door.DefaultW, door.DefaultH]);
 
   // Resize observer
   useEffect(() => {
@@ -368,7 +368,7 @@ export function ElevationViewer({
     if (!canvas) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const factor = e.deltaY > 0 ? 0.85 : 1.18;
       setZoom((z) => Math.max(0.1, Math.min(20, z * factor)));
     };
     canvas.addEventListener('wheel', handleWheel, { passive: false });
@@ -570,8 +570,11 @@ export function ElevationViewer({
     }
 
     if (isPanning) {
-      setPanX((p) => p + e.clientX - lastMouse.current.x);
-      setPanY((p) => p + e.clientY - lastMouse.current.y);
+      const dx = e.clientX - lastMouse.current.x;
+      const dy = e.clientY - lastMouse.current.y;
+      const panScale = 1.5;
+      setPanX((p) => p + dx * panScale);
+      setPanY((p) => p + dy * panScale);
       lastMouse.current = { x: e.clientX, y: e.clientY };
       return;
     }

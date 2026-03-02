@@ -19,6 +19,7 @@ export interface PacConfig {
   activeTextureCategory: TextureCategory;
   lastLoadedAt: string | null;
   lastLoadError: string | null;
+  paramOrder: string[] | null;
 }
 
 const DEFAULT_TEXTURES: SelectedTextures = {
@@ -37,6 +38,7 @@ const DEFAULT_CONFIG: PacConfig = {
   activeTextureCategory: 'raw',
   lastLoadedAt: null,
   lastLoadError: null,
+  paramOrder: null,
 };
 
 function configPath(viewerRoot: string): string {

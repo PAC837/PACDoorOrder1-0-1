@@ -51,8 +51,8 @@ export function HingeAdvancedDialog({
         {/* Count */}
         <div style={fieldRow}>
           <label style={labelStyle}>Count:</label>
-          <input type="number" value={hingeConfig.count} min={2} max={5}
-            onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(5, Number(e.target.value))) }))}
+          <input type="number" value={hingeConfig.count} min={2} max={6}
+            onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(6, Number(e.target.value))) }))}
             style={{ ...inputStyle, width: 50 }} />
         </div>
 

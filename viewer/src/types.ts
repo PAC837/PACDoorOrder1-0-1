@@ -221,7 +221,7 @@ export interface HoleData {
 export interface HingeConfig {
   enabled: boolean;
   side: HingeSide;
-  count: number;           // 2–5
+  count: number;           // 2–6
   equidistant: boolean;    // true = auto-space, false = manual positions
   positions: number[];     // manual hinge positions (mm from bottom/left edge)
   edgeDistance: number;     // mm from door top/bottom to first/last hinge center
@@ -251,7 +251,7 @@ export interface HandleConfig {
 }
 
 export const DEFAULT_HINGE_CONFIG: HingeConfig = {
-  enabled: true,
+  enabled: false,
   side: 'left',
   count: 2,
   equidistant: true,
@@ -268,7 +268,7 @@ export const DEFAULT_HINGE_CONFIG: HingeConfig = {
 };
 
 export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
-  enabled: true,
+  enabled: false,
   holeDia: 5,
   holeDepth: 19,
   cutThrough: true,
@@ -281,3 +281,44 @@ export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
   twoHandleEdgeDist: 127,  // 5" from each edge
   onFront: true,
 };
+
+// ---------------------------------------------------------------------------
+// Layout slot system — 5-panel swappable layout (default) / 4-panel compact
+// ---------------------------------------------------------------------------
+
+export type LayoutPreset = 'default' | 'compact';
+
+export type PanelContentId = 'toolbar' | 'crossSection' | 'canvas3d' | 'elevation' | 'orderList';
+export type SlotPosition = 'left-top' | 'left-mid' | 'left-bot' | 'right-top' | 'right-bot';
+export type LayoutMapping = Record<SlotPosition, PanelContentId>;
+
+export const DEFAULT_LAYOUT: LayoutMapping = {
+  'left-top': 'toolbar',
+  'left-mid': 'crossSection',
+  'left-bot': 'canvas3d',
+  'right-top': 'elevation',
+  'right-bot': 'orderList',
+};
+
+// Compact layout: 2 tall left panels + top-right split (3D | elevation) + bottom-right order list
+export type CompactSlotPosition = 'left-top' | 'left-bot' | 'right-top-left' | 'right-top-right' | 'right-bot';
+export type CompactLayoutMapping = Record<CompactSlotPosition, PanelContentId>;
+
+export const COMPACT_LAYOUT: CompactLayoutMapping = {
+  'left-top': 'toolbar',
+  'left-bot': 'crossSection',
+  'right-top-left': 'canvas3d',
+  'right-top-right': 'elevation',
+  'right-bot': 'orderList',
+};
+
+export const PANEL_DISPLAY_NAMES: Record<PanelContentId, string> = {
+  toolbar: 'Toolbar',
+  crossSection: 'Cross Section',
+  canvas3d: '3D Canvas',
+  elevation: 'Elevation',
+  orderList: 'Order List',
+};
+
+export const ALL_SLOTS: SlotPosition[] = ['left-top', 'left-mid', 'left-bot', 'right-top', 'right-bot'];
+export const COMPACT_SLOTS: CompactSlotPosition[] = ['left-top', 'left-bot', 'right-top-left', 'right-top-right', 'right-bot'];

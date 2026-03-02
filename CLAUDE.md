@@ -154,6 +154,7 @@ The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) 
 
 ### Viewer components
 
+- **`DoorEditorToolbar.tsx`** — the **Data Entry** area (labeled "Data Entry" at top). This is the main panel where users configure door parameters: finish/texture, panel type, style selection, edge profiles, back operations, door type, handle placement, and hinge settings. All numbered sections (1–9) for building a door order.
 - **`ToolShapeViewer.tsx`** — standalone tab rendering tool profile shapes from `profiles.json` for visual inspection of CNC cutter geometry
 - **`OperationOverlay.tsx`** — right-side panel with per-operation expand/collapse and per-tool visibility checkboxes, controlling `OperationVisibility` and `ToolVisibility` state in `App.tsx`
 

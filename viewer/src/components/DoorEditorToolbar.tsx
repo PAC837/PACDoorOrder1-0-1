@@ -1,19 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DoorHandlePlacement, DoorPartType, HingeSide, PanelType, RawToolGroup } from '../types.js';
+import { CommitNumberInput } from './CommitNumberInput.js';
 
 interface DoorEditorToolbarProps {
   // Material/texture
   activeTextureCategory: 'painted' | 'primed' | 'raw' | 'sanded';
   onTextureCategoryChange: (cat: 'painted' | 'primed' | 'raw' | 'sanded') => void;
   selectedTextures: { painted: string | null; primed: string | null; raw: string | null; sanded: string | null };
+  availableTextureCategories: ('painted' | 'primed' | 'raw' | 'sanded')[];
 
   // Front panel type
   frontPanelType: PanelType;
   onFrontPanelTypeChange: (type: PanelType) => void;
 
-  // Style (= front tool group)
-  frontGroupId: number | null;
-  onFrontGroupChange: (id: number | null) => void;
+  // Style (config database)
+  configStyles: { id: string; name: string }[];
+  selectedConfigStyleId: string | null;
+  onConfigStyleChange: (id: string | null) => void;
+  onEditStyleClick: () => void;
+
+  // Panel tool groups (used for back custom dropdown)
   panelToolGroups: RawToolGroup[];
 
   // Edge tool group
@@ -32,29 +38,68 @@ interface DoorEditorToolbarProps {
   onDoorPartTypeChange: (type: DoorPartType) => void;
 
   // Hinges (only shown when doorPartType === 'door')
+  hingeEnabled: boolean;
+  onHingeEnabledChange: (enabled: boolean) => void;
   hingeSide: HingeSide;
   onHingeSideChange: (side: HingeSide) => void;
   hingeCount: number;
   onHingeCountChange: (count: number) => void;
   onHingeAdvancedClick: () => void;
 
-  // Handle controls (Row 8)
+  // Handle controls
+  handleEnabled: boolean;
+  onHandleEnabledChange: (enabled: boolean) => void;
   isKnob: boolean;
   onHandleTypeChange: (isKnob: boolean) => void;
   doorPlacement: DoorHandlePlacement;
   onDoorPlacementChange: (placement: DoorHandlePlacement) => void;
   onHandleAdvancedClick: () => void;
+
+  // Dimensions
+  doorW: number;
+  doorH: number;
+  thickness: number;
+  onDoorWChange: (v: number) => void;
+  onDoorHChange: (v: number) => void;
+  onThicknessChange: (v: number) => void;
+
+  // Units
+  toDisplay: (mm: number) => number;
+  fromDisplay: (val: number) => number;
+  inputStep: number;
+
+  // Export
+  onExport: () => void;
+
+  // Add to Order
+  onAddToOrder: () => void;
+
+  // Hardware warnings
+  hardwareWarnings: { severity: string; message: string }[];
+
+  // Config-based filters (hide options not enabled in selected style)
+  filteredPanelTypes?: { value: PanelType; label: string }[];
+  filteredBackPresets?: { value: string; label: string }[];
+  filteredDoorTypes?: { value: DoorPartType; label: string }[];
+
+  // Configured back groups (from config database)
+  backRouteGroups: Array<{ groupId: number; depth: number; groupName: string }>;
+  backPocketGroups: Array<{ groupId: number; depth: number; groupName: string }>;
+  backCustomGroups: Array<{ groupId: number; depth: number; groupName: string }>;
+  onBackRouteGroupSelect: (groupId: number, depth: number) => void;
+  onBackPocketGroupSelect: (groupId: number, depth: number) => void;
+  onBackCustomGroupSelect: (groupId: number, depth: number) => void;
 }
 
 const MATERIAL_CATS = ['raw', 'sanded', 'primed', 'painted'] as const;
 
-const PANEL_TYPES: { value: PanelType; label: string }[] = [
+export const PANEL_TYPES: { value: PanelType; label: string }[] = [
   { value: 'pocket', label: 'Flat Panel' },
   { value: 'raised', label: 'Raised Panel' },
   { value: 'glass', label: 'Glass' },
 ];
 
-const BACK_PRESETS = [
+export const BACK_PRESETS = [
   { value: 'back-route', label: 'Route' },
   { value: 'back-pocket', label: 'Pocket' },
   { value: 'back-bridge', label: 'Bridge' },
@@ -68,7 +113,7 @@ const DOOR_PLACEMENTS: { value: DoorHandlePlacement; label: string }[] = [
   { value: 'center-top', label: 'Top Rail' },
 ];
 
-const DOOR_TYPES: { value: DoorPartType; label: string }[] = [
+export const DOOR_TYPES: { value: DoorPartType; label: string }[] = [
   { value: 'door', label: 'Door' },
   { value: 'drawer', label: 'Drawer' },
   { value: 'reduced-rail', label: 'Reduced' },
@@ -77,17 +122,24 @@ const DOOR_TYPES: { value: DoorPartType; label: string }[] = [
 ];
 
 export function DoorEditorToolbar({
-  activeTextureCategory, onTextureCategoryChange, selectedTextures,
+  activeTextureCategory, onTextureCategoryChange, selectedTextures, availableTextureCategories,
   frontPanelType, onFrontPanelTypeChange,
-  frontGroupId, onFrontGroupChange, panelToolGroups,
+  configStyles, selectedConfigStyleId, onConfigStyleChange, onEditStyleClick,
+  panelToolGroups,
   edgeGroupId, onEdgeGroupChange, edgeToolGroups,
   backPreset, onBackPresetChange, customBackGroupId, onCustomBackGroupChange,
   doorPartType, onDoorPartTypeChange,
-  hingeSide, onHingeSideChange, hingeCount, onHingeCountChange, onHingeAdvancedClick,
-  isKnob, onHandleTypeChange, doorPlacement, onDoorPlacementChange, onHandleAdvancedClick,
+  hingeEnabled, onHingeEnabledChange, hingeSide, onHingeSideChange, hingeCount, onHingeCountChange, onHingeAdvancedClick,
+  handleEnabled, onHandleEnabledChange, isKnob, onHandleTypeChange, doorPlacement, onDoorPlacementChange, onHandleAdvancedClick,
+  doorW, doorH, thickness, onDoorWChange, onDoorHChange, onThicknessChange,
+  toDisplay, fromDisplay, inputStep,
+  onExport, onAddToOrder, hardwareWarnings,
+  filteredPanelTypes, filteredBackPresets, filteredDoorTypes,
+  backRouteGroups, backPocketGroups, backCustomGroups, onBackRouteGroupSelect, onBackPocketGroupSelect, onBackCustomGroupSelect,
 }: DoorEditorToolbarProps) {
   const [showPlacementPopup, setShowPlacementPopup] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
+  const isSlab = doorPartType === 'slab';
 
   // Close popup when clicking outside
   useEffect(() => {
@@ -103,9 +155,14 @@ export function DoorEditorToolbar({
 
   return (
     <div style={containerStyle}>
-      {/* Row 1: Material buttons */}
+      {/* Header */}
+      <div style={headerStyle}>Data Entry</div>
+
+      {/* Section 1: Finish */}
       <div style={rowStyle}>
-        {MATERIAL_CATS.map((cat) => {
+        <span style={sectionNum}>1</span>
+        <span style={sectionLabel}>Finish</span>
+        {MATERIAL_CATS.filter(cat => availableTextureCategories.includes(cat)).map((cat) => {
           const isActive = activeTextureCategory === cat;
           const hasTexture = selectedTextures[cat] !== null;
           return (
@@ -114,8 +171,6 @@ export function DoorEditorToolbar({
               onClick={() => onTextureCategoryChange(cat)}
               style={{
                 ...btnBase,
-                flex: 1,
-                justifyContent: 'center',
                 ...(isActive ? btnActive : {}),
                 ...(!isActive && !hasTexture ? { color: '#999' } : {}),
                 textTransform: 'capitalize',
@@ -127,19 +182,217 @@ export function DoorEditorToolbar({
           );
         })}
       </div>
+      <div style={sectionDivider} />
 
-      {/* Row 2: Front panel type buttons */}
+      {/* Section 2: Panel Type */}
+      {!isSlab && (<>
+        <div style={rowStyle}>
+          <span style={sectionNum}>2</span>
+          <span style={sectionLabel}>Panel Type</span>
+          {(filteredPanelTypes ?? PANEL_TYPES).map(({ value, label }) => {
+            const isActive = frontPanelType === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onFrontPanelTypeChange(value)}
+                style={{
+                  ...btnBase,
+                  ...(isActive ? btnActive : {}),
+                }}
+              >
+                {isActive ? '\u2713 ' : ''}{label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={sectionDivider} />
+      </>)}
+
+      {/* Section 3: Style */}
+      {!isSlab && (<>
+        <div style={rowStyle}>
+          <span style={sectionNum}>3</span>
+          <span style={sectionLabel}>Style</span>
+          <select
+            value={selectedConfigStyleId ?? ''}
+            onChange={(e) => onConfigStyleChange(e.target.value || null)}
+            style={{ ...selectStyle, flex: 1 }}
+            title="Door style (from Configure database)"
+          >
+            <option value="">-- Select Style --</option>
+            {configStyles.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+          <button
+            style={{ ...btnBase, flex: 'none' }}
+            title="Edit style configuration"
+            onClick={onEditStyleClick}
+          >
+            Edit
+          </button>
+        </div>
+        <div style={sectionDivider} />
+      </>)}
+
+      {/* Section 4: Edge Type */}
+      {!isSlab && (<>
+        <div style={rowStyle}>
+          <span style={sectionNum}>4</span>
+          <span style={sectionLabel}>Edge Type</span>
+          <select
+            value={edgeGroupId ?? ''}
+            onChange={(e) => onEdgeGroupChange(e.target.value ? Number(e.target.value) : null)}
+            style={{ ...selectStyle, flex: 1 }}
+            title="Edge Profile"
+          >
+            <option value="">None</option>
+            {edgeToolGroups.map((g) => (
+              <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
+            ))}
+          </select>
+        </div>
+        <div style={sectionDivider} />
+      </>)}
+
+      {/* Section 5: Back Type */}
+      {!isSlab && (<>
+        <div style={rowStyle}>
+          <span style={sectionNum}>5</span>
+          <span style={sectionLabel}>Back Type</span>
+          {BACK_PRESETS.map(({ value, label }) => {
+            if (filteredBackPresets && !filteredBackPresets.some(bp => bp.value === value)) return null;
+            const isActive = backPreset === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onBackPresetChange(isActive ? '' : value)}
+                style={{
+                  ...btnBase,
+                  padding: '3px 5px',
+                  fontSize: '10px',
+                  ...(isActive ? btnActive : {}),
+                }}
+              >
+                {isActive ? '\u2713 ' : ''}{label}
+              </button>
+            );
+          })}
+          {(!filteredBackPresets || filteredBackPresets.some(bp => bp.value === 'none')) && (
+            <button
+              onClick={() => onBackPresetChange('')}
+              style={{
+                ...btnBase,
+                padding: '3px 5px',
+                fontSize: '10px',
+                ...(backPreset === '' ? btnActive : {}),
+              }}
+              title="No back profile"
+            >
+              {backPreset === '' ? '\u2713 ' : ''}{'\u2298'}
+            </button>
+          )}
+        </div>
+        {/* Sub-dropdown for Route preset */}
+        {backPreset === 'back-route' && backRouteGroups.length > 0 && (
+          <div style={{ ...rowStyle, paddingLeft: 64 }}>
+            <select
+              value={customBackGroupId ?? ''}
+              onChange={(e) => {
+                if (!e.target.value) { onCustomBackGroupChange(null); return; }
+                const groupId = Number(e.target.value);
+                const entry = backRouteGroups.find(g => g.groupId === groupId);
+                if (entry) onBackRouteGroupSelect(groupId, entry.depth);
+              }}
+              style={{ ...selectStyle, flex: 1 }}
+              title="Back Route Tool Group"
+            >
+              <option value="">-- Select Route Group --</option>
+              {backRouteGroups.map((g) => (
+                <option key={g.groupId} value={g.groupId}>
+                  {g.groupName} ({g.depth.toFixed(2)}mm)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {/* Sub-dropdown for Pocket preset */}
+        {backPreset === 'back-pocket' && backPocketGroups.length > 0 && (
+          <div style={{ ...rowStyle, paddingLeft: 64 }}>
+            <select
+              value={customBackGroupId ?? ''}
+              onChange={(e) => {
+                if (!e.target.value) { onCustomBackGroupChange(null); return; }
+                const groupId = Number(e.target.value);
+                const entry = backPocketGroups.find(g => g.groupId === groupId);
+                if (entry) onBackPocketGroupSelect(groupId, entry.depth);
+              }}
+              style={{ ...selectStyle, flex: 1 }}
+              title="Back Pocket Tool Group"
+            >
+              <option value="">-- Select Pocket Group --</option>
+              {backPocketGroups.map((g) => (
+                <option key={g.groupId} value={g.groupId}>
+                  {g.groupName} ({g.depth.toFixed(2)}mm)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {/* Sub-dropdown for Custom preset (configured groups) */}
+        {backPreset === 'custom' && backCustomGroups.length > 0 && (
+          <div style={{ ...rowStyle, paddingLeft: 64 }}>
+            <select
+              value={customBackGroupId ?? ''}
+              onChange={(e) => {
+                if (!e.target.value) { onCustomBackGroupChange(null); return; }
+                const groupId = Number(e.target.value);
+                const entry = backCustomGroups.find(g => g.groupId === groupId);
+                if (entry) onBackCustomGroupSelect(groupId, entry.depth);
+              }}
+              style={{ ...selectStyle, flex: 1 }}
+              title="Custom Back Tool Group"
+            >
+              <option value="">-- Select Tool Group --</option>
+              {backCustomGroups.map((g) => (
+                <option key={g.groupId} value={g.groupId}>
+                  {g.groupName} ({g.depth.toFixed(2)}mm)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {/* Fallback: Custom with no configured groups shows ALL panel groups */}
+        {backPreset === 'custom' && backCustomGroups.length === 0 && (
+          <div style={{ ...rowStyle, paddingLeft: 64 }}>
+            <select
+              value={customBackGroupId ?? ''}
+              onChange={(e) => onCustomBackGroupChange(e.target.value ? Number(e.target.value) : null)}
+              style={{ ...selectStyle, flex: 1 }}
+              title="Custom Back Tool Group"
+            >
+              <option value="">-- Select Tool Group --</option>
+              {panelToolGroups.map((g) => (
+                <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div style={sectionDivider} />
+      </>)}
+
+      {/* Section 6: Door Type */}
       <div style={rowStyle}>
-        {PANEL_TYPES.map(({ value, label }) => {
-          const isActive = frontPanelType === value;
+        <span style={sectionNum}>6</span>
+        <span style={sectionLabel}>Door Type</span>
+        {(filteredDoorTypes ?? DOOR_TYPES).map(({ value, label }) => {
+          const isActive = doorPartType === value;
           return (
             <button
               key={value}
-              onClick={() => onFrontPanelTypeChange(value)}
+              onClick={() => onDoorPartTypeChange(value)}
               style={{
                 ...btnBase,
-                flex: 1,
-                justifyContent: 'center',
                 ...(isActive ? btnActive : {}),
               }}
             >
@@ -148,184 +401,96 @@ export function DoorEditorToolbar({
           );
         })}
       </div>
+      <div style={sectionDivider} />
 
-      {/* Row 3: Style dropdown + Edit + Star */}
-      <div style={rowStyle}>
-        <select
-          value={frontGroupId ?? ''}
-          onChange={(e) => onFrontGroupChange(e.target.value ? Number(e.target.value) : null)}
-          style={{ ...selectStyle, flex: 1 }}
-          title="Door Style (Front Tool Group)"
-        >
-          <option value="">-- Style --</option>
-          {panelToolGroups.map((g) => (
-            <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
-          ))}
-        </select>
-        <button style={btnBase} title="Edit style construction">
-          Edit
-        </button>
-        <button style={{ ...btnBase, fontSize: '13px' }} title="Add to favorites">
-          {'\u2605'}
-        </button>
-      </div>
-
-      {/* Row 4: Edge dropdown (full width) */}
-      <select
-        value={edgeGroupId ?? ''}
-        onChange={(e) => onEdgeGroupChange(e.target.value ? Number(e.target.value) : null)}
-        style={selectStyle}
-        title="Edge Profile"
-      >
-        <option value="">Edge: None</option>
-        {edgeToolGroups.map((g) => (
-          <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
-        ))}
-      </select>
-
-      {/* Row 5: Back preset buttons */}
-      <div style={rowStyle}>
-        {BACK_PRESETS.map(({ value, label }) => {
-          const isActive = backPreset === value;
-          return (
-            <button
-              key={value}
-              onClick={() => onBackPresetChange(isActive ? '' : value)}
-              style={{
-                ...btnBase,
-                flex: 1,
-                justifyContent: 'center',
-                padding: '3px 5px',
-                fontSize: '10px',
-                ...(isActive ? btnActive : {}),
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-        {/* None / clear button */}
-        <button
-          onClick={() => onBackPresetChange('')}
-          style={{
-            ...btnBase,
-            padding: '3px 5px',
-            fontSize: '10px',
-            ...(backPreset === '' ? btnActive : {}),
-          }}
-          title="No back profile"
-        >
-          {'\u2298'}
-        </button>
-      </div>
-
-      {/* Row 5b: Custom tool group dropdown (only when Custom is selected) */}
-      {backPreset === 'custom' && (
-        <select
-          value={customBackGroupId ?? ''}
-          onChange={(e) => onCustomBackGroupChange(e.target.value ? Number(e.target.value) : null)}
-          style={selectStyle}
-          title="Custom Back Tool Group"
-        >
-          <option value="">-- Select Tool Group --</option>
-          {panelToolGroups.map((g) => (
-            <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
-          ))}
-        </select>
-      )}
-
-      {/* Row 6: Door type buttons */}
-      <div style={rowStyle}>
-        {DOOR_TYPES.map(({ value, label }) => {
-          const isActive = doorPartType === value;
-          return (
-            <button
-              key={value}
-              onClick={() => onDoorPartTypeChange(value)}
-              style={{
-                ...btnBase,
-                flex: 1,
-                justifyContent: 'center',
-                ...(isActive ? btnActive : {}),
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Row 7: Hinge controls (only for doors) */}
-      {doorPartType === 'door' && (
+      {/* Section 7: Hinges */}
+      {doorPartType === 'door' && (<>
         <div style={rowStyle}>
+          <span style={sectionNum}>7</span>
+          <span style={sectionLabel}>Hinges</span>
           <button
-            onClick={() => onHingeSideChange('left')}
+            onClick={() => onHingeEnabledChange(false)}
             style={{
               ...btnBase,
-              flex: 1,
-              justifyContent: 'center',
-              ...(hingeSide === 'left' ? btnActive : {}),
+              ...(!hingeEnabled ? btnActive : {}),
             }}
           >
-            Left
+            {!hingeEnabled ? '\u2713 ' : ''}None
           </button>
           <button
-            onClick={() => onHingeSideChange('right')}
+            onClick={() => { onHingeEnabledChange(true); onHingeSideChange('left'); }}
             style={{
               ...btnBase,
-              flex: 1,
-              justifyContent: 'center',
-              ...(hingeSide === 'right' ? btnActive : {}),
+              ...(hingeEnabled && hingeSide === 'left' ? btnActive : {}),
             }}
           >
-            Right
+            {hingeEnabled && hingeSide === 'left' ? '\u2713 ' : ''}Left
           </button>
-          <input
-            type="number"
-            value={hingeCount}
-            min={2}
-            max={5}
-            onChange={(e) => onHingeCountChange(Math.max(2, Math.min(5, Number(e.target.value))))}
-            style={{ ...selectStyle, width: 44, textAlign: 'center' }}
-            title="Hinge quantity"
-          />
+          <button
+            onClick={() => { onHingeEnabledChange(true); onHingeSideChange('right'); }}
+            style={{
+              ...btnBase,
+              ...(hingeEnabled && hingeSide === 'right' ? btnActive : {}),
+            }}
+          >
+            {hingeEnabled && hingeSide === 'right' ? '\u2713 ' : ''}Right
+          </button>
+          {hingeEnabled && (
+            <input
+              type="number"
+              value={hingeCount}
+              min={2}
+              max={6}
+              onChange={(e) => onHingeCountChange(Math.max(2, Math.min(6, Number(e.target.value))))}
+              style={{ ...numInputStyle, width: 44, textAlign: 'center' }}
+              title="Hinge quantity"
+            />
+          )}
           <button
             onClick={onHingeAdvancedClick}
-            style={{ ...btnBase, fontSize: '10px', padding: '3px 6px' }}
+            style={{ ...btnBase, fontSize: '10px', padding: '3px 6px', flex: 'none' }}
             title="Advanced hinge settings"
           >
             Adv
           </button>
         </div>
-      )}
+        <div style={sectionDivider} />
+      </>)}
 
-      {/* Row 8: Handle / Knob controls */}
+      {/* Section 8: Handles */}
       <div style={rowStyle}>
+        <span style={sectionNum}>8</span>
+        <span style={sectionLabel}>Handles</span>
         <button
-          onClick={() => onHandleTypeChange(false)}
+          onClick={() => onHandleEnabledChange(false)}
           style={{
             ...btnBase,
-            flex: 1,
-            justifyContent: 'center',
-            ...(!isKnob ? btnActive : {}),
+            ...(!handleEnabled ? btnActive : {}),
           }}
         >
-          Handle
+          {!handleEnabled ? '\u2713 ' : ''}None
         </button>
         <button
-          onClick={() => onHandleTypeChange(true)}
+          onClick={() => { onHandleEnabledChange(true); onHandleTypeChange(false); }}
           style={{
             ...btnBase,
-            flex: 1,
-            justifyContent: 'center',
-            ...(isKnob ? btnActive : {}),
+            ...(handleEnabled && !isKnob ? btnActive : {}),
           }}
         >
-          Knob
+          {handleEnabled && !isKnob ? '\u2713 ' : ''}Handle
+        </button>
+        <button
+          onClick={() => { onHandleEnabledChange(true); onHandleTypeChange(true); }}
+          style={{
+            ...btnBase,
+            ...(handleEnabled && isKnob ? btnActive : {}),
+          }}
+        >
+          {handleEnabled && isKnob ? '\u2713 ' : ''}Knob
         </button>
 
-        {/* Placement popup button (door type only) */}
-        {doorPartType === 'door' && (
+        {/* Placement popup only when handles enabled */}
+        {handleEnabled && doorPartType === 'door' && (
           <div ref={popupRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setShowPlacementPopup(prev => !prev)}
@@ -334,6 +499,7 @@ export function DoorEditorToolbar({
                 fontSize: '10px',
                 padding: '3px 6px',
                 minWidth: 56,
+                flex: 'none',
               }}
               title="Handle placement"
             >
@@ -363,14 +529,71 @@ export function DoorEditorToolbar({
             )}
           </div>
         )}
-
         <button
           onClick={onHandleAdvancedClick}
-          style={{ ...btnBase, fontSize: '10px', padding: '3px 6px' }}
+          style={{ ...btnBase, fontSize: '10px', padding: '3px 6px', flex: 'none' }}
           title="Advanced handle settings"
         >
           Adv
         </button>
+      </div>
+
+      <div style={sectionDivider} />
+
+      {/* Section 9: Size */}
+      <div style={rowStyle}>
+        <span style={sectionNum}>9</span>
+        <span style={sectionLabel}>Size</span>
+        <label style={sizeDimLabel}>W</label>
+        <CommitNumberInput value={toDisplay(doorW)} step={inputStep} min={0}
+          onCommit={(v) => onDoorWChange(fromDisplay(v))}
+          style={sizeInputStyle} />
+        <label style={sizeDimLabel}>H</label>
+        <CommitNumberInput value={toDisplay(doorH)} step={inputStep} min={0}
+          onCommit={(v) => onDoorHChange(fromDisplay(v))}
+          style={sizeInputStyle} />
+        <label style={sizeDimLabel}>T</label>
+        <select
+          value={String(thickness)}
+          onChange={(e) => onThicknessChange(Number(e.target.value))}
+          style={sizeSelectStyle}
+        >
+          <option value="19.05">3/4&quot;</option>
+          <option value="22.225">7/8&quot;</option>
+          <option value="25.4">1&quot;</option>
+        </select>
+      </div>
+
+      <div style={sectionDivider} />
+
+      {/* Section 10: Price */}
+      <div style={rowStyle}>
+        <span style={sectionNum}>10</span>
+        <span style={sectionLabel}>Price</span>
+        <span style={{ ...inlineLabel, marginLeft: 'auto', color: '#999' }}>{'\u2014'}</span>
+      </div>
+      <div style={sectionDivider} />
+
+      {/* Add to Order */}
+      <button onClick={onAddToOrder} style={addToOrderBtnStyle}>
+        Add to Order
+      </button>
+
+      {/* Export + Warnings */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={onExport} style={exportBtnStyle}>Export</button>
+        {hardwareWarnings.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1 }}>
+            {hardwareWarnings.map((w, i) => (
+              <span key={i} style={{
+                color: w.severity === 'error' ? '#cc3333' : '#cc7700',
+                fontSize: '10px',
+              }}>
+                {w.severity === 'error' ? '\u2718' : '\u26A0'} {w.message}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -379,27 +602,35 @@ export function DoorEditorToolbar({
 // --- Styles ---
 
 const containerStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 8,
-  left: 8,
-  zIndex: 50,
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
-  background: 'rgba(255, 255, 255, 0.92)',
-  borderRadius: 6,
+  background: 'rgba(255, 255, 255, 0.95)',
   padding: 6,
-  border: '1px solid #ccc',
-  backdropFilter: 'blur(4px)',
+  borderBottom: '1px solid #ccc',
+  flexShrink: 0,
+  overflowY: 'auto',
+  minHeight: '100%',
+};
+
+const headerStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: '#333',
+  textAlign: 'center',
+  paddingBottom: 6,
+  borderBottom: '1px solid #ddd',
+  marginBottom: 8,
 };
 
 const rowStyle: React.CSSProperties = {
   display: 'flex',
   gap: 4,
+  width: '100%',
 };
 
 const btnBase: React.CSSProperties = {
-  padding: '4px 8px',
+  padding: '4px 10px',
   borderRadius: 4,
   border: '1px solid #999',
   background: '#fff',
@@ -411,6 +642,8 @@ const btnBase: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   gap: 4,
+  flex: 1,
+  minWidth: 0,
 };
 
 const btnActive: React.CSSProperties = {
@@ -430,6 +663,44 @@ const selectStyle: React.CSSProperties = {
   width: '100%',
 };
 
+const numInputStyle: React.CSSProperties = {
+  width: 54,
+  padding: '3px 4px',
+  borderRadius: 3,
+  border: '1px solid #999',
+  background: '#fff',
+  color: '#333',
+  fontSize: 11,
+  flexShrink: 0,
+};
+
+const inlineLabel: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: '#666',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+};
+
+const dividerStyle: React.CSSProperties = {
+  borderTop: '1px solid #ddd',
+  margin: '2px 0',
+};
+
+const exportBtnStyle: React.CSSProperties = {
+  padding: '4px 12px',
+  borderRadius: 4,
+  border: '1px solid #0077b3',
+  background: '#0088cc',
+  color: '#fff',
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
 const popupPanelStyle: React.CSSProperties = {
   position: 'absolute',
   top: '100%',
@@ -445,4 +716,82 @@ const popupPanelStyle: React.CSSProperties = {
   border: '1px solid #999',
   boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
   minWidth: 70,
+};
+
+const sectionNum: React.CSSProperties = {
+  ...btnBase,
+  flex: 'none',
+  width: 22,
+  padding: '2px 0',
+  fontSize: '10px',
+  cursor: 'default',
+  pointerEvents: 'none',
+  background: '#fff',
+  color: '#666',
+  fontWeight: 700,
+};
+
+const sectionLabel: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: '#666',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  minWidth: 52,
+};
+
+const sectionDivider: React.CSSProperties = {
+  borderTop: '1px solid #cce0f0',
+  margin: '2px 0',
+};
+
+// --- Size section ---
+
+const sizeDimLabel: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: '#555',
+  flexShrink: 0,
+};
+
+const sizeInputStyle: React.CSSProperties = {
+  width: 80,
+  padding: '6px 8px',
+  borderRadius: 4,
+  border: '2px solid #0088cc',
+  background: '#fff',
+  color: '#222',
+  fontSize: 18,
+  fontWeight: 600,
+  flexShrink: 0,
+};
+
+const sizeSelectStyle: React.CSSProperties = {
+  padding: '6px 8px',
+  borderRadius: 4,
+  border: '2px solid #0088cc',
+  background: '#fff',
+  color: '#222',
+  fontSize: 18,
+  fontWeight: 600,
+  cursor: 'pointer',
+  width: 80,
+  flexShrink: 0,
+};
+
+// --- Add to Order button ---
+
+const addToOrderBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 16px',
+  borderRadius: 4,
+  border: '1px solid #0077b3',
+  background: '#0088cc',
+  color: '#fff',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  letterSpacing: '0.5px',
 };

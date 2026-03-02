@@ -1,735 +1,339 @@
 [
   {
-    "doorName": "2.5 MDF FPS Door",
+    "doorName": "_S008 Inside Bead125 Door",
     "doorType": 3,
-    "operationCount": 0,
-    "operations": []
+    "operationCount": 1,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "alignment": 1,
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278,
+            "flipSide": false
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488,
+            "flipSide": false
+          }
+        ]
+      }
+    ]
   },
   {
-    "doorName": "2.5 MDF FPS TDF reduced rail",
+    "doorName": "_S008BP Inside Bead125 Door BACK POCKET",
     "doorType": 3,
-    "operationCount": 0,
-    "operations": []
+    "operationCount": 2,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "alignment": 1,
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278,
+            "flipSide": false
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488,
+            "flipSide": false
+          }
+        ]
+      },
+      {
+        "operationId": 2,
+        "toolGroupId": 58,
+        "toolGroupName": "_S000 Back Pocket (1/8\")",
+        "alignment": 1,
+        "depth": 3.175,
+        "flipSideOp": true,
+        "toolCount": 2,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.175,
+            "entryOffset": 6.34492,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.175,
+            "entryOffset": 1.2065,
+            "flipSide": false
+          }
+        ]
+      }
+    ]
   },
   {
-    "doorName": "2.5 MDF FPS DF",
+    "doorName": "_S008 Inside Bead125 Door MID RAIL",
     "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.25 MDF FPS Door",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.25 Tarvin Flat Panel Drawer (Reduced Rail)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "(2) Tarvin Flat Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC BEP SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC DR SR2.75_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC DR SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC DWR SR2_75_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC DWR SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC RR SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC TEP SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison 1PC WEP SR2-25_RP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63RP Madison Split 1PC DR SR2.75_RP  Tall",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Base End",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Door",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Drawer",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Reduced",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Tall End",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 PC SR2-50 Wall End",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.25 MDF FPS",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.25 MDF FPS TDF",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS BEP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS BKP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS Mini",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS Split",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS TEP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS WEP",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Back Panel 1)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Back Panel 2)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Back Panel 3)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Back Panel 4)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Base End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Tall End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel (Wall End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Applied Molding",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Arched",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Cathedral",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Drawer",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Drawer (Reduced Rail)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Flat Panel Square (Split Vertical)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Glass (1 Pane)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Glass (4 Pane)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Glass (6 Pane)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Glass (8 Pane)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Glass (No Frame)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Drawer Front",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Back Panel 1)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Back Panel 2)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Back Panel 3)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Back Panel 4)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Base End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Tall End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel (Wall End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel Drawer",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel Drawer (Reduced Rail)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel Square",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Flat Panel Square (Split Vertical)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Glass (1 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Glass (1 Pane) 2.25 Tarvin",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Glass (4 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Glass (6 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Glass (8 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Back Panel 1)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Back Panel 2)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Back Panel 3)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Back Panel 4)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Base End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Tall End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel (Wall End)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel Drawer",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel Drawer (Reduced Rail)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel Square",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "MDF Raised Panel Square (Split Vertical)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Mini MDF FPS DF",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Mitre Frame Door",
-    "doorType": 1,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Mitre Frame Drawer",
-    "doorType": 1,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Back Panel 1)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Back Panel 2)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Back Panel 3)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Back Panel 4)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Base End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Tall End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel (Wall End)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel Drawer",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel Drawer (Reduced Rail)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Raised Panel Square (Split Vertical)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Skinny Shaker",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Skinny Shaker DF",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Beveled DF",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Beveled Door",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Door _H",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Door_V",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Drawer_H",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Drawer_H with inset handles",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Drawer_V",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Slab Finger Notch DF",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tambour Door",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (2.25) split reverse raise",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (3) raised Panel Drawer",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (3) raised Panel Drawer (Reduced Rail)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (3) raised Panel Drawer (Reduced Rail)2.3753333",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (3) reverse raise",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin (3) split reverse raise",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "(2.5)Tarvin Flat Panel Drawer (Reduced Rail)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Drawer 2.25",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Drawer 2.25 Mini",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "(2.5)Tarvin Flat Panel Drawer",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel E114 S122",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "(2.5)Tarvin Flat Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Square  Glass",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Square  Mini",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Glass (3)  (1 Pane)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin MDF Drawer Front",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Rasied Panel Square  Copy",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Reverse Raised 3 reduced rail",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Reverse Raised 3 Tall Drawer",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "(2.5)Tarvin split Flat Panel Square",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
+    "operationCount": 2,
+    "operations": [
+      {
+        "operationId": 1,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "alignment": 1,
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278,
+            "flipSide": false
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488,
+            "flipSide": false
+          }
+        ]
+      },
+      {
+        "operationId": 2,
+        "toolGroupId": 70,
+        "toolGroupName": "_S008 Inside Bead125",
+        "alignment": 1,
+        "depth": 6.35,
+        "flipSideOp": false,
+        "toolCount": 6,
+        "tools": [
+          {
+            "toolId": 15,
+            "toolName": "1/2 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 6.34492,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 6.35,
+            "entryOffset": 1.1811,
+            "flipSide": false
+          },
+          {
+            "toolId": 61,
+            "toolName": "1/8 Downshear",
+            "isCNCDoor": false,
+            "toolDiameter": 3.2004,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -7.8613,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -0.2032,
+            "flipSide": false
+          },
+          {
+            "toolId": 214,
+            "toolName": "FROSTCNC-125R 1/8 Roundover",
+            "isCNCDoor": true,
+            "toolDiameter": 6.35,
+            "sharpCornerAngle": 0,
+            "entryDepth": 3.302,
+            "entryOffset": -6.5278,
+            "flipSide": false
+          },
+          {
+            "toolId": 168,
+            "toolName": "30° Sharp Corner Tool",
+            "isCNCDoor": false,
+            "toolDiameter": 12.7,
+            "sharpCornerAngle": 30,
+            "entryDepth": 3.302,
+            "entryOffset": -9.4488,
+            "flipSide": false
+          }
+        ]
+      }
+    ]
   },
   {
     "doorName": "Default Door",
@@ -740,150 +344,6 @@
   {
     "doorName": "Default Drawer",
     "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS Door horizontal split",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF Tim Rowland",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF Tim Rowland Left",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin Flat Panel Square (Split Vertical)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin RR (3-7.25BR 3.25TR)",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin RR (3-7.25BR 3.25TR) single",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Tarvin RR (3-7.25BR 3.25TR) Double",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF FPS BKP 4 panels",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2 S and R Tarvin Flat Panel Square  Copy",
-    "doorType": 0,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "V2.5 MDF FPS Door",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "V2.5 MDF FPS TDF reduced rail",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "V2.5 MDF FPS DF",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "2.5 MDF Glass (1 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Radius 2.5 Glass MDF Glass (1 Pane)",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Radius MDF Drawer Front",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Radius Banner Trash Door",
-    "doorType": 2,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Radius V2.5 MDF FPS Door",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "Radius V2.5 MDF FPS DF",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Door",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Drawer",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Reduced",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Base End",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Tall End",
-    "doorType": 3,
-    "operationCount": 0,
-    "operations": []
-  },
-  {
-    "doorName": "_S63 Flat Madison Wall End",
-    "doorType": 3,
     "operationCount": 0,
     "operations": []
   }
