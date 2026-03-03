@@ -220,3 +220,17 @@ Mozaik `.dat` files are organized in two folders configured via the Admin panel:
 - Each library contains `Doors.dat` — door definitions with operations referencing tool groups
 
 The CLI (`src/cli.ts`) reads all three files from hardcoded paths. The viewer's `/api/load` endpoint reads them dynamically based on Admin panel configuration.
+
+## Git Workflow
+
+**Branch strategy:** work on `dev`, merge to `main` when stable, then recreate `dev` from `main`.
+
+**Commit message rules — write for a human reading the log, not a machine:**
+- **Subject line** (first line): short imperative summary of *what changed and why*, max ~72 chars
+  - Good: `Add reset button to elevation view for stile/rail defaults`
+  - Good: `Fix back-face profile collapse when clipLocalY is negative`
+  - Bad: `e06cb80` (a hash tells nothing)
+  - Bad: `update` / `fix` / `changes` (too vague)
+- **Body** (optional, separated by blank line): bullet points for non-obvious details, breaking changes, or context
+- Use present-tense imperative: "Add", "Fix", "Remove", "Update" — not "Added" or "Adding"
+- Group related changes in one commit; unrelated changes in separate commits
