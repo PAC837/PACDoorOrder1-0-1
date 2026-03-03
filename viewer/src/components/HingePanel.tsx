@@ -43,6 +43,7 @@ export function HingePanel({
           <label style={styles.label}>Count:</label>
           <input type="number" value={hingeConfig.count} min={2} max={5}
             onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(5, Number(e.target.value))) }))}
+            onFocus={(e) => e.currentTarget.select()}
             style={{ ...styles.numberInput, width: 50 }} />
         </div>
         <div style={styles.selector}>

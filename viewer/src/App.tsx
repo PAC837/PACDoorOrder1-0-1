@@ -846,6 +846,21 @@ export default function App() {
     setSelectedSplitPath(null);
   }, []);
 
+  const handleResetElevation = useCallback(() => {
+    const style = selectedConfigStyleId
+      ? configData.matrix.find(s => s.id === selectedConfigStyleId)
+      : null;
+    const defaultStile = (style?.params.stileMin as NumberValue | undefined)?.value ?? 63.5;
+    const defaultRail  = (style?.params.railMin  as NumberValue | undefined)?.value ?? 63.5;
+    setLeftStileW(defaultStile);
+    setRightStileW(defaultStile);
+    setTopRailW(defaultRail);
+    setBottomRailW(defaultRail);
+    setPanelTree({ type: 'leaf' });
+    setSelectedPanels(new Set());
+    setSelectedSplitPath(null);
+  }, [selectedConfigStyleId, configData.matrix]);
+
   // Texture URL for 3D door — uses active category's blob URL
   const activeTexturePath = selectedTextures[activeTextureCategory];
   const textureUrl = activeTexturePath ? textureBlobUrls[activeTexturePath] : undefined;
@@ -1017,6 +1032,9 @@ export default function App() {
               onSplitWidthChange={handleSplitWidthChange}
               overrideLeftStileW={leftStileW}
               overrideRightStileW={rightStileW}
+              overrideTopRailW={topRailW}
+              overrideBottomRailW={bottomRailW}
+              onReset={handleResetElevation}
               onPanelSelect={handlePanelSelect}
               selectedPanelIndices={selectedPanels}
               onAddMidRail={handleAddMidRail}

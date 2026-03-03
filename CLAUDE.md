@@ -113,18 +113,27 @@ Schemas in `src/schemas/` define all data types with Zod. `shared.ts` has XML co
 
 ### Admin Panel & Server API (viewer/server/)
 
-The viewer includes a Vite plugin (`api-plugin.ts`) that adds server-side API routes:
+The viewer uses **Vite's built-in dev server** (port 5173) with a custom Vite plugin (`pacAdminPlugin` in `api-plugin.ts`) that registers API middleware. No separate Express/Fastify server.
 
-- **`/api/config`** (GET/POST) — persists two folder paths (CNC tools folder, door libraries folder) to `.pac-config.json`
-- **`/api/validate-tools`** (POST) — checks for `ToolGroups.dat` + `ToolLib.dat` in CNC tools folder
-- **`/api/validate-libraries`** (POST) — scans folder for subdirectories containing `Doors.dat`
-- **`/api/libraries`** (GET) — lists available door libraries
-- **`/api/load`** (POST) — dynamically parses a selected door library using the root package's compiled `dist/` parsers, writes JSON to `viewer/public/data/`, and returns the parsed data
-- **`/api/browse-folder`** (POST) — opens a native Windows folder picker dialog via PowerShell
+**Current server API routes (`/api/config/*`)** — SQLite-backed configure system:
+- `GET /api/config/matrix` — full door styles matrix with all param values
+- `POST /api/config/styles` — create new door style
+- `PATCH /api/config/styles/:id` — rename style
+- `DELETE /api/config/styles/:id` — delete style
+- `PUT /api/config/styles/:id/params/:key` — upsert parameter value
+- `POST /api/config/styles/reorder` — reorder style columns
+- `GET|POST /api/config/param-order` — get/save parameter display order
+- `POST /api/parse` — parse raw XML strings sent from browser, writes JSON to `viewer/public/data/`
 
-The pipeline (`pipeline.ts`) uses dynamic `import()` with cache-busting (`?t=${Date.now()}`) to load from `dist/` so that recompiled parsers take effect without restarting Vite.
+**Database** (`viewer/server/db.ts`): `better-sqlite3` SQLite database at `viewer/.pac-doorstyles.db` stores door style matrix with WAL mode.
 
-The Admin panel UI (`AdminPanel.tsx`) provides folder configuration and a library selector dropdown. The Canvas component stays mounted (hidden via `display: none`) during library switches to prevent WebGL context loss.
+**Config file** (`viewer/server/config.ts`): `.pac-config.json` persists folder paths, selected textures, param order.
+
+**Pipeline** (`viewer/server/pipeline.ts`): Dynamically imports root package parsers from `dist/` with `?t=${Date.now()}` cache-busting so recompiled parsers load without Vite restart.
+
+**File System Access API** (`viewer/src/utils/folderAccess.ts`): Folder picking, texture scanning, and library loading are handled entirely browser-side using the native File System Access API. Handles are persisted to IndexedDB. This replaced older server-side `/api/browse-folder`, `/api/load`, etc. routes.
+
+The Admin panel UI (`AdminPanel.tsx`) provides folder configuration and texture swatches. Textures are auto-selected (first file per category) when scanned so the 3D viewer works immediately. The Canvas component stays mounted (hidden via `display: none`) during library switches to prevent WebGL context loss.
 
 ### Tool offset convention
 
@@ -157,11 +166,46 @@ The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) 
 - **`DoorEditorToolbar.tsx`** — the **Data Entry** area (labeled "Data Entry" at top). This is the main panel where users configure door parameters: finish/texture, panel type, style selection, edge profiles, back operations, door type, handle placement, and hinge settings. All numbered sections (1–9) for building a door order.
 - **`ToolShapeViewer.tsx`** — standalone tab rendering tool profile shapes from `profiles.json` for visual inspection of CNC cutter geometry
 - **`OperationOverlay.tsx`** — right-side panel with per-operation expand/collapse and per-tool visibility checkboxes, controlling `OperationVisibility` and `ToolVisibility` state in `App.tsx`
+- **`CommitNumberInput.tsx`** — shared number input that only commits `onBlur` or Enter, avoiding expensive re-renders per keystroke. Selects all text `onFocus` for quick replacement. Used throughout HingePanel, HandlePanel, HingeAdvancedDialog, HandleAdvancedDialog, PanelSplitControls, ParamCell, GroupDepthListCell.
+- **`HingePanel.tsx`** / **`HandlePanel.tsx`** — sub-panels rendered inside HingeAdvancedDialog / HandleAdvancedDialog
+- **`PanelSplitControls.tsx`** — controls for split panel position and width
+- **`ElevationViewer.tsx`** — 2D front elevation rendering with inline click-to-edit overlays for stile/rail widths, hinge positions, and handle elevation
+- **`LayoutCustomizer.tsx`** — dashboard panel layout drag-to-resize customizer
+- **`OrderListPanel.tsx`** — order list panel for managing door order line items
+
+### Configure System
+
+`ConfigurePanel.tsx` → `ConfigureMatrix.tsx` provides a SQLite-backed parameter matrix:
+- **Columns** = named door styles (e.g. "S008 Shaker", "S012 Raised Panel")
+- **Rows** = parameters defined in `viewer/src/configParams.ts` (`PARAM_DEFINITIONS`)
+- **Values** persisted in `viewer/.pac-doorstyles.db` via `/api/config/*` routes
+- Drag-and-drop column reordering via `@dnd-kit`
+- Style editor dialog (`StyleEditorDialog.tsx`) for add/rename/delete/reorder
+
+**Parameter types** (`configParams.ts`):
+- `number` — numeric value with unit (mm/in), rendered as `CommitNumberInput`
+- `checkbox-list` — multi-select from dynamic tool group options
+- `fixed-checkbox-list` — multi-select from fixed option set
+- `group-depth-list` — per-group depth values
+- `boolean-radio` — Yes/No radio
+- `auto-checkbox` — checkbox that auto-enables based on conditions
+- `preset-checkbox` — checkbox with a named preset selection
+- `texture-checkbox-list` — grouped texture file paths with category/brand hierarchy
+
+**Hinge auto-count** — per-style configure params:
+- `hinge3Trigger`, `hinge4Trigger`, `hinge5Trigger`, `hinge6Trigger` (mm height thresholds)
+- `hingeEdgeDistance` (mm from edge to first/last hinge)
+- `computeAutoHingeCount()` in `App.tsx` watches door height + selected style, auto-sets `hingeConfig.count` and `edgeDistance`
+
+**Texture category filtering** — `textures` param (`texture-checkbox-list`) controls which category buttons appear in Data Entry toolbar. Empty list = raw + sanded only. Raw always shown. Active category defaults to Primed if available, else Raw.
+
+**Texture auto-select** — when `AdminPanel` scans a textures folder (mount or folder browse), `autoSelectTextures()` auto-selects the first file per category so the 3D viewer shows textures immediately without manual swatch selection.
 
 ## Key Dependencies
 
 - **Root:** `fast-xml-parser`, `zod`, `vitest`, `tsx`
 - **Viewer:** `three` (0.179), `@react-three/fiber`, `@react-three/drei`, `three-bvh-csg` (0.0.18), `react` 18, `vite` 6
+- **Viewer server:** `better-sqlite3` (SQLite for configure system), `@dnd-kit/core` + `@dnd-kit/sortable` (drag-and-drop reordering in ConfigureMatrix)
 
 ## Source Data
 

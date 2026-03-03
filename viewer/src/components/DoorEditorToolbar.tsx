@@ -442,6 +442,7 @@ export function DoorEditorToolbar({
               min={2}
               max={6}
               onChange={(e) => onHingeCountChange(Math.max(2, Math.min(6, Number(e.target.value))))}
+              onFocus={(e) => e.currentTarget.select()}
               style={{ ...numInputStyle, width: 44, textAlign: 'center' }}
               title="Hinge quantity"
             />

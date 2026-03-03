@@ -53,6 +53,7 @@ export function HingeAdvancedDialog({
           <label style={labelStyle}>Count:</label>
           <input type="number" value={hingeConfig.count} min={2} max={6}
             onChange={(e) => setHingeConfig(prev => ({ ...prev, count: Math.max(2, Math.min(6, Number(e.target.value))) }))}
+            onFocus={(e) => e.currentTarget.select()}
             style={{ ...inputStyle, width: 50 }} />
         </div>
 

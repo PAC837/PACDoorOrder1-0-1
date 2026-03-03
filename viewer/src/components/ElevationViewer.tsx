@@ -25,6 +25,9 @@ interface ElevationViewerProps {
   onSplitWidthChange?: (path: number[], w: number) => void;
   overrideLeftStileW?: number;
   overrideRightStileW?: number;
+  overrideTopRailW?: number;
+  overrideBottomRailW?: number;
+  onReset?: () => void;
   onPanelSelect?: (idx: number, event: { ctrlKey: boolean }) => void;
   selectedPanelIndices?: Set<number>;
   onAddMidRail?: (panelIdx: number) => void;
@@ -103,9 +106,9 @@ export function ElevationViewer({
   door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
   onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
-  onSplitWidthChange, overrideLeftStileW, overrideRightStileW,
+  onSplitWidthChange, overrideLeftStileW, overrideRightStileW, overrideTopRailW, overrideBottomRailW,
   onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile, onDeselectAll,
-  hingeConfig, onHingePositionChange, onHandleElevationChange, compact,
+  hingeConfig, onHingePositionChange, onHandleElevationChange, compact, onReset,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -147,8 +150,8 @@ export function ElevationViewer({
   const doorH = door.DefaultH;
   const leftStileW = overrideLeftStileW ?? door.LeftRightStileW;
   const rightStileW = overrideRightStileW ?? door.LeftRightStileW;
-  const topRailW = door.TopRailW;
-  const bottomRailW = door.BottomRailW;
+  const topRailW = overrideTopRailW ?? door.TopRailW;
+  const bottomRailW = overrideBottomRailW ?? door.BottomRailW;
 
   // Root panel bounds (computed once, used by hit-testing and drawing)
   const rootBounds: PanelBounds = useMemo(() => ({
@@ -1445,6 +1448,7 @@ export function ElevationViewer({
                   setEditingMember(null);
                 }
               }}
+              onFocus={(e) => e.currentTarget.select()}
               onBlur={() => setEditingMember(null)}
             />
           </div>
@@ -1487,6 +1491,7 @@ export function ElevationViewer({
                   setEditingHinge(null);
                 }
               }}
+              onFocus={(e) => e.currentTarget.select()}
               onBlur={() => setEditingHinge(null)}
             />
           </div>
@@ -1529,6 +1534,7 @@ export function ElevationViewer({
                   setEditingHandle(null);
                 }
               }}
+              onFocus={(e) => e.currentTarget.select()}
               onBlur={() => setEditingHandle(null)}
             />
           </div>
@@ -1609,6 +1615,13 @@ export function ElevationViewer({
             }}
             title={singleView ? 'Show Front & Back' : 'Show Front Only'}
           >{singleView ? '1' : '1|2'}</button>
+          {onReset && (
+            <button
+              onClick={onReset}
+              style={measureBtnStyle}
+              title="Reset stile/rail widths and mid splits to style defaults"
+            >Reset</button>
+          )}
         </div>
         {isZoomed && (
           <button

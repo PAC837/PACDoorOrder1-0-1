@@ -15,6 +15,7 @@ export function CommitNumberInput({ value, onCommit, style, ...props }: {
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
+      onFocus={(e) => e.target.select()}
       onKeyDown={(e) => { if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); } }}
       style={style}
       {...props}
