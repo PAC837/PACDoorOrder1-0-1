@@ -6,7 +6,8 @@ import { useDoorData } from './hooks/useDoorData.js';
 import { DoorViewer } from './components/DoorViewer.js';
 import { CrossSectionViewer } from './components/CrossSectionViewer.js';
 import type { CrossSectionViewerHandle } from './components/CrossSectionViewer.js';
-import { OrderListPanel } from './components/OrderListPanel.js';
+import { OrderPanel } from './components/OrderPanel.js';
+import { ItemViewerModal } from './components/ItemViewerModal.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ElevationViewer } from './components/ElevationViewer.js';
 import { DoorEditorToolbar, PANEL_TYPES, BACK_PRESETS, DOOR_TYPES } from './components/DoorEditorToolbar.js';
@@ -16,32 +17,60 @@ import { StyleEditorDialog } from './components/StyleEditorDialog.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
-import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf } from './utils/panelTree.js';
-import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, TextureManifest } from './types.js';
+import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf, removeSplit, buildSplitChain, replaceLeafAt } from './utils/panelTree.js';
+import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest } from './types.js';
 import { MATERIAL_THICKNESS, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG, DEFAULT_LAYOUT, COMPACT_LAYOUT, PANEL_DISPLAY_NAMES, ALL_SLOTS } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
 import { LayoutCustomizer } from './components/LayoutCustomizer.js';
 import { ConfigurePanel } from './components/ConfigurePanel.js';
 import { useConfigData } from './hooks/useConfigData.js';
+import { useOrderColumns } from './hooks/useOrderColumns.js';
+import { useGroupByConfig } from './hooks/useGroupByConfig.js';
+import { useWatermarkConfig, watermarkFontSize } from './hooks/useWatermarkConfig.js';
 import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue } from './configParams.js';
 
 type Tab = 'door' | 'admin' | 'configure';
 
 export interface OrderItem {
   id: number;
+  selectionKey: string;
+  selectionLabel: string;
+  qty: number;
+  note: string;
+  roomName: string;
+  cabNumber: string;
+  material: string;
+  doorW: number;
+  doorH: number;
+  thickness: number;
   textureCategory: string;
-  frontPanelType: PanelType;
   styleName: string;
   edgeName: string;
   backLabel: string;
   doorType: string;
+  frontPanelType: PanelType;
   hingeSummary: string;
   handleSummary: string;
-  doorW: number;
-  doorH: number;
-  thickness: number;
+  hingesDisplay: string;
+  hardwareDisplay: string;
+  customData: Record<string, string>;
+  price: number;
   crossSectionImage: string | null;
+  panelTree: PanelTree;
+  leftStileW: number;
+  rightStileW: number;
+  topRailW: number;
+  bottomRailW: number;
+  activeDoor: DoorData;
+  hingeConfig: HingeConfig;
+  handleConfig: HandleConfig;
+}
+
+/** Registry entry for one style tab (keyed by styleName). */
+interface StyleTabMeta {
+  label: string;
+  styleId: string | null;
 }
 
 /** Resets camera position when door dimensions change. Must be inside Canvas. */
@@ -121,6 +150,10 @@ export default function App() {
     try { const s = localStorage.getItem('pac-layout-preset'); if (s === 'compact') return 'compact'; } catch {}
     return 'default';
   });
+  const [compactLayoutMapping, setCompactLayoutMapping] = useState<CompactLayoutMapping>(() => {
+    try { const s = localStorage.getItem('pac-compact-layout-mapping'); if (s) return JSON.parse(s); } catch {}
+    return { ...COMPACT_LAYOUT };
+  });
   const [showLayoutCustomizer, setShowLayoutCustomizer] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const slotRefs = useRef<Record<string, HTMLDivElement | null>>({
@@ -130,6 +163,12 @@ export default function App() {
   const crossSectionRef = useRef<CrossSectionViewerHandle>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const nextOrderId = useRef(1);
+  const [selectionRegistry, setSelectionRegistry] = useState<Map<string, StyleTabMeta>>(new Map());
+  const { columns, setColumns } = useOrderColumns();
+  const { groupByFields, setGroupByFields } = useGroupByConfig();
+  const { watermarkConfig, setWatermarkConfig } = useWatermarkConfig();
+  const [orderQty, setOrderQty] = useState(1);
+  const [viewingItem, setViewingItem] = useState<OrderItem | null>(null);
   const preSlabGroups = useRef<{ frontGroupId: number | null; backGroupId: number | null; edgeGroupId: number | null } | null>(null);
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [selectedTextures, setSelectedTextures] = useState<{
@@ -146,21 +185,49 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('pac-layout-preset', layoutPreset);
   }, [layoutPreset]);
+  useEffect(() => {
+    localStorage.setItem('pac-compact-layout-mapping', JSON.stringify(compactLayoutMapping));
+  }, [compactLayoutMapping]);
 
   // Which slot currently holds the 3D canvas?
   const canvasSlot = useMemo(() => {
-    if (layoutPreset === 'compact') return 'right-top-left';
+    if (layoutPreset === 'compact') {
+      for (const [slot, panel] of Object.entries(compactLayoutMapping)) {
+        if (panel === 'canvas3d') return slot;
+      }
+      return 'right-top-left';
+    }
     for (const [slot, panel] of Object.entries(layoutMapping)) {
       if (panel === 'canvas3d') return slot;
     }
     return 'left-bot';
-  }, [layoutMapping, layoutPreset]);
+  }, [layoutMapping, compactLayoutMapping, layoutPreset]);
 
   // Swap two slots in the layout
   const swapPanels = useCallback((a: SlotPosition, b: SlotPosition) => {
     if (a === b) return;
     setLayoutMapping(prev => ({ ...prev, [a]: prev[b], [b]: prev[a] }));
   }, []);
+
+  // Swap two slots in the compact layout
+  const swapCompactPanels = useCallback((a: CompactSlotPosition, b: CompactSlotPosition) => {
+    if (a === b) return;
+    setCompactLayoutMapping(prev => ({ ...prev, [a]: prev[b], [b]: prev[a] }));
+  }, []);
+
+  // Delete selected split on Delete/Backspace key
+  useEffect(() => {
+    if (!selectedSplitPath) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        setPanelTree(prev => removeSplit(prev, selectedSplitPath));
+        setSelectedSplitPath(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedSplitPath]);
 
   // Close Admin/Configure overlay on Escape
   useEffect(() => {
@@ -715,11 +782,33 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [activeDoor, isGenericDoor, frontPanelType, backPanelType, thickness, edgeGroupId]);
 
-  // Add current door config to order list
-  const handleAddToOrder = useCallback(() => {
-    // Build style name from config
+  // Add an item to the order (called by "Add to Order" button in DoorEditorToolbar)
+  const handleAddOrderItem = useCallback((qty: number, note: string, w: number, h: number) => {
+    if (!activeDoor) return;
+
+    // Style name and group key
     const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
     const styleName = style?.displayName ?? 'None';
+    // Door type label (used in selectionKey for grouping)
+    const doorTypeLabels: Record<string, string> = {
+      door: 'Door', drawer: 'Drawer', 'reduced-rail': 'Reduced', slab: 'Slab', 'end-panel': 'End Panel',
+    };
+    const doorTypeLabel = doorTypeLabels[doorPartType] || doorPartType;
+    // selectionKey is used for row grouping within the style tab
+    const selectionKey = `${styleName}||${doorTypeLabel}||${activeTextureCategory}`;
+    // Tab is keyed by styleName only
+    const styleTabKey = styleName;
+    const selectionLabel = styleName; // label shown in tab
+
+    // Register style tab if not already in registry
+    if (!selectionRegistry.has(styleTabKey)) {
+      const capturedId = selectedConfigStyleId;
+      setSelectionRegistry(prev => {
+        const next = new Map(prev);
+        next.set(styleTabKey, { label: selectionLabel, styleId: capturedId });
+        return next;
+      });
+    }
 
     // Edge name
     const edgeGroup = filteredEdgeToolGroups.find(g => g.ToolGroupID === edgeGroupId);
@@ -763,33 +852,100 @@ export default function App() {
       handleSummary = '\u2014';
     }
 
-    // Door type label
-    const doorTypeLabels: Record<string, string> = {
-      door: 'Door', drawer: 'Drawer', 'reduced-rail': 'Reduced', slab: 'Slab', 'end-panel': 'End Panel',
-    };
+    // Hinge / hardware display columns
+    const hingesDisplay =
+      doorPartType === 'door' && hingeConfig.enabled
+        ? `${hingeConfig.side[0].toUpperCase()} ${hingeConfig.count}`
+        : doorPartType === 'slab' ? '\u2014' : 'NA';
 
-    // Capture cross-section
+    const hardwareDisplay =
+      handleConfig.enabled && doorPartType !== 'slab'
+        ? (handleConfig.holeSeparation === 0 ? 'K' : 'H')
+        : doorPartType === 'slab' ? '\u2014' : 'NA';
+
+    // Capture cross-section snapshot
     const crossSectionImage = crossSectionRef.current?.captureSnapshot() ?? null;
+
+    // Price: $15/sqft
+    const price = Math.round((w / 304.8) * (h / 304.8) * 15 * 100) / 100;
 
     const item: OrderItem = {
       id: nextOrderId.current++,
+      selectionKey,
+      selectionLabel,
+      qty,
+      note,
+      roomName: '',
+      cabNumber: '',
+      material: '',
+      doorW: w,
+      doorH: h,
+      thickness,
       textureCategory: activeTextureCategory,
-      frontPanelType,
       styleName,
       edgeName,
       backLabel,
-      doorType: doorTypeLabels[doorPartType] || doorPartType,
+      doorType: doorTypeLabel,
+      frontPanelType,
       hingeSummary,
       handleSummary,
-      doorW,
-      doorH,
-      thickness,
+      hingesDisplay,
+      hardwareDisplay,
+      customData: {},
+      price,
       crossSectionImage,
+      panelTree,
+      leftStileW,
+      rightStileW,
+      topRailW,
+      bottomRailW,
+      activeDoor,
+      hingeConfig: { ...hingeConfig },
+      handleConfig: { ...handleConfig },
     };
     setOrderItems(prev => [...prev, item]);
   }, [configData.matrix, selectedConfigStyleId, filteredEdgeToolGroups, edgeGroupId,
       backPreset, backGroupId, filteredPanelToolGroups, doorPartType, hingeConfig,
-      handleConfig, activeTextureCategory, frontPanelType, doorW, doorH, thickness]);
+      handleConfig, activeTextureCategory, frontPanelType, thickness, activeDoor,
+      panelTree, leftStileW, rightStileW, topRailW, bottomRailW, selectionRegistry]);
+
+  const handleUpdateOrderItem = useCallback((id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData'>>) => {
+    setOrderItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      if (changes.customData) {
+        return { ...item, ...changes, customData: { ...item.customData, ...changes.customData } };
+      }
+      return { ...item, ...changes };
+    }));
+  }, []);
+
+  const handleAddToOrder = useCallback(() => {
+    handleAddOrderItem(orderQty, '', doorW, doorH);
+  }, [handleAddOrderItem, orderQty, doorW, doorH]);
+
+  const handleQuickAdd = useCallback((h: number, w: number) => {
+    handleAddOrderItem(1, '', w, h);
+  }, [handleAddOrderItem]);
+
+  const handleLoadOrderItem = useCallback((item: OrderItem) => {
+    setDoorW(item.doorW);
+    setDoorH(item.doorH);
+    setPanelTree(item.panelTree);
+    setLeftStileW(item.leftStileW);
+    setRightStileW(item.rightStileW);
+    setTopRailW(item.topRailW);
+    setBottomRailW(item.bottomRailW);
+    setHingeConfig(item.hingeConfig);
+    setHandleConfig(item.handleConfig);
+    setFrontPanelType(item.frontPanelType);
+    setActiveTextureCategory(item.textureCategory as 'painted' | 'primed' | 'raw' | 'sanded');
+  }, []);
+
+  const handleSelectionTabClick = useCallback((key: string) => {
+    const meta = selectionRegistry.get(key);
+    if (!meta) return;
+    if (meta.styleId !== null) handleConfigStyleChange(meta.styleId);
+  }, [selectionRegistry, handleConfigStyleChange]);
 
   const handlePanelSelect = useCallback((idx: number, event: { ctrlKey: boolean }) => {
     setSelectedSplitPath(null);
@@ -841,6 +997,29 @@ export default function App() {
     setSelectedPanels(new Set());
   }, [panelBounds]);
 
+  const handleDeleteSplit = useCallback((path: number[]) => {
+    setPanelTree(prev => removeSplit(prev, path));
+    setSelectedSplitPath(null);
+  }, []);
+
+  const handleAddEqualMidRails = useCallback((panelIdx: number, count: number) => {
+    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
+    const pb = panelBounds[panelIdx];
+    const span = pb.xMax - pb.xMin;
+    const positions = Array.from({ length: count - 1 }, (_, k) => pb.xMin + (k + 1) * span / count);
+    setPanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('hsplit', positions, 76.2)));
+    setSelectedPanels(new Set());
+  }, [panelBounds]);
+
+  const handleAddEqualMidStiles = useCallback((panelIdx: number, count: number) => {
+    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
+    const pb = panelBounds[panelIdx];
+    const span = pb.yMax - pb.yMin;
+    const positions = Array.from({ length: count - 1 }, (_, k) => pb.yMin + (k + 1) * span / count);
+    setPanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('vsplit', positions, 76.2)));
+    setSelectedPanels(new Set());
+  }, [panelBounds]);
+
   const handleDeselectAll = useCallback(() => {
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
@@ -873,6 +1052,18 @@ export default function App() {
   const elevationTree = activeDoor
     ? (isGenericDoor ? panelTree : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider))
     : panelTree; // fallback for when no door is active
+
+  // Current style key — used to auto-sync the Order panel's active tab to the selected style
+  const currentSelectionKey = useMemo(() => {
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    return style?.displayName ?? 'None';
+  }, [configData.matrix, selectedConfigStyleId]);
+
+  // Ordered list of selection tabs (insertion order preserved by Map)
+  const selectionTabs = useMemo(
+    () => Array.from(selectionRegistry.entries()).map(([key, meta]) => ({ key, label: meta.label })),
+    [selectionRegistry],
+  );
 
   // Shared toolbar props (rendered in two positions for swap, but only one visible at a time)
   const toolbarProps = {
@@ -964,10 +1155,18 @@ export default function App() {
     toDisplay, fromDisplay, inputStep,
     onExport: handleExport,
     onAddToOrder: handleAddToOrder,
+    orderQty,
+    onOrderQtyChange: setOrderQty,
     hardwareWarnings,
     filteredPanelTypes,
     filteredBackPresets,
     filteredDoorTypes,
+    paintManifest: textureManifest?.painted ?? {},
+    textureBlobUrls,
+    onPaintColorSelect: (path: string, blobUrl: string | null) => {
+      setSelectedTextures(prev => ({ ...prev, painted: path }));
+      if (path && blobUrl) setTextureBlobUrls(prev => ({ ...prev, [path]: blobUrl }));
+    },
   };
 
   // Camera distance based on door size (use actual doorW/doorH for generic mode)
@@ -977,7 +1176,7 @@ export default function App() {
   // Render content for a given layout slot
   const renderSlotContent = useCallback((slot: string) => {
     const panelId = layoutPreset === 'compact'
-      ? COMPACT_LAYOUT[slot as CompactSlotPosition]
+      ? compactLayoutMapping[slot as CompactSlotPosition]
       : layoutMapping[slot as SlotPosition];
     const placeholder = (text: string) => (
       <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -1010,6 +1209,9 @@ export default function App() {
               units={units}
               edgeGroupId={edgeGroupId}
               thickness={thickness}
+              watermark={watermarkConfig.text || undefined}
+              watermarkSize={watermarkFontSize(watermarkConfig.size)}
+              watermarkOpacity={watermarkConfig.opacity}
             />
           ) : placeholder(loading ? 'Loading...' : 'Select a tool group to begin')
         ) : panelId === 'elevation' ? (
@@ -1039,6 +1241,9 @@ export default function App() {
               selectedPanelIndices={selectedPanels}
               onAddMidRail={handleAddMidRail}
               onAddMidStile={handleAddMidStile}
+              onDeleteSplit={handleDeleteSplit}
+              onAddEqualMidRails={handleAddEqualMidRails}
+              onAddEqualMidStiles={handleAddEqualMidStiles}
               onDeselectAll={handleDeselectAll}
               hingeConfig={hingeConfig}
               onHingePositionChange={handleHingePositionChange}
@@ -1047,10 +1252,20 @@ export default function App() {
           ) : placeholder('Elevation')
         ) : (
           // orderList
-          <OrderListPanel
+          <OrderPanel
             items={orderItems}
-            onRemoveItem={(id) => setOrderItems(prev => prev.filter(i => i.id !== id))}
+            columns={columns}
+            groupByFields={groupByFields}
+            styleTabs={selectionTabs}
+            currentStyleKey={currentSelectionKey}
             units={units}
+            onAddItem={handleAddOrderItem}
+            onRemoveItem={(id) => setOrderItems(prev => prev.filter(i => i.id !== id))}
+            onUpdateItem={handleUpdateOrderItem}
+            onViewItem={setViewingItem}
+            onStyleTabClick={handleSelectionTabClick}
+            onQuickAdd={handleQuickAdd}
+            onLoadItem={handleLoadOrderItem}
           />
         )}
       </div>
@@ -1059,7 +1274,9 @@ export default function App() {
       profiles, frontPanelType, backPanelType,
       hasBackRabbit, units, edgeGroupId, thickness, loading, elevationTree, handleConfig,
       elevationRenderMode, selectedSplitPath, leftStileW, rightStileW, selectedPanels, hingeConfig,
-      orderItems]);
+      orderItems, selectionTabs, currentSelectionKey, columns, groupByFields, handleAddOrderItem,
+      handleUpdateOrderItem, handleSelectionTabClick, handleQuickAdd, handleLoadOrderItem,
+      handleDeleteSplit, handleAddEqualMidRails, handleAddEqualMidStiles, watermarkConfig, orderQty]);
 
   return (
     <div style={styles.container}>
@@ -1241,6 +1458,9 @@ export default function App() {
             onClose={() => setShowLayoutCustomizer(false)}
             layoutPreset={layoutPreset}
             onPresetChange={setLayoutPreset}
+            compactLayoutMapping={compactLayoutMapping}
+            onCompactSwap={swapCompactPanels}
+            onCompactReset={() => setCompactLayoutMapping({ ...COMPACT_LAYOUT })}
           />
         )}
       </div>
@@ -1267,6 +1487,12 @@ export default function App() {
               onLibrariesChanged={setLibraries}
               textureManifest={textureManifest}
               onTextureManifestChanged={setTextureManifest}
+              columns={columns}
+              onColumnsChange={setColumns}
+              groupByFields={groupByFields}
+              onGroupByChange={setGroupByFields}
+              watermarkConfig={watermarkConfig}
+              onWatermarkChange={setWatermarkConfig}
             />
           </div>
         </div>
@@ -1335,6 +1561,14 @@ export default function App() {
           toDisplay={toDisplay}
           units={units}
           onClose={() => setShowStyleEditor(false)}
+        />
+      )}
+
+      {viewingItem && (
+        <ItemViewerModal
+          item={viewingItem}
+          units={units}
+          onClose={() => setViewingItem(null)}
         />
       )}
     </div>

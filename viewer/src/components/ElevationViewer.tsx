@@ -32,6 +32,9 @@ interface ElevationViewerProps {
   selectedPanelIndices?: Set<number>;
   onAddMidRail?: (panelIdx: number) => void;
   onAddMidStile?: (panelIdx: number) => void;
+  onDeleteSplit?: (path: number[]) => void;
+  onAddEqualMidRails?: (panelIdx: number, count: number) => void;
+  onAddEqualMidStiles?: (panelIdx: number, count: number) => void;
   onDeselectAll?: () => void;
   hingeConfig?: HingeConfig;
   onHingePositionChange?: (index: number, newPositionMm: number) => void;
@@ -107,7 +110,8 @@ export function ElevationViewer({
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
   onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
   onSplitWidthChange, overrideLeftStileW, overrideRightStileW, overrideTopRailW, overrideBottomRailW,
-  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile, onDeselectAll,
+  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile,
+  onDeleteSplit, onAddEqualMidRails, onAddEqualMidStiles, onDeselectAll,
   hingeConfig, onHingePositionChange, onHandleElevationChange, compact, onReset,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -120,7 +124,7 @@ export function ElevationViewer({
   const [isPanning, setIsPanning] = useState(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
-  const [showDimensions, setShowDimensions] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(true);
   const [showHatching, setShowHatching] = useState(true);
   const [showHardware, setShowHardware] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
@@ -1539,8 +1543,8 @@ export function ElevationViewer({
             />
           </div>
         )}
-        {/* MR/MS overlay buttons — show when exactly 1 panel selected */}
-        {selectedPanelIndices && selectedPanelIndices.size === 1 && (onAddMidRail || onAddMidStile) && (() => {
+        {/* MR/MS + equal-split overlay — show when exactly 1 panel selected */}
+        {selectedPanelIndices && selectedPanelIndices.size === 1 && (onAddMidRail || onAddMidStile || onAddEqualMidRails || onAddEqualMidStiles) && (() => {
           const idx = [...selectedPanelIndices][0];
           if (idx < 0 || idx >= leaves.length) return null;
           const pb = leaves[idx];
@@ -1554,26 +1558,110 @@ export function ElevationViewer({
               transform: 'translate(-50%, -50%)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 2,
+              alignItems: 'center',
+              gap: 3,
               zIndex: 15,
               pointerEvents: 'auto',
             }}>
-              {onAddMidRail && (
-                <button
-                  onClick={() => onAddMidRail(idx)}
-                  style={mrMsBtnStyle}
-                  title="Add Mid Rail"
-                >MR</button>
-              )}
-              {onAddMidStile && (
-                <button
-                  onClick={() => onAddMidStile(idx)}
-                  style={mrMsBtnStyle}
-                  title="Add Mid Stile"
-                >MS</button>
-              )}
+              {/* Rail group: MR + equal-rail buttons */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {onAddMidRail && (
+                  <button onClick={() => onAddMidRail(idx)} style={mrMsBtnStyle} title="Add Mid Rail">MR</button>
+                )}
+                {onAddEqualMidRails && [2, 3, 4].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => onAddEqualMidRails(idx, n)}
+                    style={{ ...mrMsBtnStyle, background: 'rgba(40,130,90,0.9)', border: '1px solid #44bb77', padding: '1px 5px', fontSize: '10px' }}
+                    title={`${n} equal horizontal panels`}
+                  >=R{n}</button>
+                ))}
+              </div>
+              {/* Stile group: MS + equal-stile buttons */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {onAddMidStile && (
+                  <button onClick={() => onAddMidStile(idx)} style={mrMsBtnStyle} title="Add Mid Stile">MS</button>
+                )}
+                {onAddEqualMidStiles && [2, 3, 4].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => onAddEqualMidStiles(idx, n)}
+                    style={{ ...mrMsBtnStyle, background: 'rgba(80,80,140,0.9)', border: '1px solid #8888cc', padding: '1px 5px', fontSize: '10px' }}
+                    title={`${n} equal vertical panels`}
+                  >=S{n}</button>
+                ))}
+              </div>
             </div>
           );
+        })()}
+        {/* Delete-split overlay button — show when a split is selected */}
+        {selectedSplitPath && onDeleteSplit && (() => {
+          const sp = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
+          if (!sp) return null;
+          const b = sp.bounds;
+          let btnX: number, btnY: number;
+          if (sp.type === 'hsplit') {
+            btnX = toX((b.yMin + b.yMax) / 2);
+            btnY = toY(sp.pos);
+          } else {
+            btnX = toX(sp.pos);
+            btnY = toY((b.xMin + b.xMax) / 2);
+          }
+          return (
+            <div style={{ position: 'absolute', left: btnX, top: btnY, transform: 'translate(-50%, -50%)', zIndex: 20, pointerEvents: 'auto' }}>
+              <button
+                onClick={() => onDeleteSplit(selectedSplitPath)}
+                style={{ ...mrMsBtnStyle, background: 'rgba(200, 60, 60, 0.9)', border: '1px solid #dd4444', padding: '1px 6px', fontSize: '13px', lineHeight: '16px' }}
+                title="Delete split (Delete key)"
+              >✕</button>
+            </div>
+          );
+        })()}
+        {/* Drag dimension callouts — live panel size labels during split drag */}
+        {draggingSplit && (() => {
+          const sp = splitsWithBounds.find(s => pathsEqual(s.path, draggingSplit.path));
+          if (!sp) return null;
+          const pos = draggingSplit.currentPos;
+          const pb = sp.parentBounds;
+          const hw = sp.width / 2;
+          const pillStyle: React.CSSProperties = {
+            position: 'absolute',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(20, 20, 40, 0.82)',
+            color: '#ffdd88',
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '2px 7px',
+            borderRadius: 10,
+            pointerEvents: 'none',
+            zIndex: 25,
+            whiteSpace: 'nowrap',
+          };
+          if (draggingSplit.type === 'hsplit') {
+            const botH = Math.max(0, pos - hw - pb.xMin);
+            const topH = Math.max(0, pb.xMax - pos - hw);
+            const cx = toX((pb.yMin + pb.yMax) / 2);
+            const botY = toY(pb.xMin + botH / 2);
+            const topY = toY(pb.xMax - topH / 2);
+            return (
+              <>
+                <div style={{ ...pillStyle, left: cx, top: botY }}>{fmtDim(botH)}</div>
+                <div style={{ ...pillStyle, left: cx, top: topY }}>{fmtDim(topH)}</div>
+              </>
+            );
+          } else {
+            const leftW = Math.max(0, pos - hw - pb.yMin);
+            const rightW = Math.max(0, pb.yMax - pos - hw);
+            const cy = toY((pb.xMin + pb.xMax) / 2);
+            const leftX = toX(pb.yMin + leftW / 2);
+            const rightX = toX(pb.yMax - rightW / 2);
+            return (
+              <>
+                <div style={{ ...pillStyle, left: leftX, top: cy }}>{fmtDim(leftW)}</div>
+                <div style={{ ...pillStyle, left: rightX, top: cy }}>{fmtDim(rightW)}</div>
+              </>
+            );
+          }
         })()}
         {/* Toolbar */}
         <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 10 }}>

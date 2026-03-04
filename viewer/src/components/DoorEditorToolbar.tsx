@@ -71,11 +71,20 @@ interface DoorEditorToolbarProps {
   // Export
   onExport: () => void;
 
+  // Order quantity
+  orderQty: number;
+  onOrderQtyChange: (qty: number) => void;
+
   // Add to Order
   onAddToOrder: () => void;
 
   // Hardware warnings
   hardwareWarnings: { severity: string; message: string }[];
+
+  // Paint color picker (only used when activeTextureCategory === 'painted')
+  paintManifest?: Record<string, string[]>;
+  textureBlobUrls?: Record<string, string>;
+  onPaintColorSelect?: (path: string, blobUrl: string | null) => void;
 
   // Config-based filters (hide options not enabled in selected style)
   filteredPanelTypes?: { value: PanelType; label: string }[];
@@ -133,12 +142,15 @@ export function DoorEditorToolbar({
   handleEnabled, onHandleEnabledChange, isKnob, onHandleTypeChange, doorPlacement, onDoorPlacementChange, onHandleAdvancedClick,
   doorW, doorH, thickness, onDoorWChange, onDoorHChange, onThicknessChange,
   toDisplay, fromDisplay, inputStep,
-  onExport, onAddToOrder, hardwareWarnings,
+  onExport, onAddToOrder, orderQty, onOrderQtyChange, hardwareWarnings,
   filteredPanelTypes, filteredBackPresets, filteredDoorTypes,
   backRouteGroups, backPocketGroups, backCustomGroups, onBackRouteGroupSelect, onBackPocketGroupSelect, onBackCustomGroupSelect,
+  paintManifest, textureBlobUrls, onPaintColorSelect,
 }: DoorEditorToolbarProps) {
   const [showPlacementPopup, setShowPlacementPopup] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
+  const [showPaintDropdown, setShowPaintDropdown] = useState(false);
+  const paintDropdownRef = useRef<HTMLDivElement>(null);
   const isSlab = doorPartType === 'slab';
 
   // Close popup when clicking outside
@@ -152,6 +164,20 @@ export function DoorEditorToolbar({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showPlacementPopup]);
+
+  // Close paint dropdown when clicking outside
+  useEffect(() => {
+    if (!showPaintDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (paintDropdownRef.current && !paintDropdownRef.current.contains(e.target as Node)) {
+        setShowPaintDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPaintDropdown]);
+
+  const stripExt = (name: string) => name.replace(/\.[^.]+$/, '');
 
   return (
     <div style={containerStyle}>
@@ -181,6 +207,65 @@ export function DoorEditorToolbar({
             </button>
           );
         })}
+        {/* Paint color picker — shown when painted is active and manifest is available */}
+        {activeTextureCategory === 'painted' && paintManifest && Object.keys(paintManifest).length > 0 && (
+          <div ref={paintDropdownRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowPaintDropdown(p => !p)}
+              style={{ ...btnBase, ...(showPaintDropdown ? btnActive : {}), display: 'flex', alignItems: 'center', gap: 3, padding: '2px 5px' }}
+              title="Select paint color"
+            >
+              {selectedTextures.painted && textureBlobUrls?.[selectedTextures.painted] ? (
+                <img src={textureBlobUrls[selectedTextures.painted]} style={{ width: 14, height: 14, borderRadius: 2, objectFit: 'cover', border: '1px solid #ccc', flexShrink: 0 }} alt="" />
+              ) : (
+                <span style={{ width: 14, height: 14, borderRadius: 2, background: '#ddd', display: 'inline-block', border: '1px solid #ccc', flexShrink: 0 }} />
+              )}
+              <span style={{ maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }}>
+                {selectedTextures.painted ? stripExt(selectedTextures.painted.split('/').pop() ?? '') : '— color —'}
+              </span>
+              <span style={{ fontSize: 8, opacity: 0.6 }}>▾</span>
+            </button>
+            {showPaintDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, zIndex: 200,
+                background: '#fff', border: '1px solid #bbb', borderRadius: 4,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                minWidth: 210, maxHeight: 320, overflowY: 'auto',
+                padding: '4px 0',
+              }}>
+                {Object.entries(paintManifest).sort(([a], [b]) => a.localeCompare(b)).map(([brand, files]) => (
+                  <div key={brand}>
+                    <div style={{ padding: '4px 8px 2px', fontSize: 9, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', background: '#f5f5f7', borderBottom: '1px solid #e8e8e8' }}>
+                      {brand}
+                    </div>
+                    {files.map(filename => {
+                      const path = `Painted/${brand}/${filename}`;
+                      const blobUrl = textureBlobUrls?.[path] ?? null;
+                      const colorName = stripExt(filename);
+                      const isActive = selectedTextures.painted === path;
+                      return (
+                        <div
+                          key={path}
+                          onClick={() => { onPaintColorSelect?.(path, blobUrl); setShowPaintDropdown(false); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px', cursor: 'pointer', fontSize: 10, background: isActive ? 'rgba(0,136,204,0.08)' : 'transparent', fontWeight: isActive ? 600 : 400 }}
+                          onMouseEnter={e => (e.currentTarget.style.background = isActive ? 'rgba(0,136,204,0.12)' : '#f0f4f8')}
+                          onMouseLeave={e => (e.currentTarget.style.background = isActive ? 'rgba(0,136,204,0.08)' : 'transparent')}
+                        >
+                          {blobUrl ? (
+                            <img src={blobUrl} style={{ width: 16, height: 16, borderRadius: 2, objectFit: 'cover', border: '1px solid #ddd', flexShrink: 0 }} alt="" />
+                          ) : (
+                            <span style={{ width: 16, height: 16, borderRadius: 2, background: '#e8e8e8', display: 'inline-block', border: '1px solid #ddd', flexShrink: 0 }} />
+                          )}
+                          {colorName}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div style={sectionDivider} />
 
@@ -575,10 +660,22 @@ export function DoorEditorToolbar({
       </div>
       <div style={sectionDivider} />
 
+      {/* Section 11: QTY */}
+      <div style={rowStyle}>
+        <span style={sectionNum}>11</span>
+        <span style={sectionLabel}>Qty</span>
+        <CommitNumberInput
+          value={orderQty}
+          step={1}
+          min={1}
+          onCommit={onOrderQtyChange}
+          style={{ ...sizeInputStyle, width: 52 }}
+        />
+      </div>
+      <div style={sectionDivider} />
+
       {/* Add to Order */}
-      <button onClick={onAddToOrder} style={addToOrderBtnStyle}>
-        Add to Order
-      </button>
+      <button onClick={onAddToOrder} style={addToOrderBtnStyle}>Add to Order</button>
 
       {/* Export + Warnings */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -781,8 +878,6 @@ const sizeSelectStyle: React.CSSProperties = {
   width: 80,
   flexShrink: 0,
 };
-
-// --- Add to Order button ---
 
 const addToOrderBtnStyle: React.CSSProperties = {
   width: '100%',
