@@ -18,7 +18,7 @@ import { buildGenericDoor } from './utils/genericDoor.js';
 import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
 import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf, removeSplit, buildSplitChain, replaceLeafAt } from './utils/panelTree.js';
-import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest } from './types.js';
+import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest, KerfLine } from './types.js';
 import { MATERIAL_THICKNESS, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG, DEFAULT_LAYOUT, COMPACT_LAYOUT, PANEL_DISPLAY_NAMES, ALL_SLOTS } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
@@ -45,6 +45,7 @@ export interface OrderItem {
   doorH: number;
   thickness: number;
   textureCategory: string;
+  paintPath: string | null;
   styleName: string;
   edgeName: string;
   backLabel: string;
@@ -114,12 +115,16 @@ export default function App() {
   const [backPanelType, setBackPanelType] = useState<PanelType>('pocket');
   const [hasBackRabbit, setHasBackRabbit] = useState(true);
   const [frontDepth, setFrontDepth] = useState(6.35);    // 1/4"
-  const [backDepth, setBackDepth] = useState(3.175);     // 1/8"
+  // backDepth is derived reactively from the configured group list — no separate state needed
   const [leftStileW, setLeftStileW] = useState(63.5);    // 2.5"
   const [rightStileW, setRightStileW] = useState(63.5);  // 2.5"
   const [topRailW, setTopRailW] = useState(63.5);        // 2.5"
   const [bottomRailW, setBottomRailW] = useState(63.5);  // 2.5"
-  const [units, setUnits] = useState<UnitSystem>('mm');
+  const [kerfs, setKerfs] = useState<KerfLine[]>([]);
+  const [units, setUnits] = useState<UnitSystem>(() => {
+    try { const s = localStorage.getItem('pac-units'); if (s === 'mm' || s === 'in') return s; } catch {}
+    return 'in';
+  });
   const [doorPartType, setDoorPartType] = useState<DoorPartType>('door');
   const [doorW, setDoorW] = useState(508);       // 20"
   const [doorH, setDoorH] = useState(762);       // 30"
@@ -178,7 +183,8 @@ export default function App() {
   const [textureBlobUrls, setTextureBlobUrls] = useState<Record<string, string>>({});
   const [textureManifest, setTextureManifest] = useState<TextureManifest | null>(null);
 
-  // Persist layout to localStorage
+  // Persist layout + preferences to localStorage
+  useEffect(() => { localStorage.setItem('pac-units', units); }, [units]);
   useEffect(() => {
     localStorage.setItem('pac-layout-mapping', JSON.stringify(layoutMapping));
   }, [layoutMapping]);
@@ -360,6 +366,19 @@ export default function App() {
     return panelToolGroups.filter(g => entries.some(e => e.groupId === g.ToolGroupID));
   }, [panelToolGroups, selectedConfigStyleId, configData.matrix]);
 
+  // Kerf feature: enabled flag and available tool groups from selected config style
+  const kerfEnabled = useMemo(() => {
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    return (style?.params.kerfEnabled as BooleanRadioValue | undefined)?.enabled ?? false;
+  }, [configData.matrix, selectedConfigStyleId]);
+
+  const kerfToolGroups = useMemo(() => {
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    const param = style?.params.kerfToolGroups as GroupDepthListValue | undefined;
+    const ids = param?.entries.map(e => e.groupId) ?? [];
+    return panelToolGroups.filter(g => ids.includes(g.ToolGroupID));
+  }, [configData.matrix, selectedConfigStyleId, panelToolGroups]);
+
   // Filter edge tool groups based on selected config style
   const filteredEdgeToolGroups = useMemo(() => {
     if (!selectedConfigStyleId) return edgeToolGroups;
@@ -465,6 +484,20 @@ export default function App() {
       .filter((x): x is { groupId: number; depth: number; groupName: string } => x !== null);
   }, [selectedConfigStyleId, configData.matrix, toolGroups]);
 
+  // Derive back pocket depth reactively from whichever configured group list owns backGroupId.
+  // This ensures Configure-tab depth changes flow immediately to the 3D model without requiring
+  // the user to re-click the preset button.
+  const backDepth = useMemo(() => {
+    if (!backGroupId) return 3.175;
+    const customEntry = configuredBackCustomGroups.find(g => g.groupId === backGroupId);
+    if (customEntry) return customEntry.depth;
+    const pocketEntry = configuredBackPocketGroups.find(g => g.groupId === backGroupId);
+    if (pocketEntry) return pocketEntry.depth;
+    const routeEntry = configuredBackRouteGroups.find(g => g.groupId === backGroupId);
+    if (routeEntry) return routeEntry.depth;
+    return 3.175; // back-route "use frontGroupId" fallback — no configured depth entry
+  }, [backGroupId, configuredBackCustomGroups, configuredBackPocketGroups, configuredBackRouteGroups]);
+
   // When config style changes, auto-set front tool group from its enabledGroupIds
   const handleConfigStyleChange = useCallback((id: string | null) => {
     setSelectedConfigStyleId(id);
@@ -545,26 +578,23 @@ export default function App() {
     setBottomRailW(widthMm);
   }, []);
 
-  // Back route group+depth selection from sub-dropdown
-  const handleBackRouteGroupSelect = useCallback((groupId: number, depth: number) => {
+  // Back route group+depth selection from sub-dropdown (depth now derived, no longer stored)
+  const handleBackRouteGroupSelect = useCallback((groupId: number, _depth: number) => {
     setBackGroupId(groupId);
-    setBackDepth(depth);
     setBackPanelType('pocket');
     setToolVisibility({});
   }, []);
 
   // Back pocket group+depth selection from sub-dropdown
-  const handleBackPocketGroupSelect = useCallback((groupId: number, depth: number) => {
+  const handleBackPocketGroupSelect = useCallback((groupId: number, _depth: number) => {
     setBackGroupId(groupId);
-    setBackDepth(depth);
     setBackPanelType('pocket');
     setToolVisibility({});
   }, []);
 
   // Back custom group+depth selection from sub-dropdown
-  const handleBackCustomGroupSelect = useCallback((groupId: number, depth: number) => {
+  const handleBackCustomGroupSelect = useCallback((groupId: number, _depth: number) => {
     setBackGroupId(groupId);
-    setBackDepth(depth);
     setBackPanelType('pocket');
     setToolVisibility({});
   }, []);
@@ -665,7 +695,6 @@ export default function App() {
   // Clamp all depths when thickness changes (prevents drilling deeper than material)
   useEffect(() => {
     setFrontDepth(prev => Math.min(prev, thickness));
-    setBackDepth(prev => Math.min(prev, thickness));
     setHingeConfig(prev => {
       const cupDepth = Math.min(prev.cupDepth, thickness);
       const mountDepth = Math.min(prev.mountDepth, thickness);
@@ -694,8 +723,7 @@ export default function App() {
   const { activeDoor, activeGraph, panelBounds } = useMemo(() => {
     if (isGenericDoor) {
       const isSlab = doorPartType === 'slab';
-      const routeOverride = backPreset === 'back-route' && backGroupId !== null;
-      const effFrontId = isSlab ? null : (routeOverride ? backGroupId : frontGroupId);
+      const effFrontId = isSlab ? null : frontGroupId;
       const effBackId = isSlab ? null : backGroupId;
       if (effFrontId !== null || isSlab) {
         const result = buildGenericDoor(
@@ -728,8 +756,7 @@ export default function App() {
       return { crossSectionDoor: activeDoor, crossSectionGraph: activeGraph };
     }
     const isSlab = doorPartType === 'slab';
-    const routeOverride = backPreset === 'back-route' && backGroupId !== null;
-    const effFrontId = isSlab ? null : (routeOverride ? backGroupId : frontGroupId);
+    const effFrontId = isSlab ? null : frontGroupId;
     const effBackId = isSlab ? null : backGroupId;
     if (effFrontId === null && !isSlab) {
       return { crossSectionDoor: undefined, crossSectionGraph: undefined };
@@ -882,6 +909,7 @@ export default function App() {
       doorH: h,
       thickness,
       textureCategory: activeTextureCategory,
+      paintPath: activeTextureCategory === 'painted' ? (selectedTextures.painted ?? null) : null,
       styleName,
       edgeName,
       backLabel,
@@ -906,10 +934,10 @@ export default function App() {
     setOrderItems(prev => [...prev, item]);
   }, [configData.matrix, selectedConfigStyleId, filteredEdgeToolGroups, edgeGroupId,
       backPreset, backGroupId, filteredPanelToolGroups, doorPartType, hingeConfig,
-      handleConfig, activeTextureCategory, frontPanelType, thickness, activeDoor,
+      handleConfig, activeTextureCategory, selectedTextures, frontPanelType, thickness, activeDoor,
       panelTree, leftStileW, rightStileW, topRailW, bottomRailW, selectionRegistry]);
 
-  const handleUpdateOrderItem = useCallback((id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData'>>) => {
+  const handleUpdateOrderItem = useCallback((id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData' | 'doorH' | 'doorW' | 'thickness' | 'paintPath' | 'hingesDisplay' | 'hardwareDisplay'>>) => {
     setOrderItems(prev => prev.map(item => {
       if (item.id !== id) return item;
       if (changes.customData) {
@@ -1040,6 +1068,18 @@ export default function App() {
     setSelectedSplitPath(null);
   }, [selectedConfigStyleId, configData.matrix]);
 
+  const handleAddKerf = useCallback((orientation: 'H' | 'V', centerMm: number, toolGroupId: number | null) => {
+    setKerfs(prev => [...prev, { id: Date.now(), orientation, centerMm, toolGroupId }]);
+  }, []);
+
+  const handleDeleteKerf = useCallback((id: number) => {
+    setKerfs(prev => prev.filter(k => k.id !== id));
+  }, []);
+
+  const handleMoveKerf = useCallback((id: number, newCenterMm: number) => {
+    setKerfs(prev => prev.map(k => k.id === id ? { ...k, centerMm: newCenterMm } : k));
+  }, []);
+
   // Texture URL for 3D door — uses active category's blob URL
   const activeTexturePath = selectedTextures[activeTextureCategory];
   const textureUrl = activeTexturePath ? textureBlobUrls[activeTexturePath] : undefined;
@@ -1092,7 +1132,6 @@ export default function App() {
         // Route — configured groups override front+back; fallback to front group
         if (configuredBackRouteGroups.length === 1) {
           setBackGroupId(configuredBackRouteGroups[0].groupId);
-          setBackDepth(configuredBackRouteGroups[0].depth);
           setBackPanelType('pocket');
         } else if (configuredBackRouteGroups.length === 0) {
           setBackGroupId(frontGroupId);
@@ -1104,7 +1143,6 @@ export default function App() {
         // Pocket — auto-select if exactly 1 configured group, else wait for sub-dropdown
         if (configuredBackPocketGroups.length === 1) {
           setBackGroupId(configuredBackPocketGroups[0].groupId);
-          setBackDepth(configuredBackPocketGroups[0].depth);
           setBackPanelType('pocket');
         } else {
           setBackGroupId(null);
@@ -1113,7 +1151,6 @@ export default function App() {
         // Custom — auto-select if exactly 1 configured group, else wait for sub-dropdown
         if (configuredBackCustomGroups.length === 1) {
           setBackGroupId(configuredBackCustomGroups[0].groupId);
-          setBackDepth(configuredBackCustomGroups[0].depth);
           setBackPanelType('pocket');
         } else {
           setBackGroupId(null);
@@ -1125,7 +1162,7 @@ export default function App() {
       setToolVisibility({});
     },
     customBackGroupId: backGroupId,
-    onCustomBackGroupChange: (id: number | null) => { setBackGroupId(id); setToolVisibility({}); },
+    onCustomBackGroupChange: (id: number | null) => { setBackGroupId(id); if (id !== null) setBackPanelType('pocket'); setToolVisibility({}); },
     backRouteGroups: configuredBackRouteGroups,
     backPocketGroups: configuredBackPocketGroups,
     backCustomGroups: configuredBackCustomGroups,
@@ -1248,6 +1285,12 @@ export default function App() {
               hingeConfig={hingeConfig}
               onHingePositionChange={handleHingePositionChange}
               onHandleElevationChange={handleHandleElevationChange}
+              kerfs={kerfs}
+              kerfEnabled={kerfEnabled}
+              kerfToolGroups={kerfToolGroups}
+              onAddKerf={handleAddKerf}
+              onDeleteKerf={handleDeleteKerf}
+              onMoveKerf={handleMoveKerf}
             />
           ) : placeholder('Elevation')
         ) : (
@@ -1262,6 +1305,7 @@ export default function App() {
             onAddItem={handleAddOrderItem}
             onRemoveItem={(id) => setOrderItems(prev => prev.filter(i => i.id !== id))}
             onUpdateItem={handleUpdateOrderItem}
+            textureBlobUrls={textureBlobUrls}
             onViewItem={setViewingItem}
             onStyleTabClick={handleSelectionTabClick}
             onQuickAdd={handleQuickAdd}
@@ -1274,9 +1318,10 @@ export default function App() {
       profiles, frontPanelType, backPanelType,
       hasBackRabbit, units, edgeGroupId, thickness, loading, elevationTree, handleConfig,
       elevationRenderMode, selectedSplitPath, leftStileW, rightStileW, selectedPanels, hingeConfig,
-      orderItems, selectionTabs, currentSelectionKey, columns, groupByFields, handleAddOrderItem,
+      orderItems, selectionTabs, currentSelectionKey, columns, groupByFields, textureBlobUrls, handleAddOrderItem,
       handleUpdateOrderItem, handleSelectionTabClick, handleQuickAdd, handleLoadOrderItem,
-      handleDeleteSplit, handleAddEqualMidRails, handleAddEqualMidStiles, watermarkConfig, orderQty]);
+      handleDeleteSplit, handleAddEqualMidRails, handleAddEqualMidStiles, watermarkConfig, orderQty,
+      kerfs, kerfEnabled, kerfToolGroups, handleAddKerf, handleDeleteKerf, handleMoveKerf]);
 
   return (
     <div style={styles.container}>
@@ -1392,6 +1437,7 @@ export default function App() {
                 thickness={thickness}
                 renderMode={doorRenderMode}
                 textureUrl={textureUrl}
+                kerfs={kerfs}
               />
             )}
             {activeDoor && (
@@ -1493,6 +1539,8 @@ export default function App() {
               onGroupByChange={setGroupByFields}
               watermarkConfig={watermarkConfig}
               onWatermarkChange={setWatermarkConfig}
+              units={units}
+              onUnitsChange={setUnits}
             />
           </div>
         </div>

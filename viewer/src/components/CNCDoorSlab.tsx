@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData, RenderMode } from '../types.js';
+import type { OperationData, DoorGraphData, ToolProfileData, ToolVisibility, PanelType, HoleData, RenderMode, KerfLine } from '../types.js';
 import { GLASS_THICKNESS } from '../types.js';
 import { toolPathToRect } from '../utils/geometry.js';
 import { buildCarvedDoor, getBackRabbetDepth } from '../utils/cuttingBodies.js';
@@ -24,6 +24,7 @@ interface CNCDoorSlabProps {
   holes?: HoleData[];
   renderMode?: RenderMode;
   textureUrl?: string;
+  kerfs?: KerfLine[];
 }
 
 /**
@@ -49,6 +50,7 @@ export function CNCDoorSlab({
   holes = [],
   renderMode = 'solid',
   textureUrl,
+  kerfs = [],
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
   const meshKey = useMemo(() => {
@@ -57,8 +59,8 @@ export function CNCDoorSlab({
       .map(([k]) => k)
       .sort()
       .join(',');
-    return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}-bp${backPocketOps.length}`;
-  }, [toolVisibility, frontVisible, backPocketVisible, holes, backPocketOps]);
+    return `slab-${frontVisible}-${backPocketVisible}-${hidden}-h${holes.length}-bp${backPocketOps.length}-k${kerfs.length}-kp${kerfs.map(k => k.centerMm).join(',')}`;
+  }, [toolVisibility, frontVisible, backPocketVisible, holes, backPocketOps, kerfs]);
 
   // Load texture from URL when provided
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -123,17 +125,17 @@ export function CNCDoorSlab({
       }
     }
 
-    if (toolpathRects.length === 0 && backPockets.length === 0 && holes.length === 0) {
+    if (toolpathRects.length === 0 && backPockets.length === 0 && holes.length === 0 && kerfs.length === 0) {
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
 
     try {
-      return buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPockets, holes);
+      return buildCarvedDoor(doorW, doorH, thickness, toolpathRects, profiles, backPockets, holes, kerfs);
     } catch (e) {
       console.error('[CNCDoorSlab] CSG FAILED:', e);
       return new THREE.BoxGeometry(doorW, doorH, thickness);
     }
-  }, [doorW, doorH, thickness, frontOps, backPocketOps, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes]);
+  }, [doorW, doorH, thickness, frontOps, backPocketOps, graph, profiles, frontVisible, backPocketVisible, toolVisibility, holes, kerfs]);
 
   // Glass panes — one per front operation (sub-panel) when panel type is 'glass'
   const showGlass = frontPanelType === 'glass' || backPanelType === 'glass';
@@ -156,7 +158,7 @@ export function CNCDoorSlab({
     return panes.length > 0 ? panes : null;
   }, [showGlass, frontOps, doorW, doorH, graph, thickness, hasBackRabbit]);
 
-  // EdgesGeometry for wireframe mode — mergeVertices fixes CSG boundary artifacts
+  // EdgesGeometry for wireframe mode
   const edgesGeo = useMemo(() => {
     if (renderMode !== 'wireframe') return null;
     const merged = mergeVertices(carvedGeo, 1e-3);
@@ -175,15 +177,18 @@ export function CNCDoorSlab({
           )}
         </>
       ) : (
-        <mesh key={meshKey} geometry={carvedGeo}>
-          <meshStandardMaterial
-            key={`mat-${renderMode}-${textureUrl ?? 'none'}`}
-            color={texture ? '#ffffff' : color}
-            map={texture ?? undefined}
-            roughness={0.7}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+        <>
+          <mesh key={meshKey} geometry={carvedGeo}>
+            <meshStandardMaterial
+              key={`mat-${renderMode}-${textureUrl ?? 'none'}`}
+              color={texture ? '#ffffff' : color}
+              map={texture ?? undefined}
+              roughness={0.7}
+              metalness={0}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
       )}
       {showGlass && glassPanes && glassPanes.map((pane, i) => (
         <mesh key={`glass-${i}`} geometry={pane.geometry} position={pane.position}>

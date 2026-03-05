@@ -235,6 +235,13 @@ export interface HingeConfig {
   mountOnFront: boolean;   // false = back (default)
 }
 
+export interface KerfLine {
+  id: number;
+  orientation: 'H' | 'V';   // H = horizontal full-width cut, V = vertical full-height cut
+  centerMm: number;          // center position in mm (height-axis for H, width-axis for V)
+  toolGroupId: number | null;
+}
+
 export interface HandleConfig {
   enabled: boolean;
   holeDia: number;         // default 5mm

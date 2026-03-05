@@ -98,6 +98,7 @@ interface DoorEditorToolbarProps {
   onBackRouteGroupSelect: (groupId: number, depth: number) => void;
   onBackPocketGroupSelect: (groupId: number, depth: number) => void;
   onBackCustomGroupSelect: (groupId: number, depth: number) => void;
+
 }
 
 const MATERIAL_CATS = ['raw', 'sanded', 'primed', 'painted'] as const;

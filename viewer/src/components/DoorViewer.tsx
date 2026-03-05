@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType, HoleData, RenderMode } from '../types.js';
+import type { DoorData, DoorGraphData, OperationVisibility, ToolProfileData, ToolVisibility, PanelType, HoleData, RenderMode, KerfLine } from '../types.js';
 import { MATERIAL_THICKNESS } from '../types.js';
 
 import { CNCDoorSlab } from './CNCDoorSlab.js';
@@ -25,9 +25,10 @@ interface DoorViewerProps {
   thickness?: number;
   renderMode?: RenderMode;
   textureUrl?: string;
+  kerfs?: KerfLine[];
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl, kerfs }: DoorViewerProps) {
   // Note: onPanelSelect/onSplitSelect may be undefined — overlays render read-only highlights when absent
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
@@ -79,6 +80,7 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
         holes={holes}
         renderMode={renderMode}
         textureUrl={textureUrl}
+        kerfs={kerfs}
       />
 
       {/* Panel selection highlights (read-only unless onPanelSelect is provided) */}
