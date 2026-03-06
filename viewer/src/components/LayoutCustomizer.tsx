@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import type { LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition } from '../types.js';
-import { PANEL_DISPLAY_NAMES, ALL_SLOTS, COMPACT_LAYOUT, COMPACT_SLOTS } from '../types.js';
+import type { LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping } from '../types.js';
+import { PANEL_DISPLAY_NAMES, ALL_SLOTS, COMPACT_SLOTS } from '../types.js';
 
 interface LayoutCustomizerProps {
   layoutMapping: LayoutMapping;
@@ -9,6 +9,9 @@ interface LayoutCustomizerProps {
   onClose: () => void;
   layoutPreset: LayoutPreset;
   onPresetChange: (preset: LayoutPreset) => void;
+  compactLayoutMapping: CompactLayoutMapping;
+  onCompactSwap: (slotA: CompactSlotPosition, slotB: CompactSlotPosition) => void;
+  onCompactReset: () => void;
 }
 
 /** CSS grid placement for the 5 slots in a 2-col, 6-row mini layout (default). */
@@ -32,8 +35,10 @@ const COMPACT_SLOT_GRID: Record<CompactSlotPosition, React.CSSProperties> = {
 export function LayoutCustomizer({
   layoutMapping, onSwap, onReset, onClose,
   layoutPreset, onPresetChange,
+  compactLayoutMapping, onCompactSwap, onCompactReset,
 }: LayoutCustomizerProps) {
   const [dragOver, setDragOver] = useState<SlotPosition | null>(null);
+  const [compactDragOver, setCompactDragOver] = useState<CompactSlotPosition | null>(null);
 
   const handleDragStart = useCallback((e: React.DragEvent, slot: SlotPosition) => {
     e.dataTransfer.setData('text/plain', slot);
@@ -58,6 +63,24 @@ export function LayoutCustomizer({
       onSwap(sourceSlot, targetSlot);
     }
   }, [onSwap]);
+
+  const handleCompactDragStart = useCallback((e: React.DragEvent, slot: CompactSlotPosition) => {
+    e.dataTransfer.setData('text/plain', slot);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleCompactDragOver = useCallback((e: React.DragEvent, slot: CompactSlotPosition) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setCompactDragOver(slot);
+  }, []);
+
+  const handleCompactDrop = useCallback((e: React.DragEvent, targetSlot: CompactSlotPosition) => {
+    e.preventDefault();
+    setCompactDragOver(null);
+    const sourceSlot = e.dataTransfer.getData('text/plain') as CompactSlotPosition;
+    if (sourceSlot && sourceSlot !== targetSlot) onCompactSwap(sourceSlot, targetSlot);
+  }, [onCompactSwap]);
 
   return (
     <div style={st.backdrop} onClick={onClose}>
@@ -123,18 +146,24 @@ export function LayoutCustomizer({
           </>
         ) : (
           <>
-            <p style={st.hint}>Fixed layout — Toolbar + Cross Section on left, 3D + Elevation side-by-side</p>
+            <p style={st.hint}>Drag panels to swap positions</p>
             <div style={st.compactGrid}>
               {COMPACT_SLOTS.map(slot => {
-                const panelId = COMPACT_LAYOUT[slot];
+                const panelId = compactLayoutMapping[slot];
+                const isOver = compactDragOver === slot;
                 return (
                   <div
                     key={slot}
+                    draggable
+                    onDragStart={e => handleCompactDragStart(e, slot)}
+                    onDragOver={e => handleCompactDragOver(e, slot)}
+                    onDragLeave={() => setCompactDragOver(null)}
+                    onDrop={e => handleCompactDrop(e, slot)}
                     style={{
                       ...st.cell,
                       ...COMPACT_SLOT_GRID[slot],
-                      cursor: 'default',
-                      background: 'rgba(42, 42, 66, 0.6)',
+                      borderColor: isOver ? '#5599cc' : '#444466',
+                      background: isOver ? 'rgba(85, 153, 204, 0.15)' : 'rgba(42, 42, 66, 0.6)',
                     }}
                   >
                     <span style={st.cellIcon}>{PANEL_ICONS[panelId]}</span>
@@ -142,6 +171,9 @@ export function LayoutCustomizer({
                   </div>
                 );
               })}
+            </div>
+            <div style={st.footer}>
+              <button onClick={onCompactReset} style={st.resetBtn}>Reset Layout</button>
             </div>
           </>
         )}

@@ -26,9 +26,11 @@ interface DoorViewerProps {
   renderMode?: RenderMode;
   textureUrl?: string;
   kerfs?: KerfLine[];
+  modelOpacity?: number;
+  materialOverrides?: { roughness?: number; metalness?: number };
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl, kerfs }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl, kerfs, modelOpacity, materialOverrides }: DoorViewerProps) {
   // Note: onPanelSelect/onSplitSelect may be undefined — overlays render read-only highlights when absent
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
@@ -81,6 +83,8 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
         renderMode={renderMode}
         textureUrl={textureUrl}
         kerfs={kerfs}
+        modelOpacity={modelOpacity}
+        materialOverrides={materialOverrides}
       />
 
       {/* Panel selection highlights (read-only unless onPanelSelect is provided) */}

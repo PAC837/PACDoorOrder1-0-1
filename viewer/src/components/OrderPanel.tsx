@@ -16,9 +16,10 @@ interface OrderPanelProps {
   styleTabs: StyleTab[];
   currentStyleKey: string;
   units: UnitSystem;
+  textureBlobUrls: Record<string, string>;
   onAddItem: (qty: number, note: string, w: number, h: number) => void;
   onRemoveItem: (id: number) => void;
-  onUpdateItem: (id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData'>>) => void;
+  onUpdateItem: (id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData' | 'doorH' | 'doorW' | 'thickness' | 'paintPath' | 'hingesDisplay' | 'hardwareDisplay'>>) => void;
   onViewItem: (item: OrderItem) => void;
   onStyleTabClick: (styleKey: string) => void;
   onQuickAdd: (h: number, w: number) => void;
@@ -38,51 +39,47 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// ── Range selection helper ───────────────────────────────────────────────────
+function parseDimToMm(str: string, u: UnitSystem): number {
+  const n = parseFloat(str.replace(/[^0-9.-]/g, ''));
+  if (isNaN(n)) return NaN;
+  return u === 'in' ? n * 25.4 : n;
+}
 
-function getRangeIds(fromId: number, toId: number, allRows: OrderItem[]): Set<number> {
-  const fromIdx = allRows.findIndex(r => r.id === fromId);
-  const toIdx = allRows.findIndex(r => r.id === toId);
-  if (fromIdx === -1 || toIdx === -1) return new Set([toId]);
-  const lo = Math.min(fromIdx, toIdx);
-  const hi = Math.max(fromIdx, toIdx);
-  return new Set(allRows.slice(lo, hi + 1).map(r => r.id));
+function parseHinges(display: string): { side: string; count: string } {
+  const em = '\u2014';
+  if (display === 'NA' || display === '—' || display === em) return { side: display, count: '' };
+  const parts = display.split(' ');
+  return { side: parts[0] ?? '', count: parts[1] ?? '' };
 }
 
 // ── OrderPanel ───────────────────────────────────────────────────────────────
 
+const BATCH_EDITABLE = new Set(['height', 'width', 'thickness', 'roomName', 'note']);
+
 export function OrderPanel({
-  items, columns, groupByFields, styleTabs, currentStyleKey, units,
+  items, columns, groupByFields, styleTabs, currentStyleKey, units, textureBlobUrls,
   onAddItem: _onAddItem, onRemoveItem, onUpdateItem, onViewItem, onStyleTabClick,
   onQuickAdd, onLoadItem,
 }: OrderPanelProps) {
   const [activeTab, setActiveTab] = useState<'all' | string>(currentStyleKey);
   const [pinnedToAll, setPinnedToAll] = useState(false);
 
-  // Suppress unused warning — onAddItem kept in props for potential future use
   void _onAddItem;
 
-  // Sync active tab to currentStyleKey unless user is pinned to "All"
   useEffect(() => {
     if (!pinnedToAll) setActiveTab(currentStyleKey);
   }, [currentStyleKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Only show visible columns
   const visibleCols = useMemo(() => columns.filter(c => c.visible), [columns]);
-
-  // Grid template: eye + remove + load + visible data columns
   const colTemplate = `22px 18px 18px ${visibleCols.map(c => `${c.width}px`).join(' ')}`;
 
-  // Items for the active tab
   const tabItems = useMemo(() => {
     if (activeTab === 'all') return items;
     return items.filter(i => i.styleName === activeTab);
   }, [items, activeTab]);
 
-  // Active group-by fields (in configured priority order)
   const activeGroupFields = useMemo(() => groupByFields.filter(f => f.active), [groupByFields]);
 
-  // Group tabItems dynamically by the configured fields
   const groups = useMemo(() => {
     const seen = new Set<string>();
     const order: string[] = [];
@@ -91,11 +88,7 @@ export function OrderPanel({
       const key = activeGroupFields.length > 0
         ? activeGroupFields.map(f => getGroupFieldValue(item, f.id)).join('||')
         : '__all__';
-      if (!seen.has(key)) {
-        seen.add(key);
-        order.push(key);
-        map.set(key, []);
-      }
+      if (!seen.has(key)) { seen.add(key); order.push(key); map.set(key, []); }
       map.get(key)!.push(item);
     }
     return order.map(key => {
@@ -107,110 +100,88 @@ export function OrderPanel({
     });
   }, [tabItems, activeGroupFields]);
 
-  // Flat ordered list of all visible rows (crosses group boundaries)
   const allRows = useMemo(() => groups.flatMap(g => g.items), [groups]);
 
-  // ── Multi-row selection state ──────────────────────────────────────────────
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const anchorIdRef = useRef<number | null>(null);
-  const isDragSelecting = useRef(false);
-  const dragAnchorId = useRef<number | null>(null);
+  // ── Cell selection ─────────────────────────────────────────────────────────
+  const [selectedCells, setSelectedCells] = useState<Map<string, { id: number; colId: string }>>(new Map());
 
-  // Clear drag flag on global pointerup
-  useEffect(() => {
-    const handler = () => { isDragSelecting.current = false; };
-    window.addEventListener('pointerup', handler);
-    return () => window.removeEventListener('pointerup', handler);
-  }, []);
+  const selectedColIdList = [...selectedCells.values()].map(c => c.colId);
+  const allSameCol = selectedCells.size >= 2 && new Set(selectedColIdList).size === 1;
+  const batchColId = allSameCol && BATCH_EDITABLE.has(selectedColIdList[0]) ? selectedColIdList[0] : null;
+  const isNumericBatch = batchColId === 'height' || batchColId === 'width' || batchColId === 'thickness';
 
-  // Escape to clear selection
+  const handleCellClick = (e: React.MouseEvent, itemId: number, colId: string) => {
+    const key = `${itemId}:${colId}`;
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedCells(prev => {
+        const next = new Map(prev);
+        next.has(key) ? next.delete(key) : next.set(key, { id: itemId, colId });
+        return next;
+      });
+    } else {
+      setSelectedCells(new Map([[key, { id: itemId, colId }]]));
+    }
+  };
+
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedIds(new Set());
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedCells(new Map()); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Cell pointer-down handler (passed to each DataRow)
-  const handleCellPointerDown = (e: React.PointerEvent, itemId: number) => {
-    if (e.shiftKey && anchorIdRef.current !== null) {
-      setSelectedIds(getRangeIds(anchorIdRef.current, itemId, allRows));
-    } else if (e.ctrlKey || e.metaKey) {
-      setSelectedIds(prev => {
-        const s = new Set(prev);
-        s.has(itemId) ? s.delete(itemId) : s.add(itemId);
-        return s;
-      });
-      anchorIdRef.current = itemId;
-    } else {
-      // Normal click: select this row (DataRow will also start editing)
-      setSelectedIds(new Set([itemId]));
-      anchorIdRef.current = itemId;
-      isDragSelecting.current = true;
-      dragAnchorId.current = itemId;
-    }
-  };
-
-  // Row pointer-enter handler (for drag selection extension)
-  const handleRowPointerEnter = (itemId: number) => {
-    if (!isDragSelecting.current || dragAnchorId.current === null) return;
-    setSelectedIds(getRangeIds(dragAnchorId.current, itemId, allRows));
-  };
-
-  // ── Batch update wrapper ───────────────────────────────────────────────────
-  const batchUpdate = (itemId: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData'>>) => {
-    onUpdateItem(itemId, changes);
-    if (selectedIds.has(itemId) && selectedIds.size > 1) {
-      selectedIds.forEach(id => { if (id !== itemId) onUpdateItem(id, changes); });
-    }
-  };
-
-  // ── Enter-to-next-row state ────────────────────────────────────────────────
+  // ── Focus / tab navigation ─────────────────────────────────────────────────
   const [focusTarget, setFocusTarget] = useState<{ id: number; colId: string } | null>(null);
+
+  // Tab order for editable columns (order matters)
+  const TAB_COLS = useMemo(() => {
+    const base = ['qty', 'height', 'width', 'roomName', 'cabNumber', 'material', 'note'];
+    const customs = visibleCols.filter(c => c.isCustom).map(c => c.id);
+    return [...base, ...customs].filter(id => visibleCols.some(c => c.id === id));
+  }, [visibleCols]);
+
+  const handleTabNext = (itemId: number, fromColId: string) => {
+    const idx = TAB_COLS.indexOf(fromColId);
+    const nextColId = TAB_COLS[idx + 1] ?? null;
+    if (nextColId) {
+      setFocusTarget({ id: itemId, colId: nextColId });
+    } else {
+      const rowIdx = allRows.findIndex(r => r.id === itemId);
+      const nextRow = allRows[rowIdx + 1];
+      if (nextRow && TAB_COLS[0]) setFocusTarget({ id: nextRow.id, colId: TAB_COLS[0] });
+    }
+  };
 
   return (
     <div
       style={styles.container}
       onPointerDown={(e) => {
-        // Click on empty background clears selection
-        if ((e.target as HTMLElement).closest('[data-row]') === null) {
-          setSelectedIds(new Set());
+        const t = e.target as HTMLElement;
+        // Fix 2: don't clear selection when clicking the batch bar input
+        if (t.closest('[data-row]') === null && t.closest('[data-batch-bar]') === null) {
+          setSelectedCells(new Map());
         }
       }}
     >
-      {/* Title bar */}
       <div style={styles.titleBar}>PAC Door Order</div>
 
-      {/* Tab bar */}
       <div style={styles.tabBar}>
         <button
           style={{ ...styles.tab, ...(activeTab === 'all' ? styles.activeTab : {}) }}
           onClick={() => { setPinnedToAll(true); setActiveTab('all'); }}
-        >
-          All
-        </button>
+        >All</button>
         {styleTabs.map(tab => (
           <button
             key={tab.key}
             style={{ ...styles.tab, ...(activeTab === tab.key ? styles.activeTab : {}) }}
             title={tab.label}
-            onClick={() => {
-              setPinnedToAll(false);
-              setActiveTab(tab.key);
-              onStyleTabClick(tab.key);
-            }}
-          >
-            {tab.label}
-          </button>
+            onClick={() => { setPinnedToAll(false); setActiveTab(tab.key); onStyleTabClick(tab.key); }}
+          >{tab.label}</button>
         ))}
-        {/* Show indicator if current style has no tab yet */}
         {currentStyleKey !== 'None' && !styleTabs.some(t => t.key === currentStyleKey) && (
           <span style={styles.newSelIndicator}>+ new style</span>
         )}
       </div>
 
-      {/* Hidden column indicator */}
       {(() => {
         const hidden = columns.filter(c => !c.visible);
         if (hidden.length === 0) return null;
@@ -222,42 +193,26 @@ export function OrderPanel({
         );
       })()}
 
-      {/* Table wrapper */}
       <div style={styles.tableWrapper}>
-        {/* Sticky header row */}
+        {/* Sticky header */}
         <div style={{ ...styles.gridRow, ...styles.headerRow, gridTemplateColumns: colTemplate }}>
           <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.1)' }} />
           <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.1)' }} />
           <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.1)' }} />
           {visibleCols.map(col => (
-            <div
-              key={col.id}
-              style={{
-                ...styles.cell,
-                ...styles.headerCell,
-                borderRight: '1px solid rgba(0,0,0,0.1)',
-                textAlign: rightAlignedCols.has(col.id) ? 'right' : col.id === 'qty' ? 'center' : 'left',
-              }}
-            >
+            <div key={col.id} style={{ ...styles.cell, ...styles.headerCell, borderRight: '1px solid rgba(0,0,0,0.1)', textAlign: rightAlignedCols.has(col.id) ? 'right' : col.id === 'qty' ? 'center' : 'left' }}>
               {col.label}
             </div>
           ))}
         </div>
 
-        {/* Scrollable data body */}
         <div style={styles.dataBody}>
-          {groups.length === 0 && (
-            <div style={styles.emptyRow}>No items — press "Add to Order" to add doors</div>
-          )}
+          {groups.length === 0 && <div style={styles.emptyRow}>No items — press "Add to Order" to add doors</div>}
           {groups.map(group => (
             <div key={group.key}>
-              {/* Group header */}
               <div style={{ ...styles.gridRow, ...styles.groupHeader, gridTemplateColumns: colTemplate }}>
-                <div style={{ gridColumn: `1 / -1`, padding: '0 8px', fontWeight: 700, fontSize: 10, color: '#333' }}>
-                  {group.header}
-                </div>
+                <div style={{ gridColumn: '1 / -1', padding: '0 8px', fontWeight: 700, fontSize: 10, color: '#333' }}>{group.header}</div>
               </div>
-              {/* Data rows */}
               {group.items.map((item, idx) => (
                 <DataRow
                   key={item.id}
@@ -267,43 +222,76 @@ export function OrderPanel({
                   visibleCols={visibleCols}
                   colTemplate={colTemplate}
                   isAlt={idx % 2 === 1}
-                  isSelected={selectedIds.has(item.id)}
+                  textureBlobUrls={textureBlobUrls}
+                  selectedColIds={new Set([...selectedCells.values()].filter(c => c.id === item.id).map(c => c.colId))}
                   onRemove={() => onRemoveItem(item.id)}
                   onView={() => onViewItem(item)}
                   onLoad={() => onLoadItem(item)}
-                  onUpdateQty={(qty) => batchUpdate(item.id, { qty })}
-                  onUpdateNote={(note) => batchUpdate(item.id, { note })}
-                  onUpdateRoomName={(roomName) => batchUpdate(item.id, { roomName })}
-                  onUpdateCabNumber={(cabNumber) => batchUpdate(item.id, { cabNumber })}
-                  onUpdateMaterial={(material) => batchUpdate(item.id, { material })}
-                  onUpdateCustom={(colId, val) => batchUpdate(item.id, { customData: { [colId]: val } })}
-                  onRowPointerDown={(e) => handleCellPointerDown(e, item.id)}
-                  onRowPointerEnter={() => handleRowPointerEnter(item.id)}
+                  onUpdateQty={(qty) => onUpdateItem(item.id, { qty })}
+                  onUpdateNote={(note) => onUpdateItem(item.id, { note })}
+                  onUpdateRoomName={(roomName) => onUpdateItem(item.id, { roomName })}
+                  onUpdateCabNumber={(cabNumber) => onUpdateItem(item.id, { cabNumber })}
+                  onUpdateMaterial={(material) => onUpdateItem(item.id, { material })}
+                  onUpdateCustom={(colId, val) => onUpdateItem(item.id, { customData: { [colId]: val } })}
+                  onUpdateHeight={(mm) => onUpdateItem(item.id, { doorH: mm })}
+                  onUpdateWidth={(mm) => onUpdateItem(item.id, { doorW: mm })}
+                  onUpdateHingesDisplay={(v) => onUpdateItem(item.id, { hingesDisplay: v })}
+                  onUpdateHardwareDisplay={(v) => onUpdateItem(item.id, { hardwareDisplay: v })}
+                  onCellClick={(e, colId) => handleCellClick(e, item.id, colId)}
                   onEnterNext={(colId) => {
                     const idx2 = allRows.findIndex(r => r.id === item.id);
                     const next = allRows[idx2 + 1];
                     if (next) setFocusTarget({ id: next.id, colId });
                   }}
+                  onTabNext={(colId) => handleTabNext(item.id, colId)}
                   autoFocusColId={focusTarget?.id === item.id ? focusTarget.colId : null}
                   onFocusConsumed={() => setFocusTarget(null)}
                 />
               ))}
-              {/* Blank add-row at bottom of each group */}
-              <BlankAddRow
-                units={units}
-                visibleCols={visibleCols}
-                colTemplate={colTemplate}
-                onAdd={(h, w) => onQuickAdd(h, w)}
-              />
+              <BlankAddRow units={units} visibleCols={visibleCols} colTemplate={colTemplate} onAdd={(h, w) => onQuickAdd(h, w)} />
             </div>
           ))}
+
+          {/* Fix 2: data-batch-bar prevents background pointerDown from clearing selection */}
+          {batchColId && (() => {
+            const count = selectedCells.size;
+            const label = columns.find(c => c.id === batchColId)?.label ?? batchColId;
+            return (
+              <div data-batch-bar="true" style={{ position: 'sticky', bottom: 0, zIndex: 10, background: '#e8f4fd', borderTop: '1px solid #b3d9f5', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, flexShrink: 0 }}>
+                <span style={{ color: '#0077bb', fontWeight: 600 }}>{count} {label} cells selected</span>
+                <span style={{ color: '#555' }}>Set value:</span>
+                <input
+                  autoFocus
+                  style={{ width: 90, fontSize: 11, padding: '1px 4px', border: '1px solid #99c9e8', borderRadius: 3 }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const raw = (e.target as HTMLInputElement).value.trim();
+                      for (const { id } of selectedCells.values()) {
+                        if (isNumericBatch) {
+                          const mm = parseDimToMm(raw, units);
+                          if (!isNaN(mm) && mm > 0) {
+                            const field = batchColId === 'height' ? { doorH: mm } : batchColId === 'width' ? { doorW: mm } : { thickness: mm };
+                            onUpdateItem(id, field);
+                          }
+                        } else {
+                          onUpdateItem(id, batchColId === 'roomName' ? { roomName: raw } : { note: raw });
+                        }
+                      }
+                      setSelectedCells(new Map());
+                    }
+                    if (e.key === 'Escape') setSelectedCells(new Map());
+                  }}
+                />
+                <span style={{ color: '#888', fontSize: 10 }}>Enter to apply · Esc to cancel</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
   );
 }
 
-/** Extract the value of a group-by field from an order item */
 function getGroupFieldValue(item: OrderItem, fieldId: string): string {
   switch (fieldId) {
     case 'doorType':  return item.doorType;
@@ -316,7 +304,6 @@ function getGroupFieldValue(item: OrderItem, fieldId: string): string {
   }
 }
 
-/** Columns that should right-align their header and value */
 const rightAlignedCols = new Set(['height', 'width', 'price', 'subtotal']);
 
 interface DataRowProps {
@@ -326,7 +313,8 @@ interface DataRowProps {
   visibleCols: ColumnDef[];
   colTemplate: string;
   isAlt: boolean;
-  isSelected: boolean;
+  textureBlobUrls: Record<string, string>;
+  selectedColIds: Set<string>;
   onRemove: () => void;
   onView: () => void;
   onLoad: () => void;
@@ -336,17 +324,22 @@ interface DataRowProps {
   onUpdateCabNumber: (v: string) => void;
   onUpdateMaterial: (v: string) => void;
   onUpdateCustom: (colId: string, val: string) => void;
-  onRowPointerDown: (e: React.PointerEvent) => void;
-  onRowPointerEnter: () => void;
+  onUpdateHeight: (mm: number) => void;
+  onUpdateWidth: (mm: number) => void;
+  onUpdateHingesDisplay: (v: string) => void;
+  onUpdateHardwareDisplay: (v: string) => void;
+  onCellClick: (e: React.MouseEvent, colId: string) => void;
   onEnterNext: (colId: string) => void;
+  onTabNext: (colId: string) => void;
   autoFocusColId: string | null;
   onFocusConsumed: () => void;
 }
 
 function DataRow({
-  item, rowNum, units, visibleCols, colTemplate, isAlt, isSelected,
+  item, rowNum, units, visibleCols, colTemplate, isAlt, textureBlobUrls, selectedColIds,
   onRemove, onView, onLoad, onUpdateQty, onUpdateNote, onUpdateRoomName, onUpdateCabNumber, onUpdateMaterial, onUpdateCustom,
-  onRowPointerDown, onRowPointerEnter, onEnterNext, autoFocusColId, onFocusConsumed,
+  onUpdateHeight, onUpdateWidth, onUpdateHingesDisplay, onUpdateHardwareDisplay,
+  onCellClick, onEnterNext, onTabNext, autoFocusColId, onFocusConsumed,
 }: DataRowProps) {
   const [editingQty, setEditingQty] = useState(false);
   const [localQty, setLocalQty] = useState(String(item.qty));
@@ -360,34 +353,40 @@ function DataRow({
   const [localMaterial, setLocalMaterial] = useState(item.material);
   const [editingCustom, setEditingCustom] = useState<string | null>(null);
   const [localCustomVal, setLocalCustomVal] = useState('');
+  const [editingH, setEditingH] = useState(false);
+  const [editingW, setEditingW] = useState(false);
+  const [editingHinges, setEditingHinges] = useState(false);
+  const [editingHW, setEditingHW] = useState(false);
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
 
-  // Cell style helper — adds column divider + hover highlight
   const cellStyle = (colId: string, extra: React.CSSProperties = {}): React.CSSProperties => ({
     ...styles.cell,
     borderRight: '1px solid rgba(0,0,0,0.07)',
-    ...(hoveredCell === colId
-      ? { background: isSelected ? 'rgba(0,136,204,0.14)' : 'rgba(0,136,204,0.06)' }
-      : {}),
+    ...(selectedColIds.has(colId)
+      ? { background: 'rgba(0,136,204,0.14)', outline: '1px solid rgba(0,136,204,0.3)' }
+      : hoveredCell === colId
+        ? { background: 'rgba(0,136,204,0.06)' }
+        : {}),
     ...extra,
   });
   const cellEvents = (colId: string) => ({
     onMouseEnter: () => setHoveredCell(colId),
     onMouseLeave: () => setHoveredCell(null),
+    onClick: (e: React.MouseEvent) => onCellClick(e, colId),
   });
 
-  // Keep local state in sync if parent updates
   useEffect(() => { setLocalQty(String(item.qty)); }, [item.qty]);
   useEffect(() => { setLocalNote(item.note); }, [item.note]);
   useEffect(() => { setLocalRoom(item.roomName); }, [item.roomName]);
   useEffect(() => { setLocalCab(item.cabNumber); }, [item.cabNumber]);
   useEffect(() => { setLocalMaterial(item.material); }, [item.material]);
 
-  // Enter-to-next-row: activate editing for the requested column
   useEffect(() => {
     if (!autoFocusColId) return;
     switch (autoFocusColId) {
       case 'qty':      setEditingQty(true); break;
+      case 'height':   setEditingH(true); break;
+      case 'width':    setEditingW(true); break;
       case 'roomName': setEditingRoom(true); break;
       case 'cabNumber':setEditingCab(true); break;
       case 'material': setEditingMaterial(true); break;
@@ -410,7 +409,15 @@ function DataRow({
 
   const subtotal = item.qty * item.price;
 
-  // Render a cell for a given column
+  // Fix 3: shared Tab key handler for all editable inputs
+  const tabHandler = (colId: string) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      e.currentTarget.blur();
+      onTabNext(colId);
+    }
+  };
+
   const renderCell = (col: ColumnDef) => {
     switch (col.id) {
       case 'qty':
@@ -418,178 +425,280 @@ function DataRow({
           <div key={col.id} style={cellStyle(col.id, { textAlign: 'center' })} {...cellEvents(col.id)}>
             {editingQty ? (
               <input
-                autoFocus
-                type="number"
-                min={1}
-                value={localQty}
+                autoFocus type="number" min={1} value={localQty}
                 onChange={e => setLocalQty(e.target.value)}
                 onFocus={e => e.target.select()}
                 onBlur={commitQty}
                 onKeyDown={e => {
                   if (e.key === 'Enter') { commitQty(); onEnterNext('qty'); }
+                  if (e.key === 'Tab') { e.preventDefault(); commitQty(); onTabNext('qty'); }
                 }}
                 style={{ ...styles.input, textAlign: 'center', width: '100%' }}
               />
             ) : (
-              <span
-                style={styles.editableText}
-                onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingQty(true); }}
-                title="Click to edit QTY"
-              >
+              <span style={styles.editableText} onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingQty(true); }} title="Click to edit QTY">
                 {item.qty}
               </span>
             )}
           </div>
         );
+
       case 'height':
-        return <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10 })} {...cellEvents(col.id)}>{fmtDim(item.doorH, units)}</div>;
+        return editingH ? (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10 })}>
+            <input
+              autoFocus
+              defaultValue={(units === 'in' ? item.doorH / 25.4 : item.doorH).toFixed(units === 'in' ? 2 : 1)}
+              onFocus={e => e.target.select()}
+              style={{ width: '100%', textAlign: 'right', fontSize: 10, border: 'none', outline: 'none', background: 'transparent', boxSizing: 'border-box' }}
+              onBlur={e => { const mm = parseDimToMm(e.target.value, units); if (!isNaN(mm) && mm > 0) onUpdateHeight(mm); setEditingH(false); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.currentTarget.blur(); onEnterNext('height'); }
+                if (e.key === 'Tab') { e.preventDefault(); e.currentTarget.blur(); onTabNext('height'); }
+                if (e.key === 'Escape') setEditingH(false);
+              }}
+            />
+          </div>
+        ) : (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10, cursor: 'text' })} {...cellEvents(col.id)} onClick={e => { onCellClick(e, col.id); setEditingH(true); }}>
+            {fmtDim(item.doorH, units)}
+          </div>
+        );
+
       case 'width':
-        return <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10 })} {...cellEvents(col.id)}>{fmtDim(item.doorW, units)}</div>;
+        return editingW ? (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10 })}>
+            <input
+              autoFocus
+              defaultValue={(units === 'in' ? item.doorW / 25.4 : item.doorW).toFixed(units === 'in' ? 2 : 1)}
+              onFocus={e => e.target.select()}
+              style={{ width: '100%', textAlign: 'right', fontSize: 10, border: 'none', outline: 'none', background: 'transparent', boxSizing: 'border-box' }}
+              onBlur={e => { const mm = parseDimToMm(e.target.value, units); if (!isNaN(mm) && mm > 0) onUpdateWidth(mm); setEditingW(false); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.currentTarget.blur(); onEnterNext('width'); }
+                if (e.key === 'Tab') { e.preventDefault(); e.currentTarget.blur(); onTabNext('width'); }
+                if (e.key === 'Escape') setEditingW(false);
+              }}
+            />
+          </div>
+        ) : (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10, cursor: 'text' })} {...cellEvents(col.id)} onClick={e => { onCellClick(e, col.id); setEditingW(true); }}>
+            {fmtDim(item.doorW, units)}
+          </div>
+        );
+
       case 'partType':
         return <div key={col.id} style={cellStyle(col.id, { fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })} {...cellEvents(col.id)}>{item.doorType}</div>;
       case 'doorStyle':
         return <div key={col.id} style={cellStyle(col.id, { fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })} {...cellEvents(col.id)}>{item.styleName}</div>;
-      case 'finish':
+
+      case 'finish': {
+        // Fix 1: show paint swatch when textureCategory is 'painted'
+        if (item.textureCategory === 'painted' && item.paintPath) {
+          const blobUrl = textureBlobUrls[item.paintPath] ?? null;
+          const colorName = item.paintPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '';
+          return (
+            <div key={col.id} style={cellStyle(col.id, { display: 'flex', alignItems: 'center', gap: 3 })} {...cellEvents(col.id)}>
+              {blobUrl
+                ? <img src={blobUrl} style={{ width: 12, height: 12, borderRadius: 2, objectFit: 'cover', border: '1px solid #ccc', flexShrink: 0 }} alt="" />
+                : <span style={{ width: 12, height: 12, borderRadius: 2, background: '#ddd', display: 'inline-block', border: '1px solid #ccc', flexShrink: 0 }} />
+              }
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }}>{colorName}</span>
+            </div>
+          );
+        }
         return <div key={col.id} style={cellStyle(col.id, { fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })} {...cellEvents(col.id)}>{capitalize(item.textureCategory)}</div>;
+      }
+
       case 'roomName':
         return (
           <div key={col.id} style={cellStyle(col.id, { overflow: 'hidden' })} {...cellEvents(col.id)}>
             {editingRoom ? (
-              <input
-                autoFocus
-                type="text"
-                value={localRoom}
+              <input autoFocus type="text" value={localRoom}
                 onChange={e => setLocalRoom(e.target.value)}
                 onBlur={() => { setEditingRoom(false); onUpdateRoomName(localRoom); }}
-                onKeyDown={e => { if (e.key === 'Enter') { setEditingRoom(false); onUpdateRoomName(localRoom); onEnterNext('roomName'); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { setEditingRoom(false); onUpdateRoomName(localRoom); onEnterNext('roomName'); }
+                  tabHandler('roomName')(e);
+                }}
                 style={{ ...styles.input, width: '100%' }}
               />
             ) : (
-              <span
-                style={{ ...styles.editableText, color: item.roomName ? '#333' : '#bbb' }}
+              <span style={{ ...styles.editableText, color: item.roomName ? '#333' : '#bbb' }}
                 onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingRoom(true); }}
                 title={item.roomName || 'Click to add room name'}
-              >
-                {item.roomName || '—'}
-              </span>
+              >{item.roomName || '—'}</span>
             )}
           </div>
         );
+
       case 'cabNumber':
         return (
           <div key={col.id} style={cellStyle(col.id, { overflow: 'hidden' })} {...cellEvents(col.id)}>
             {editingCab ? (
-              <input
-                autoFocus
-                type="text"
-                value={localCab}
+              <input autoFocus type="text" value={localCab}
                 onChange={e => setLocalCab(e.target.value)}
                 onBlur={() => { setEditingCab(false); onUpdateCabNumber(localCab); }}
-                onKeyDown={e => { if (e.key === 'Enter') { setEditingCab(false); onUpdateCabNumber(localCab); onEnterNext('cabNumber'); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { setEditingCab(false); onUpdateCabNumber(localCab); onEnterNext('cabNumber'); }
+                  tabHandler('cabNumber')(e);
+                }}
                 style={{ ...styles.input, width: '100%' }}
               />
             ) : (
-              <span
-                style={{ ...styles.editableText, color: item.cabNumber ? '#333' : '#bbb' }}
+              <span style={{ ...styles.editableText, color: item.cabNumber ? '#333' : '#bbb' }}
                 onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingCab(true); }}
                 title={item.cabNumber || 'Click to add cab #'}
-              >
-                {item.cabNumber || '—'}
-              </span>
+              >{item.cabNumber || '—'}</span>
             )}
           </div>
         );
+
       case 'material':
         return (
           <div key={col.id} style={cellStyle(col.id, { overflow: 'hidden' })} {...cellEvents(col.id)}>
             {editingMaterial ? (
-              <input
-                autoFocus
-                type="text"
-                value={localMaterial}
+              <input autoFocus type="text" value={localMaterial}
                 onChange={e => setLocalMaterial(e.target.value)}
                 onBlur={() => { setEditingMaterial(false); onUpdateMaterial(localMaterial); }}
-                onKeyDown={e => { if (e.key === 'Enter') { setEditingMaterial(false); onUpdateMaterial(localMaterial); onEnterNext('material'); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { setEditingMaterial(false); onUpdateMaterial(localMaterial); onEnterNext('material'); }
+                  tabHandler('material')(e);
+                }}
                 style={{ ...styles.input, width: '100%' }}
               />
             ) : (
-              <span
-                style={{ ...styles.editableText, color: item.material ? '#333' : '#bbb' }}
+              <span style={{ ...styles.editableText, color: item.material ? '#333' : '#bbb' }}
                 onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingMaterial(true); }}
                 title={item.material || 'Click to add material'}
-              >
-                {item.material || '—'}
-              </span>
+              >{item.material || '—'}</span>
             )}
           </div>
         );
+
       case 'note':
         return (
           <div key={col.id} style={cellStyle(col.id, { overflow: 'hidden' })} {...cellEvents(col.id)}>
             {editingNote ? (
-              <input
-                autoFocus
-                type="text"
-                value={localNote}
+              <input autoFocus type="text" value={localNote}
                 onChange={e => setLocalNote(e.target.value)}
                 onBlur={() => { setEditingNote(false); onUpdateNote(localNote); }}
-                onKeyDown={e => { if (e.key === 'Enter') { setEditingNote(false); onUpdateNote(localNote); onEnterNext('note'); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { setEditingNote(false); onUpdateNote(localNote); onEnterNext('note'); }
+                  tabHandler('note')(e);
+                }}
                 style={{ ...styles.input, width: '100%' }}
               />
             ) : (
-              <span
-                style={{ ...styles.editableText, color: item.note ? '#333' : '#bbb' }}
+              <span style={{ ...styles.editableText, color: item.note ? '#333' : '#bbb' }}
                 onClick={e => { if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setEditingNote(true); }}
                 title={item.note || 'Click to add note'}
-              >
-                {item.note || '—'}
-              </span>
+              >{item.note || '—'}</span>
             )}
           </div>
         );
+
       case 'profile':
         return (
           <div key={col.id} style={cellStyle(col.id, { display: 'flex', alignItems: 'center', justifyContent: 'center' })} {...cellEvents(col.id)}>
             {item.crossSectionImage ? (
-              <button
-                onClick={onView}
-                title="Click to view cross-section"
+              <button onClick={onView} title="Click to view cross-section"
                 style={{ padding: 0, border: '1px solid #e0e0e0', borderRadius: 2, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                <img
-                  src={item.crossSectionImage}
-                  alt="profile"
-                  style={{ width: 36, height: 22, objectFit: 'contain', display: 'block' }}
-                />
+                <img src={item.crossSectionImage} alt="profile" style={{ width: 36, height: 22, objectFit: 'contain', display: 'block' }} />
               </button>
             ) : (
               <span style={{ fontSize: 9, color: '#bbb' }}>—</span>
             )}
           </div>
         );
-      case 'hinges':
-        return <div key={col.id} style={cellStyle(col.id, { textAlign: 'center', fontSize: 10 })} {...cellEvents(col.id)}>{item.hingesDisplay ?? '—'}</div>;
-      case 'hardware':
-        return <div key={col.id} style={cellStyle(col.id, { textAlign: 'center', fontSize: 10 })} {...cellEvents(col.id)}>{item.hardwareDisplay ?? '—'}</div>;
+
+      case 'hinges': {
+        // Fix 4: dropdown for L / R / NA
+        const { side, count } = parseHinges(item.hingesDisplay ?? '');
+        const isFixed = side === '\u2014' || side === '—';
+        return (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'center', fontSize: 10 })} {...cellEvents(col.id)}>
+            {editingHinges && !isFixed ? (
+              <select
+                autoFocus
+                value={side === 'NA' ? 'NA' : side}
+                onChange={e => {
+                  const s = e.target.value;
+                  onUpdateHingesDisplay(s === 'NA' ? 'NA' : `${s} ${count}`);
+                  setEditingHinges(false);
+                }}
+                onBlur={() => setEditingHinges(false)}
+                style={{ fontSize: 9, border: 'none', background: 'transparent', width: '100%', outline: 'none', padding: 0, textAlign: 'center' as const }}
+              >
+                <option value="L">L</option>
+                <option value="R">R</option>
+                <option value="NA">NA</option>
+              </select>
+            ) : (
+              <span
+                style={{ cursor: isFixed ? 'default' : 'pointer', fontSize: 10 }}
+                onClick={() => { if (!isFixed) setEditingHinges(true); }}
+              >
+                {item.hingesDisplay ?? '—'}
+              </span>
+            )}
+          </div>
+        );
+      }
+
+      case 'hardware': {
+        // Fix 5: dropdown for K / H / NA
+        const hw = item.hardwareDisplay ?? '—';
+        const isFixed = hw === '—' || hw === '\u2014';
+        return (
+          <div key={col.id} style={cellStyle(col.id, { textAlign: 'center', fontSize: 10 })} {...cellEvents(col.id)}>
+            {editingHW && !isFixed ? (
+              <select
+                autoFocus
+                value={hw === 'NA' ? 'NA' : hw}
+                onChange={e => {
+                  onUpdateHardwareDisplay(e.target.value);
+                  setEditingHW(false);
+                }}
+                onBlur={() => setEditingHW(false)}
+                style={{ fontSize: 9, border: 'none', background: 'transparent', width: '100%', outline: 'none', padding: 0, textAlign: 'center' as const }}
+              >
+                <option value="K">K</option>
+                <option value="H">H</option>
+                <option value="NA">NA</option>
+              </select>
+            ) : (
+              <span
+                style={{ cursor: isFixed ? 'default' : 'pointer', fontSize: 10 }}
+                onClick={() => { if (!isFixed) setEditingHW(true); }}
+              >
+                {hw}
+              </span>
+            )}
+          </div>
+        );
+      }
+
       case 'price':
         return <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10, fontVariantNumeric: 'tabular-nums' })} {...cellEvents(col.id)}>{fmtPrice(item.price)}</div>;
       case 'subtotal':
         return <div key={col.id} style={cellStyle(col.id, { textAlign: 'right', fontSize: 10, fontWeight: 700, fontVariantNumeric: 'tabular-nums' })} {...cellEvents(col.id)}>{fmtPrice(subtotal)}</div>;
+
       default:
-        // Custom user-defined columns
         if (col.isCustom) {
           const val = item.customData?.[col.id] ?? '';
           const isEditing = editingCustom === col.id;
           return (
             <div key={col.id} style={cellStyle(col.id, { overflow: 'hidden' })} {...cellEvents(col.id)}>
               {isEditing ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={localCustomVal}
+                <input autoFocus type="text" value={localCustomVal}
                   onChange={e => setLocalCustomVal(e.target.value)}
                   onBlur={() => { setEditingCustom(null); onUpdateCustom(col.id, localCustomVal); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { setEditingCustom(null); onUpdateCustom(col.id, localCustomVal); onEnterNext(col.id); } }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { setEditingCustom(null); onUpdateCustom(col.id, localCustomVal); onEnterNext(col.id); }
+                    tabHandler(col.id)(e);
+                  }}
                   style={{ ...styles.input, width: '100%' }}
                 />
               ) : (
@@ -606,34 +715,19 @@ function DataRow({
     }
   };
 
-  // rowNum is declared but only used for future use (ordering). Suppress lint warning.
   void rowNum;
 
   return (
     <div
       data-row="true"
-      onPointerDown={e => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        onRowPointerDown(e);
-      }}
-      onPointerEnter={onRowPointerEnter}
-      style={{
-        ...styles.gridRow,
-        ...styles.dataRow,
-        gridTemplateColumns: colTemplate,
-        background: isSelected ? 'rgba(0,136,204,0.08)' : isAlt ? '#f9fafb' : '#fff',
-        borderLeft: isSelected ? '3px solid #0088cc' : '3px solid transparent',
-      }}
+      style={{ ...styles.gridRow, ...styles.dataRow, gridTemplateColumns: colTemplate, background: isAlt ? '#f9fafb' : '#fff' }}
     >
-      {/* Eyeball */}
       <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.07)' }}>
         <button onClick={onView} style={styles.eyeBtn} title="View item">👁</button>
       </div>
-      {/* Remove */}
       <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.07)' }}>
         <button onClick={onRemove} style={styles.removeBtn} title="Remove">×</button>
       </div>
-      {/* Load into editor */}
       <div style={{ ...styles.cell, ...styles.actionCell, borderRight: '1px solid rgba(0,0,0,0.07)' }}>
         <button onClick={onLoad} style={styles.loadBtn} title="Load into data entry">↩</button>
       </div>
@@ -662,8 +756,7 @@ function BlankAddRow({ units, visibleCols, colTemplate, onAdd }: {
     const hMissing = h === '' || isNaN(hv) || hv <= 0;
     const wMissing = w === '' || isNaN(wv) || wv <= 0;
     if (hMissing || wMissing) {
-      setHError(hMissing);
-      setWError(wMissing);
+      setHError(hMissing); setWError(wMissing);
       if (hMissing) hRef.current?.focus(); else wRef.current?.focus();
       return;
     }
@@ -674,56 +767,32 @@ function BlankAddRow({ units, visibleCols, colTemplate, onAdd }: {
     hRef.current?.focus();
   };
 
-  const hasFocus = h !== '' || w !== '';
-
   return (
-    <div style={{
-      ...styles.gridRow,
-      ...styles.blankRow,
-      gridTemplateColumns: colTemplate,
-      background: hasFocus ? 'rgba(0,136,204,0.04)' : 'transparent',
-    }}>
-      {/* Three action cols (eye / remove / load) */}
+    <div style={{ ...styles.gridRow, ...styles.blankRow, gridTemplateColumns: colTemplate, background: (h !== '' || w !== '') ? 'rgba(0,136,204,0.04)' : 'transparent' }}>
       <div style={{ ...styles.cell, ...styles.actionCell }} />
       <div style={{ ...styles.cell, ...styles.actionCell }} />
       <div style={{ ...styles.cell, ...styles.actionCell }} />
       {visibleCols.map(col => {
-        if (col.id === 'height') {
-          return (
-            <div key={col.id} style={styles.cell}>
-              <input
-                ref={hRef}
-                type="number"
-                value={h}
-                onChange={e => { setH(e.target.value); if (hError) setHError(false); }}
-                placeholder="H"
-                onKeyDown={e => {
-                  if (e.key === 'Tab') { e.preventDefault(); wRef.current?.focus(); }
-                  if (e.key === 'Enter') submit();
-                }}
-                style={{ ...styles.blankInput, ...(hError ? styles.blankInputError : {}) }}
-              />
-            </div>
-          );
-        }
-        if (col.id === 'width') {
-          return (
-            <div key={col.id} style={styles.cell}>
-              <input
-                ref={wRef}
-                type="number"
-                value={w}
-                onChange={e => { setW(e.target.value); if (wError) setWError(false); }}
-                placeholder="W"
-                onKeyDown={e => {
-                  if (e.key === 'Tab') { e.preventDefault(); hRef.current?.focus(); }
-                  if (e.key === 'Enter') submit();
-                }}
-                style={{ ...styles.blankInput, ...(wError ? styles.blankInputError : {}) }}
-              />
-            </div>
-          );
-        }
+        if (col.id === 'height') return (
+          <div key={col.id} style={styles.cell}>
+            <input ref={hRef} type="number" value={h}
+              onChange={e => { setH(e.target.value); if (hError) setHError(false); }}
+              placeholder="H"
+              onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); wRef.current?.focus(); } if (e.key === 'Enter') submit(); }}
+              style={{ ...styles.blankInput, ...(hError ? styles.blankInputError : {}) }}
+            />
+          </div>
+        );
+        if (col.id === 'width') return (
+          <div key={col.id} style={styles.cell}>
+            <input ref={wRef} type="number" value={w}
+              onChange={e => { setW(e.target.value); if (wError) setWError(false); }}
+              placeholder="W"
+              onKeyDown={e => { if (e.key === 'Tab') { e.preventDefault(); hRef.current?.focus(); } if (e.key === 'Enter') submit(); }}
+              style={{ ...styles.blankInput, ...(wError ? styles.blankInputError : {}) }}
+            />
+          </div>
+        );
         return <div key={col.id} style={{ ...styles.cell, color: '#ddd', fontSize: 10, textAlign: 'center' }}>—</div>;
       })}
     </div>
@@ -731,200 +800,28 @@ function BlankAddRow({ units, visibleCols, colTemplate, onAdd }: {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    background: 'rgba(255,255,255,0.95)',
-    overflow: 'hidden',
-    fontSize: 10,
-    fontFamily: 'system-ui, sans-serif',
-  },
-
-  // Title bar
-  titleBar: {
-    height: 24,
-    background: '#f0f4f8',
-    borderBottom: '1px solid #ddd',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#444',
-    flexShrink: 0,
-    letterSpacing: '0.03em',
-  },
-
-  // Tab bar
-  tabBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    padding: '3px 6px 0',
-    background: '#f0f4f8',
-    borderBottom: '1px solid #ccc',
-    flexShrink: 0,
-    flexWrap: 'nowrap',
-    overflowX: 'auto',
-    height: 28,
-  },
-  tab: {
-    padding: '2px 8px',
-    fontSize: 10,
-    fontWeight: 600,
-    border: '1px solid #ccc',
-    borderBottom: 'none',
-    borderRadius: '3px 3px 0 0',
-    cursor: 'pointer',
-    background: '#fff',
-    color: '#666',
-    whiteSpace: 'nowrap',
-    lineHeight: '18px',
-    maxWidth: 120,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  activeTab: {
-    background: '#0088cc',
-    color: '#fff',
-    borderColor: '#0088cc',
-  },
-  newSelIndicator: {
-    fontSize: 9,
-    color: '#999',
-    paddingLeft: 4,
-    whiteSpace: 'nowrap',
-    fontStyle: 'italic',
-  },
-
-  // Table
-  tableWrapper: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  gridRow: {
-    display: 'grid',
-    alignItems: 'center',
-    borderBottom: '1px solid #e8e8e8',
-  },
-  headerRow: {
-    background: '#f0f4f8',
-    flexShrink: 0,
-    height: 26,
-  },
-  groupHeader: {
-    background: '#e6ecf2',
-    height: 22,
-    borderBottom: '1px solid #d0d8e4',
-  },
-  dataBody: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-  dataRow: {
-    height: 26,
-  },
-
-  // Cells
-  cell: {
-    padding: '0 4px',
-    overflow: 'hidden',
-  },
-  actionCell: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 0,
-  },
-  headerCell: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: '#666',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-  },
-  emptyRow: {
-    padding: '12px 8px',
-    fontSize: 10,
-    color: '#bbb',
-    textAlign: 'center' as const,
-  },
-
-  // Editable text placeholder
-  editableText: {
-    cursor: 'text',
-    fontSize: 10,
-    display: 'block',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-
-  // Inputs
-  input: {
-    border: '1px solid #0088cc',
-    borderRadius: 2,
-    padding: '1px 3px',
-    fontSize: 10,
-    background: '#fff',
-    boxSizing: 'border-box' as const,
-    outline: 'none',
-  },
-
-  // Action buttons
-  eyeBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 13,
-    padding: 0,
-    lineHeight: 1,
-    opacity: 0.7,
-  },
-  removeBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 14,
-    fontWeight: 700,
-    color: '#cc4444',
-    padding: 0,
-    lineHeight: 1,
-  },
-  loadBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 13,
-    padding: 0,
-    lineHeight: 1,
-    color: '#0088cc',
-    opacity: 0.75,
-  },
-  blankRow: {
-    borderTop: '1px dashed #d0d8e4',
-    background: 'transparent',
-    height: 26,
-  },
-  blankInput: {
-    border: '1px solid #ccc',
-    borderRadius: 2,
-    padding: '1px 3px',
-    fontSize: 10,
-    background: '#fafdff',
-    boxSizing: 'border-box' as const,
-    outline: 'none',
-    width: '100%',
-    textAlign: 'right' as const,
-    color: '#555',
-  },
-  blankInputError: {
-    border: '1px solid #e05555',
-    background: '#fff5f5',
-  },
+  container: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.95)', overflow: 'hidden', fontSize: 10, fontFamily: 'system-ui, sans-serif' },
+  titleBar: { height: 24, background: '#f0f4f8', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#444', flexShrink: 0, letterSpacing: '0.03em' },
+  tabBar: { display: 'flex', alignItems: 'center', gap: 2, padding: '3px 6px 0', background: '#f0f4f8', borderBottom: '1px solid #ccc', flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto', height: 28 },
+  tab: { padding: '2px 8px', fontSize: 10, fontWeight: 600, border: '1px solid #ccc', borderBottom: 'none', borderRadius: '3px 3px 0 0', cursor: 'pointer', background: '#fff', color: '#666', whiteSpace: 'nowrap', lineHeight: '18px', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' },
+  activeTab: { background: '#0088cc', color: '#fff', borderColor: '#0088cc' },
+  newSelIndicator: { fontSize: 9, color: '#999', paddingLeft: 4, whiteSpace: 'nowrap', fontStyle: 'italic' },
+  tableWrapper: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  gridRow: { display: 'grid', alignItems: 'center', borderBottom: '1px solid #e8e8e8' },
+  headerRow: { background: '#f0f4f8', flexShrink: 0, height: 26 },
+  groupHeader: { background: '#e6ecf2', height: 22, borderBottom: '1px solid #d0d8e4' },
+  dataBody: { flex: 1, overflowY: 'auto' },
+  dataRow: { height: 26 },
+  cell: { padding: '0 4px', overflow: 'hidden' },
+  actionCell: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
+  headerCell: { fontSize: 10, fontWeight: 700, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden' },
+  emptyRow: { padding: '12px 8px', fontSize: 10, color: '#bbb', textAlign: 'center' as const },
+  editableText: { cursor: 'text', fontSize: 10, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  input: { border: '1px solid #0088cc', borderRadius: 2, padding: '1px 3px', fontSize: 10, background: '#fff', boxSizing: 'border-box' as const, outline: 'none' },
+  eyeBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1, opacity: 0.7 },
+  removeBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#cc4444', padding: 0, lineHeight: 1 },
+  loadBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1, color: '#0088cc', opacity: 0.75 },
+  blankRow: { borderTop: '1px dashed #d0d8e4', background: 'transparent', height: 26 },
+  blankInput: { border: '1px solid #ccc', borderRadius: 2, padding: '1px 3px', fontSize: 10, background: '#fafdff', boxSizing: 'border-box' as const, outline: 'none', width: '100%', textAlign: 'right' as const, color: '#555' },
+  blankInputError: { border: '1px solid #e05555', background: '#fff5f5' },
 };
-

@@ -58,6 +58,8 @@ export const PARAM_DEFINITIONS: ParamDefinition[] = [
   { key: 'hinge6Trigger',    label: '6 Hinge Height',      type: 'number', unit: 'mm' },
   { key: 'hingeEdgeDistance', label: 'Hinge Edge Dist',     type: 'number', unit: 'mm' },
   { key: 'textures',        label: 'Textures',            type: 'texture-checkbox-list' },
+  { key: 'kerfEnabled',     label: 'Kerf Cuts',           type: 'boolean-radio' },
+  { key: 'kerfToolGroups',  label: 'Kerf Tool Groups',    type: 'group-depth-list', source: 'panelGroups' },
 ];
 
 // ---------------------------------------------------------------------------

@@ -135,6 +135,8 @@ The viewer uses **Vite's built-in dev server** (port 5173) with a custom Vite pl
 
 The Admin panel UI (`AdminPanel.tsx`) provides folder configuration and texture swatches. Textures are auto-selected (first file per category) when scanned so the 3D viewer works immediately. The Canvas component stays mounted (hidden via `display: none`) during library switches to prevent WebGL context loss.
 
+`AdminPanel.tsx` also exposes a **Display Units** toggle (Inches / Millimeters) that initializes from `localStorage['pac-units']` (default: `'in'`) and persists on change.
+
 ### Tool offset convention
 
 `entryOffset` from Mozaik data is negated when used: `offset = -tool.entryOffset`. A positive result means the toolpath is outward from the panel edge; negative means inward.
@@ -172,6 +174,7 @@ The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) 
 - **`ElevationViewer.tsx`** — 2D front elevation rendering with inline click-to-edit overlays for stile/rail widths, hinge positions, and handle elevation
 - **`LayoutCustomizer.tsx`** — dashboard panel layout drag-to-resize customizer
 - **`OrderListPanel.tsx`** — order list panel for managing door order line items
+- **`OrderPanel.tsx`** — order management panel for viewing, filtering, and exporting the door order list with configurable columns and group-by
 
 ### Configure System
 
@@ -223,7 +226,7 @@ The CLI (`src/cli.ts`) reads all three files from hardcoded paths. The viewer's 
 
 ## Git Workflow
 
-**Branch strategy:** work on `dev`, merge to `main` when stable, then recreate `dev` from `main`.
+**Branch strategy:** work on `dev`, merge to `main` when stable (`git checkout main && git merge dev && git push origin main && git checkout dev`).
 
 **Commit message rules — write for a human reading the log, not a machine:**
 - **Subject line** (first line): short imperative summary of *what changed and why*, max ~72 chars

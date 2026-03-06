@@ -3,7 +3,7 @@ import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import { profileToLinePoints, profileToLinePointsWithArcs } from './profileShape.js';
 import type { ArcAnnotation } from './profileShape.js';
 import { expandRect, mozaikToScene } from './geometry.js';
-import type { ToolProfileData, ProfilePointData, DoorGraphData, HoleData } from '../types.js';
+import type { ToolProfileData, ProfilePointData, DoorGraphData, HoleData, KerfLine } from '../types.js';
 import type { SceneRect } from './geometry.js';
 
 // ---------------------------------------------------------------------------
@@ -489,6 +489,7 @@ export function buildCarvedDoor(
   profiles: ToolProfileData[],
   backPockets?: { rect: SceneRect; depth: number; tools: GraphToolEntry[]; alignment?: number }[],
   holes?: HoleData[],
+  kerfs?: KerfLine[],
 ): THREE.BufferGeometry {
   const evaluator = new Evaluator();
 
@@ -691,6 +692,34 @@ export function buildCarvedDoor(
         slabBrush = evaluator.evaluate(slabBrush, holeBrush, SUBTRACTION);
       } catch (e) {
         console.warn(`[CNCDoorSlab] CSG subtract failed for ${hole.holeType} hole, skipping`, e);
+      }
+    }
+  }
+
+  // Kerf slot subtractions — full-depth 1/8"-wide slots
+  if (kerfs && kerfs.length > 0) {
+    const KERF_WIDTH = 3.175; // 1/8 inch
+    for (const kerf of kerfs) {
+      let kerfGeo: THREE.BoxGeometry;
+      let kerfPos: [number, number, number];
+      if (kerf.orientation === 'H') {
+        // Horizontal slot: spans full slab width, narrow in Y (height axis)
+        // centerMm is on model X (height axis); scene Y = slabH/2 - centerMm
+        kerfGeo = new THREE.BoxGeometry(slabW + SURFACE_OVERSHOOT * 2, KERF_WIDTH, thickness + SURFACE_OVERSHOOT * 2);
+        kerfPos = [0, slabH / 2 - kerf.centerMm, 0];
+      } else {
+        // Vertical slot: narrow in X (width axis), spans full slab height
+        // centerMm is on model Y (width axis); scene X = centerMm - slabW/2
+        kerfGeo = new THREE.BoxGeometry(KERF_WIDTH, slabH + SURFACE_OVERSHOOT * 2, thickness + SURFACE_OVERSHOOT * 2);
+        kerfPos = [kerf.centerMm - slabW / 2, 0, 0];
+      }
+      const kerfBrush = new Brush(kerfGeo);
+      kerfBrush.position.set(...kerfPos);
+      kerfBrush.updateMatrixWorld(true);
+      try {
+        slabBrush = evaluator.evaluate(slabBrush, kerfBrush, SUBTRACTION);
+      } catch (e) {
+        console.warn('[buildCarvedDoor] CSG kerf subtract failed, skipping', e);
       }
     }
   }

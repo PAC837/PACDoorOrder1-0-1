@@ -243,6 +243,55 @@ export function enumerateSplits(tree: PanelTree): SplitInfo[] {
 }
 
 /**
+ * Build a right-leaning chain of splits from a sorted list of positions.
+ * Used for equal-split (2/3/4 equal panels) operations.
+ * positions[0] is the bottom/left-most split, positions[n-1] is the top/right-most.
+ */
+export function buildSplitChain(
+  type: 'hsplit' | 'vsplit',
+  positions: number[],
+  width: number,
+): PanelTree {
+  if (positions.length === 0) return { type: 'leaf' };
+  const [first, ...rest] = positions;
+  return {
+    type,
+    pos: first,
+    width,
+    children: [{ type: 'leaf' }, buildSplitChain(type, rest, width)],
+  };
+}
+
+/**
+ * Replace the leaf at `leafIndex` (DFS order) with an arbitrary sub-tree.
+ * Used for equal-split operations where a leaf is replaced with a multi-split chain.
+ */
+export function replaceLeafAt(
+  tree: PanelTree,
+  leafIndex: number,
+  replacement: PanelTree,
+): PanelTree {
+  let consumed = 0;
+
+  function recurse(node: PanelTree): PanelTree {
+    if (node.type === 'leaf') {
+      if (consumed === leafIndex) {
+        consumed++;
+        return replacement;
+      }
+      consumed++;
+      return node;
+    }
+    const newLeft = recurse(node.children[0]);
+    const newRight = recurse(node.children[1]);
+    if (newLeft === node.children[0] && newRight === node.children[1]) return node;
+    return { ...node, children: [newLeft, newRight] };
+  }
+
+  return recurse(tree);
+}
+
+/**
  * Convert library door Divider data to a PanelTree.
  * Library doors only have horizontal dividers (mid-rails), no mid-stiles,
  * so the result is a chain of hsplits (bottom-up).

@@ -28,9 +28,13 @@ import { useConfigData } from './hooks/useConfigData.js';
 import { useOrderColumns } from './hooks/useOrderColumns.js';
 import { useGroupByConfig } from './hooks/useGroupByConfig.js';
 import { useWatermarkConfig, watermarkFontSize } from './hooks/useWatermarkConfig.js';
+import { useViewerSettings } from './hooks/useViewerSettings.js';
+import { getPreset, LIGHTING_PRESETS } from './lightingPresets.js';
+import { SceneLighting } from './components/SceneLighting.js';
+import { TestViewer } from './components/TestViewer.js';
 import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue } from './configParams.js';
 
-type Tab = 'door' | 'admin' | 'configure';
+type Tab = 'door' | 'admin' | 'configure' | 'test';
 
 export interface OrderItem {
   id: number;
@@ -172,6 +176,8 @@ export default function App() {
   const { columns, setColumns } = useOrderColumns();
   const { groupByFields, setGroupByFields } = useGroupByConfig();
   const { watermarkConfig, setWatermarkConfig } = useWatermarkConfig();
+  const { viewerSettings, setViewerSettings } = useViewerSettings();
+  const activePreset = useMemo(() => getPreset(viewerSettings.lightingPreset), [viewerSettings.lightingPreset]);
   const [orderQty, setOrderQty] = useState(1);
   const [viewingItem, setViewingItem] = useState<OrderItem | null>(null);
   const preSlabGroups = useRef<{ frontGroupId: number | null; backGroupId: number | null; edgeGroupId: number | null } | null>(null);
@@ -1417,10 +1423,8 @@ export default function App() {
             style={{ ...styles.canvas, display: activeDoor ? undefined : 'none' }}
             onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
           >
-            <color attach="background" args={['#ffffff']} />
-            <ambientLight intensity={0.4} />
-            <directionalLight position={[500, 800, 1000]} intensity={0.8} />
-            <directionalLight position={[-300, 400, -500]} intensity={0.3} />
+            <color attach="background" args={[activePreset.background ?? '#ffffff']} />
+            <SceneLighting presetKey={viewerSettings.lightingPreset} />
             {activeDoor && (
               <DoorViewer
                 door={activeDoor}
@@ -1438,6 +1442,8 @@ export default function App() {
                 renderMode={doorRenderMode}
                 textureUrl={textureUrl}
                 kerfs={kerfs}
+                modelOpacity={viewerSettings.modelOpacity}
+                materialOverrides={activePreset.materialOverrides}
               />
             )}
             {activeDoor && (
@@ -1475,8 +1481,29 @@ export default function App() {
           )}
 
           {activeDoor && (
-            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
+            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 4, alignItems: 'center' }}>
               <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
+              <div style={{ height: 16, width: 1, background: '#ccc', margin: '0 2px' }} />
+              {LIGHTING_PRESETS.map(p => (
+                <button
+                  key={p.key}
+                  onClick={() => setViewerSettings(prev => ({ ...prev, lightingPreset: p.key }))}
+                  style={{
+                    padding: '4px 6px',
+                    borderRadius: 4,
+                    border: viewerSettings.lightingPreset === p.key ? '1px solid #4488cc' : '1px solid #999',
+                    background: viewerSettings.lightingPreset === p.key ? '#e0eeff' : '#fff',
+                    color: viewerSettings.lightingPreset === p.key ? '#2266aa' : '#333',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    fontWeight: viewerSettings.lightingPreset === p.key ? 600 : 400,
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={p.description}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           )}
 
@@ -1541,6 +1568,8 @@ export default function App() {
               onWatermarkChange={setWatermarkConfig}
               units={units}
               onUnitsChange={setUnits}
+              viewerSettings={viewerSettings}
+              onViewerSettingsChange={setViewerSettings}
             />
           </div>
         </div>
@@ -1566,6 +1595,22 @@ export default function App() {
               inputStep={inputStep}
             />
           </div>
+        </div>
+      )}
+
+      {/* Test Viewer — full overlay with its own Canvas */}
+      {currentTab === 'test' && activeDoor && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
+          <TestViewer
+            door={activeDoor}
+            graph={activeGraph}
+            profiles={profiles}
+            operationVisibility={operationVisibility}
+            toolVisibility={toolVisibility}
+            thickness={thickness}
+            kerfs={kerfs}
+            textureUrl={textureUrl}
+          />
         </div>
       )}
 
@@ -1667,6 +1712,15 @@ function TabBar({ currentTab, onTabChange, units, onUnitsChange }: {
         onClick={() => onTabChange(currentTab === 'admin' ? 'door' : 'admin')}
       >
         Admin
+      </button>
+      <button
+        style={{
+          ...tabStyles.tab,
+          ...(currentTab === 'test' ? tabStyles.activeTab : {}),
+        }}
+        onClick={() => onTabChange(currentTab === 'test' ? 'door' : 'test')}
+      >
+        Test
       </button>
       <button
         style={{ ...tabStyles.tab, marginLeft: 8, fontWeight: 'bold', minWidth: 36 }}

@@ -32,6 +32,8 @@ const PARAM_DEFAULTS: Record<string, string> = {
   hinge6Trigger:    JSON.stringify({ value: 0 }),         // disabled
   hingeEdgeDistance: JSON.stringify({ value: 76.2 }),      // 3"
   textures:         JSON.stringify({ enabledTextures: [] }),
+  kerfEnabled:      JSON.stringify({ enabled: false }),
+  kerfToolGroups:   JSON.stringify({ entries: [] }),
 };
 
 // ---------------------------------------------------------------------------

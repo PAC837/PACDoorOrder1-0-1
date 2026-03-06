@@ -25,6 +25,8 @@ interface CNCDoorSlabProps {
   renderMode?: RenderMode;
   textureUrl?: string;
   kerfs?: KerfLine[];
+  modelOpacity?: number;
+  materialOverrides?: { roughness?: number; metalness?: number };
 }
 
 /**
@@ -51,6 +53,8 @@ export function CNCDoorSlab({
   renderMode = 'solid',
   textureUrl,
   kerfs = [],
+  modelOpacity = 1,
+  materialOverrides,
 }: CNCDoorSlabProps) {
   // Stable key that changes when tool selection changes — forces mesh re-mount
   const meshKey = useMemo(() => {
@@ -158,8 +162,8 @@ export function CNCDoorSlab({
     return panes.length > 0 ? panes : null;
   }, [showGlass, frontOps, doorW, doorH, graph, thickness, hasBackRabbit]);
 
-  // EdgesGeometry for wireframe mode
-  const edgesGeo = useMemo(() => {
+  // Wireframe: EdgesGeometry as before
+  const wireGeo = useMemo(() => {
     if (renderMode !== 'wireframe') return null;
     const merged = mergeVertices(carvedGeo, 1e-3);
     merged.computeVertexNormals();
@@ -170,24 +174,29 @@ export function CNCDoorSlab({
     <>
       {renderMode === 'wireframe' ? (
         <>
-          {edgesGeo && (
-            <lineSegments key={`${meshKey}-wire`} geometry={edgesGeo}>
+          {wireGeo && (
+            <lineSegments key={`${meshKey}-wire`} geometry={wireGeo}>
               <lineBasicMaterial color={color} />
             </lineSegments>
           )}
         </>
       ) : (
         <>
-          <mesh key={meshKey} geometry={carvedGeo}>
-            <meshStandardMaterial
-              key={`mat-${renderMode}-${textureUrl ?? 'none'}`}
-              color={texture ? '#ffffff' : color}
-              map={texture ?? undefined}
-              roughness={0.7}
-              metalness={0}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
+          {modelOpacity > 0 && (
+            <mesh key={meshKey} geometry={carvedGeo}>
+              <meshStandardMaterial
+                key={`mat-${renderMode}-${textureUrl ?? 'none'}-${modelOpacity}`}
+                color={texture ? '#ffffff' : color}
+                map={texture ?? undefined}
+                roughness={materialOverrides?.roughness ?? 0.7}
+                metalness={materialOverrides?.metalness ?? 0}
+                side={THREE.DoubleSide}
+                transparent={modelOpacity < 1}
+                opacity={modelOpacity}
+                depthWrite={modelOpacity >= 1}
+              />
+            </mesh>
+          )}
         </>
       )}
       {showGlass && glassPanes && glassPanes.map((pane, i) => (

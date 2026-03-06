@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { DoorData, UnitSystem, HoleData, HandleConfig, HingeConfig, RenderMode } from '../types.js';
+import type { DoorData, UnitSystem, HoleData, HandleConfig, HingeConfig, RenderMode, KerfLine, RawToolGroup } from '../types.js';
 import { formatUnit } from '../types.js';
 import { RenderModeButton, nextRenderMode } from './RenderModeButton.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
@@ -40,6 +40,12 @@ interface ElevationViewerProps {
   onHingePositionChange?: (index: number, newPositionMm: number) => void;
   onHandleElevationChange?: (newElevationMm: number) => void;
   compact?: boolean;
+  kerfs?: KerfLine[];
+  kerfEnabled?: boolean;
+  kerfToolGroups?: RawToolGroup[];
+  onAddKerf?: (orientation: 'H' | 'V', centerMm: number, toolGroupId: number | null) => void;
+  onDeleteKerf?: (id: number) => void;
+  onMoveKerf?: (id: number, newCenterMm: number) => void;
 }
 
 const MIN_PANEL_SIZE = 25.4; // 1" minimum panel dimension for drag constraints
@@ -105,6 +111,37 @@ type EditingMember = {
   currentValue: number;
 } | null;
 
+/** Returns the nearest frame/split boundary below (lo) and above (hi) for dimension display. */
+function getNearestBoundaries(
+  centerMm: number,
+  orientation: 'H' | 'V',
+  doorH: number,
+  doorW: number,
+  bottomRailW: number,
+  topRailW: number,
+  leftStileW: number,
+  rightStileW: number,
+  splitsWithBounds: SplitInfoWithBounds[],
+): { lo: number; hi: number } {
+  if (orientation === 'H') {
+    const bounds = [bottomRailW, doorH - topRailW];
+    for (const s of splitsWithBounds) {
+      if (s.type === 'hsplit') { bounds.push(s.pos - s.width / 2); bounds.push(s.pos + s.width / 2); }
+    }
+    const lo = Math.max(...bounds.filter(b => b <= centerMm), 0);
+    const hi = Math.min(...bounds.filter(b => b >= centerMm), doorH);
+    return { lo, hi };
+  } else {
+    const bounds = [leftStileW, doorW - rightStileW];
+    for (const s of splitsWithBounds) {
+      if (s.type === 'vsplit') { bounds.push(s.pos - s.width / 2); bounds.push(s.pos + s.width / 2); }
+    }
+    const lo = Math.max(...bounds.filter(b => b <= centerMm), 0);
+    const hi = Math.min(...bounds.filter(b => b >= centerMm), doorW);
+    return { lo, hi };
+  }
+}
+
 export function ElevationViewer({
   door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
@@ -113,6 +150,7 @@ export function ElevationViewer({
   onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile,
   onDeleteSplit, onAddEqualMidRails, onAddEqualMidStiles, onDeselectAll,
   hingeConfig, onHingePositionChange, onHandleElevationChange, compact, onReset,
+  kerfs, kerfEnabled, kerfToolGroups, onAddKerf, onDeleteKerf, onMoveKerf,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -148,6 +186,12 @@ export function ElevationViewer({
   const [editingHandle, setEditingHandle] = useState<{ screenX: number; screenY: number; currentValue: number } | null>(null);
   const pendingHandleClick = useRef<{ startX: number; startY: number } | null>(null);
 
+  // Kerf mode state
+  const [kerfMode, setKerfMode] = useState<'H' | 'V' | null>(null);
+  const [kerfToolGroupId, setKerfToolGroupId] = useState<number | null>(null);
+  const [selectedKerfId, setSelectedKerfId] = useState<number | null>(null);
+  const [kerfHoverMm, setKerfHoverMm] = useState<number | null>(null);
+
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
   const doorW = door.DefaultW;
@@ -175,6 +219,21 @@ export function ElevationViewer({
   useEffect(() => {
     setZoom(1); setPanX(0); setPanY(0);
   }, [door.Name, door.DefaultW, door.DefaultH]);
+
+  // Auto-select first kerf tool group when list changes
+  useEffect(() => {
+    if (!kerfToolGroups || kerfToolGroups.length === 0) return;
+    setKerfToolGroupId(prev =>
+      prev !== null && kerfToolGroups.some(g => g.ToolGroupID === prev)
+        ? prev
+        : kerfToolGroups[0].ToolGroupID
+    );
+  }, [kerfToolGroups]);
+
+  // Exit kerf mode when feature is disabled
+  useEffect(() => {
+    if (!kerfEnabled) { setKerfMode(null); setKerfHoverMm(null); }
+  }, [kerfEnabled]);
 
   // Resize observer
   useEffect(() => {
@@ -276,9 +335,56 @@ export function ElevationViewer({
     return () => window.removeEventListener('keydown', handler);
   }, [measure.measureMode, measure.handleKeyDown]);
 
+  // Escape exits kerf mode
+  useEffect(() => {
+    if (!kerfMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setKerfMode(null); setKerfHoverMm(null); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [kerfMode]);
+
+  // Auto-select the newest kerf when one is added (while in kerf mode)
+  const kerfsLen = kerfs?.length ?? 0;
+  useEffect(() => {
+    if (kerfMode && kerfs && kerfs.length > 0) {
+      setSelectedKerfId(kerfs[kerfs.length - 1].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kerfsLen]); // intentionally watching length only
+
+  // Arrow key nudge of selected kerf
+  useEffect(() => {
+    if (!selectedKerfId || !onMoveKerf) return;
+    const NUDGE = 1.5875; // 1/16 inch
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const kerf = (kerfs ?? []).find(k => k.id === selectedKerfId);
+      if (!kerf) return;
+      e.preventDefault();
+      let delta = 0;
+      if (kerf.orientation === 'H') {
+        if (e.key === 'ArrowUp') delta = NUDGE;
+        else if (e.key === 'ArrowDown') delta = -NUDGE;
+      } else {
+        if (e.key === 'ArrowRight') delta = NUDGE;
+        else if (e.key === 'ArrowLeft') delta = -NUDGE;
+      }
+      if (delta !== 0) {
+        const max = kerf.orientation === 'H' ? doorH : doorW;
+        const newPos = Math.max(0, Math.min(max, kerf.centerMm + delta));
+        onMoveKerf(selectedKerfId, newPos);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedKerfId, kerfs, onMoveKerf, doorH, doorW]);
+
   // Cursor
   const cursor = useMemo(() => {
     if (measure.measureMode) return measure.draggingIdx !== null ? 'grabbing' : 'crosshair';
+    if (kerfMode) return 'crosshair';
     if (draggingHinge || draggingHandle) return 'ns-resize';
     if (draggingSplit) {
       return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
@@ -288,7 +394,7 @@ export function ElevationViewer({
     }
     if (isPanning) return 'grabbing';
     return 'grab';
-  }, [measure.measureMode, measure.draggingIdx, draggingHinge, draggingHandle, draggingSplit, hoveredSplit, isPanning]);
+  }, [measure.measureMode, measure.draggingIdx, kerfMode, draggingHinge, draggingHandle, draggingSplit, hoveredSplit, isPanning]);
 
   // Wheel zoom (center-anchored)
   // Hit-test fixed frame members (returns member type and width, or null)
@@ -401,6 +507,37 @@ export function ElevationViewer({
       return;
     }
 
+    // Kerf mode — hit-test existing kerfs first, otherwise place a new one
+    if (kerfMode && sx < halfW) {
+      const HIT_PX = 6;
+      const existingHit = (kerfs ?? []).find(k => {
+        if (k.orientation !== kerfMode) return false;
+        const screenPos = kerfMode === 'H' ? toY(k.centerMm) : toX(k.centerMm);
+        const mousePos = kerfMode === 'H' ? sy : sx;
+        return Math.abs(screenPos - mousePos) < HIT_PX;
+      });
+      if (existingHit) {
+        setSelectedKerfId(existingHit.id);
+        return;
+      }
+      if (onAddKerf) {
+        let centerMm = kerfMode === 'H' ? fromY(sy) : fromX(sx);
+        const clamp = kerfMode === 'H' ? doorH : doorW;
+        centerMm = Math.max(0, Math.min(clamp, centerMm));
+        // Snap to selected split center if within 10mm
+        if (selectedSplitPath) {
+          const sel = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
+          if (sel) {
+            if (kerfMode === 'H' && sel.type === 'hsplit' && Math.abs(sel.pos - centerMm) < 10) centerMm = sel.pos;
+            else if (kerfMode === 'V' && sel.type === 'vsplit' && Math.abs(sel.pos - centerMm) < 10) centerMm = sel.pos;
+          }
+        }
+        onAddKerf(kerfMode, centerMm, kerfToolGroupId);
+        // selectedKerfId updated by the kerfsLen useEffect
+      }
+      return;
+    }
+
     // Hit-test hinge cups (back half in dual view, front half in single view)
     {
       const hingeIdx = hitTestHingeCup(sx, sy);
@@ -477,7 +614,7 @@ export function ElevationViewer({
     // Start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle]);
+  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle, kerfMode, kerfs, onAddKerf, kerfToolGroupId, selectedSplitPath, doorH, doorW]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -492,6 +629,17 @@ export function ElevationViewer({
         measure.handleDimMouseMove(sx, sy);
       }
       return;
+    }
+
+    // Kerf hover preview — update ghost position when in kerf mode
+    if (kerfMode) {
+      if (sx < halfW) {
+        const pos = kerfMode === 'H' ? fromY(sy) : fromX(sx);
+        const clamp = kerfMode === 'H' ? doorH : doorW;
+        setKerfHoverMm(Math.max(0, Math.min(clamp, pos)));
+      } else if (kerfHoverMm !== null) {
+        setKerfHoverMm(null);
+      }
     }
 
     // Check if pending hinge click should convert to drag (3px threshold)
@@ -599,7 +747,7 @@ export function ElevationViewer({
     } else if (hoveredSplit && sx >= halfW) {
       setHoveredSplit(null);
     }
-  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, draggingHinge, draggingHandle, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit, holes, hingeConfig, doorH, doorW]);
+  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, draggingHinge, draggingHandle, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit, holes, hingeConfig, doorH, doorW, kerfMode, kerfHoverMm]);
 
   const handleMouseUp = useCallback(() => {
     if (measure.draggingIdx !== null) {
@@ -1336,12 +1484,105 @@ export function ElevationViewer({
       ctx.restore();
     }
 
+    // Draw kerf lines (front view)
+    if (kerfs && kerfs.length > 0) {
+      const KERF_HALF = 3.175 / 2; // half of 1/8" kerf width
+      ctx.save();
+      for (const k of kerfs) {
+        const isSelected = k.id === selectedKerfId;
+        ctx.fillStyle = isSelected ? 'rgba(200, 100, 0, 0.45)' : 'rgba(200, 100, 0, 0.25)';
+        ctx.strokeStyle = '#cc6600';
+        ctx.lineWidth = isSelected ? 2 : 1;
+        if (k.orientation === 'H') {
+          const x1 = toX(0);
+          const x2 = toX(doorW);
+          const y1 = toY(k.centerMm + KERF_HALF);
+          const y2 = toY(k.centerMm - KERF_HALF);
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        } else {
+          const x1 = toX(k.centerMm - KERF_HALF);
+          const x2 = toX(k.centerMm + KERF_HALF);
+          const y1 = toY(doorH);
+          const y2 = toY(0);
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Ghost kerf preview + dimension lines when in kerf mode and hovering
+    if (kerfMode && kerfHoverMm !== null) {
+      const KERF_HALF = 3.175 / 2;
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.fillStyle = 'rgba(200, 100, 0, 0.12)';
+      ctx.strokeStyle = '#cc6600';
+      ctx.lineWidth = 1;
+      if (kerfMode === 'H') {
+        const x1 = toX(0); const x2 = toX(doorW);
+        const y1 = toY(kerfHoverMm + KERF_HALF); const y2 = toY(kerfHoverMm - KERF_HALF);
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      } else {
+        const x1 = toX(kerfHoverMm - KERF_HALF); const x2 = toX(kerfHoverMm + KERF_HALF);
+        const y1 = toY(doorH); const y2 = toY(0);
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Dimension annotations to nearest boundaries
+      const { lo, hi } = getNearestBoundaries(kerfHoverMm, kerfMode,
+        doorH, doorW, bottomRailW, topRailW, leftStileW, rightStileW, splitsWithBounds);
+      const distLo = kerfHoverMm - lo;
+      const distHi = hi - kerfHoverMm;
+      if (kerfMode === 'H') {
+        if (distLo > 0.5) drawLinearDim(ctx, doorW, lo, doorW, kerfHoverMm, fmtDim(distLo), 28, 'right', toX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, doorW, kerfHoverMm, doorW, hi, fmtDim(distHi), 28, 'right', toX, toY, '#cc6600');
+      } else {
+        if (distLo > 0.5) drawLinearDim(ctx, lo, doorH, kerfHoverMm, doorH, fmtDim(distLo), 28, 'above', toX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, kerfHoverMm, doorH, hi, doorH, fmtDim(distHi), 28, 'above', toX, toY, '#cc6600');
+      }
+    }
+
+    // Draw kerf lines (back view, if dual view)
+    if (!singleView && kerfs && kerfs.length > 0) {
+      const KERF_HALF = 3.175 / 2;
+      ctx.save();
+      for (const k of kerfs) {
+        ctx.fillStyle = 'rgba(200, 100, 0, 0.25)';
+        ctx.strokeStyle = '#cc6600';
+        ctx.lineWidth = 1;
+        if (k.orientation === 'H') {
+          // Back view mirrors X axis
+          const x1 = toXBack(doorW);
+          const x2 = toXBack(0);
+          const y1 = toY(k.centerMm + KERF_HALF);
+          const y2 = toY(k.centerMm - KERF_HALF);
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        } else {
+          // Vertical kerf on back: same width position, mirrored X
+          const x1 = toXBack(k.centerMm + KERF_HALF);
+          const x2 = toXBack(k.centerMm - KERF_HALF);
+          const y1 = toY(doorH);
+          const y2 = toY(0);
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        }
+      }
+      ctx.restore();
+    }
+
   }, [cw, ch, halfW, toX, toXBack, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
       panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
       selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView,
       measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase,
       selectedHingeIdx, draggingHinge, hingeConfig,
-      selectedHandleIdx, draggingHandle]);
+      selectedHandleIdx, draggingHandle, kerfs, selectedKerfId, kerfMode, kerfHoverMm]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
 
@@ -1709,6 +1950,75 @@ export function ElevationViewer({
               style={measureBtnStyle}
               title="Reset stile/rail widths and mid splits to style defaults"
             >Reset</button>
+          )}
+          {kerfEnabled && (
+            <>
+              <button
+                onClick={() => {
+                  if (kerfMode === 'H') { setKerfMode(null); return; }
+                  // Auto-place if an hsplit is selected
+                  if (onAddKerf && selectedSplitPath) {
+                    const sel = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
+                    if (sel && sel.type === 'hsplit') {
+                      onAddKerf('H', sel.pos, kerfToolGroupId);
+                      return;
+                    }
+                  }
+                  setKerfMode('H');
+                }}
+                style={{
+                  ...measureBtnStyle,
+                  background: kerfMode === 'H' ? '#cc6600' : '#fff',
+                  color: kerfMode === 'H' ? '#fff' : '#333',
+                  borderColor: kerfMode === 'H' ? '#aa4400' : '#999',
+                }}
+                title="Add Horizontal Kerf — click on elevation to set center height"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="1" y1="7" x2="13" y2="7" />
+                  <polyline points="3,7 3,4 5,7 5,4 7,7 7,4 9,7 9,4 11,7" />
+                </svg>
+                H
+              </button>
+              <button
+                onClick={() => {
+                  if (kerfMode === 'V') { setKerfMode(null); return; }
+                  // Auto-place if a vsplit is selected
+                  if (onAddKerf && selectedSplitPath) {
+                    const sel = splitsWithBounds.find(s => pathsEqual(s.path, selectedSplitPath));
+                    if (sel && sel.type === 'vsplit') {
+                      onAddKerf('V', sel.pos, kerfToolGroupId);
+                      return;
+                    }
+                  }
+                  setKerfMode('V');
+                }}
+                style={{
+                  ...measureBtnStyle,
+                  background: kerfMode === 'V' ? '#cc6600' : '#fff',
+                  color: kerfMode === 'V' ? '#fff' : '#333',
+                  borderColor: kerfMode === 'V' ? '#aa4400' : '#999',
+                }}
+                title="Add Vertical Kerf — click on elevation to set center width"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="7" y1="1" x2="7" y2="13" />
+                  <polyline points="7,3 4,3 7,5 4,5 7,7 4,7 7,9 4,9 7,11" />
+                </svg>
+                V
+              </button>
+              {kerfMode && kerfToolGroups && kerfToolGroups.length > 1 && (
+                <select
+                  value={kerfToolGroupId ?? ''}
+                  onChange={e => setKerfToolGroupId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ fontSize: 11, border: '1px solid #999', borderRadius: 4, padding: '2px 4px', background: '#fff', color: '#333' }}
+                >
+                  {kerfToolGroups.map(g => (
+                    <option key={g.ToolGroupID} value={g.ToolGroupID}>{g.Name}</option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
         </div>
         {isZoomed && (

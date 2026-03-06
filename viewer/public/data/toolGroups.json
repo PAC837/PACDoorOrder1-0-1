@@ -2306,5 +2306,33 @@
         "FlipSide": false
       }
     ]
+  },
+  {
+    "Name": "S000 Kerf (1/4\" deep)",
+    "Type": 0,
+    "ToolGroupID": 87,
+    "Alignment": 1,
+    "DefaultMaterialThickness": 19.05,
+    "PartSpacing": 0,
+    "ToolEntry": [
+      {
+        "ToolID": 61,
+        "Depth": 3.175,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      },
+      {
+        "ToolID": 61,
+        "Depth": 6.35,
+        "Offset": 0,
+        "ThruCut": false,
+        "SharpCorners": false,
+        "NoRamp": false,
+        "FlipSide": false
+      }
+    ]
   }
 ]

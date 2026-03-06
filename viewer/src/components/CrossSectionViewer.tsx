@@ -27,6 +27,9 @@ interface CrossSectionViewerProps {
   toolOverlayList?: ToolOverlayInfo[];
   toolOverlayVisibility?: Record<string, boolean>;
   compact?: boolean;
+  watermark?: string;
+  watermarkSize?: number;
+  watermarkOpacity?: number;
 }
 
 type ToolEntry = DoorGraphData['operations'][0]['tools'][0];
@@ -416,6 +419,9 @@ function CrossSectionCanvas({
   onCycleToolOverlay,
   onExportDxf,
   canvasRefOut,
+  watermark,
+  watermarkSize,
+  watermarkOpacity,
 }: CrossSectionViewerProps & {
   showHatching: boolean; showDimensions: boolean; showUserDimensions: boolean; showGlass: boolean;
   toolOverlayMode: 'off' | 'full' | 'outline';
@@ -1084,7 +1090,23 @@ function CrossSectionCanvas({
       ctx.restore();
     }
 
-  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, toolOverlayMode, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase, cw, ch]);
+    // --- 7. Watermark (glued to slab center, scales with zoom) ---
+    if (watermark?.trim()) {
+      const slabCX = (slabLeft + slabRight) / 2;
+      const slabCY = (slabTop + slabBot) / 2;
+      ctx.save();
+      ctx.translate(slabCX, slabCY);
+      ctx.rotate(-Math.PI / 4);
+      ctx.globalAlpha = watermarkOpacity ?? 0.12;
+      ctx.fillStyle = '#000000';
+      ctx.font = `bold ${(watermarkSize ?? 90) * zoom}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(watermark.toUpperCase(), 0, 0);
+      ctx.restore();
+    }
+
+  }, [door, graph, profiles, showHatching, showDimensions, showUserDimensions, toolOverlayMode, frontPanelType, backPanelType, hasBackRabbit, units, showGlass, zoom, panX, panY, edgeGroupIdProp, toolOverlayList, toolOverlayVisibility, measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase, cw, ch, watermark, watermarkSize, watermarkOpacity]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -1350,7 +1372,7 @@ function CrossSectionCanvas({
 // Main component
 // ---------------------------------------------------------------------------
 
-export const CrossSectionViewer = forwardRef<CrossSectionViewerHandle, CrossSectionViewerProps>(function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp, compact }, ref) {
+export const CrossSectionViewer = forwardRef<CrossSectionViewerHandle, CrossSectionViewerProps>(function CrossSectionViewer({ door, graph, profiles, frontPanelType, backPanelType, hasBackRabbit, units, edgeGroupId, thickness: thicknessProp, compact, watermark, watermarkSize, watermarkOpacity }, ref) {
   const canvasRefForSnapshot = useRef<HTMLCanvasElement | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -1614,6 +1636,9 @@ export const CrossSectionViewer = forwardRef<CrossSectionViewerHandle, CrossSect
           onCycleToolOverlay={() => setToolOverlayMode(m => m === 'off' ? 'full' : m === 'full' ? 'outline' : 'off')}
           onExportDxf={handleExportDxf}
           canvasRefOut={canvasRefForSnapshot}
+          watermark={watermark}
+          watermarkSize={watermarkSize}
+          watermarkOpacity={watermarkOpacity}
         />
       </div>
     </div>

@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { DndContext, closestCenter } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-import type { TextureManifest } from '../types.js';
+import type { TextureManifest, UnitSystem } from '../types.js';
+import type { ViewerSettings } from '../hooks/useViewerSettings.js';
+import type { ColumnDef } from '../hooks/useOrderColumns.js';
+import { DEFAULT_COLUMNS } from '../hooks/useOrderColumns.js';
+import type { WatermarkConfig } from '../hooks/useWatermarkConfig.js';
+import type { GroupByField } from '../hooks/useGroupByConfig.js';
+import { DEFAULT_GROUP_BY } from '../hooks/useGroupByConfig.js';
 import type { ToolsStatus, ScannedTextures, ParseResult } from '../utils/folderAccess.js';
 import {
   pickFolder, saveHandle, getHandle, verifyPermission,
@@ -22,6 +32,16 @@ interface AdminPanelProps {
   onLibrariesChanged: (libraries: string[]) => void;
   textureManifest: TextureManifest | null;
   onTextureManifestChanged: (manifest: TextureManifest | null) => void;
+  columns: ColumnDef[];
+  onColumnsChange: (cols: ColumnDef[]) => void;
+  groupByFields: GroupByField[];
+  onGroupByChange: (fields: GroupByField[]) => void;
+  watermarkConfig: WatermarkConfig;
+  onWatermarkChange: (cfg: WatermarkConfig) => void;
+  units: UnitSystem;
+  onUnitsChange: (u: UnitSystem) => void;
+  viewerSettings: ViewerSettings;
+  onViewerSettingsChange: (settings: ViewerSettings) => void;
 }
 
 interface LoadStats {
@@ -56,7 +76,7 @@ function autoSelectTextures(
   }
 }
 
-export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged, textureManifest, onTextureManifestChanged }: AdminPanelProps) {
+export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged, textureManifest, onTextureManifestChanged, columns, onColumnsChange, groupByFields, onGroupByChange, watermarkConfig, onWatermarkChange, units, onUnitsChange, viewerSettings, onViewerSettingsChange }: AdminPanelProps) {
   // Folder handles (from IndexedDB or fresh pick)
   const [toolsHandle, setToolsHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [librariesHandle, setLibrariesHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -78,6 +98,48 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
   const [loadStats, setLoadStats] = useState<LoadStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Order Columns section
+  const [colSectionOpen, setColSectionOpen] = useState(false);
+  const [showAddColForm, setShowAddColForm] = useState(false);
+  const [newColLabel, setNewColLabel] = useState('');
+
+  // Order Grouping section
+  const [groupSectionOpen, setGroupSectionOpen] = useState(false);
+
+  // Cross Section section
+  const [csSectionOpen, setCsSectionOpen] = useState(false);
+  const [viewerSectionOpen, setViewerSectionOpen] = useState(false);
+
+  const handleGroupDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = groupByFields.findIndex(f => f.id === active.id);
+      const newIndex = groupByFields.findIndex(f => f.id === over.id);
+      onGroupByChange(arrayMove(groupByFields, oldIndex, newIndex));
+    }
+  }, [groupByFields, onGroupByChange]);
+
+  const handleGroupVisToggle = useCallback((id: string) => {
+    onGroupByChange(groupByFields.map(f => f.id === id ? { ...f, active: !f.active } : f));
+  }, [groupByFields, onGroupByChange]);
+
+  const handleColDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = columns.findIndex(c => c.id === active.id);
+      const newIndex = columns.findIndex(c => c.id === over.id);
+      onColumnsChange(arrayMove(columns, oldIndex, newIndex));
+    }
+  }, [columns, onColumnsChange]);
+
+  const handleColVisToggle = useCallback((id: string) => {
+    onColumnsChange(columns.map(c => c.id === id ? { ...c, visible: !c.visible } : c));
+  }, [columns, onColumnsChange]);
+
+  const handleColLabelChange = useCallback((id: string, label: string) => {
+    onColumnsChange(columns.map(c => c.id === id ? { ...c, label } : c));
+  }, [columns, onColumnsChange]);
 
   // Restore saved handles from IndexedDB on mount
   useEffect(() => {
@@ -213,6 +275,238 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
     <div style={styles.wrapper}>
       <div style={styles.panel}>
         <h2 style={styles.title}>Admin - CNC Data Configuration</h2>
+
+        {/* Display Units */}
+        <div style={styles.section}>
+          <label style={styles.label}>Display Units</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['in', 'mm'] as UnitSystem[]).map(u => (
+              <button
+                key={u}
+                onClick={() => onUnitsChange(u)}
+                style={{
+                  ...styles.button,
+                  ...(units === u ? styles.primaryButton : {}),
+                  flex: 1,
+                }}
+              >
+                {u === 'in' ? 'Inches' : 'Millimeters'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Order Columns */}
+        <div style={styles.section}>
+          <div
+            style={colSectionHeaderStyle}
+            onClick={() => setColSectionOpen(o => !o)}
+          >
+            <span style={{ marginRight: 6 }}>{colSectionOpen ? '\u25BC' : '\u25B6'}</span>
+            Order Columns
+          </div>
+          {colSectionOpen && (
+            <div style={{ marginTop: 8 }}>
+              <DndContext collisionDetection={closestCenter} onDragEnd={handleColDragEnd}>
+                <SortableContext items={columns.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                  {columns.map(col => (
+                    <SortableColumnRow
+                      key={col.id}
+                      col={col}
+                      onToggleVisible={() => handleColVisToggle(col.id)}
+                      onLabelChange={(label) => handleColLabelChange(col.id, label)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+              <button
+                style={{ ...styles.button, marginTop: 8, fontSize: 11 }}
+                onClick={() => onColumnsChange([...DEFAULT_COLUMNS])}
+              >
+                Reset to defaults
+              </button>
+              {/* Add custom column */}
+              {!showAddColForm ? (
+                <button
+                  style={{ ...styles.button, marginTop: 6, fontSize: 11, borderColor: '#5577aa', color: '#aaccff' }}
+                  onClick={() => { setShowAddColForm(true); setNewColLabel(''); }}
+                >
+                  ＋ Add Column
+                </button>
+              ) : (
+                <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={newColLabel}
+                    onChange={e => setNewColLabel(e.target.value)}
+                    placeholder="Column label"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newColLabel.trim()) {
+                        const id = `custom_${Date.now()}`;
+                        onColumnsChange([...columns, { id, label: newColLabel.trim(), visible: true, width: 80, isCustom: true }]);
+                        setShowAddColForm(false);
+                        setNewColLabel('');
+                      }
+                      if (e.key === 'Escape') { setShowAddColForm(false); setNewColLabel(''); }
+                    }}
+                    style={colLabelInputStyle}
+                  />
+                  <button
+                    style={{ ...styles.button, fontSize: 11, padding: '4px 10px', borderColor: '#5577aa', color: '#aaccff' }}
+                    onClick={() => {
+                      if (!newColLabel.trim()) return;
+                      const id = `custom_${Date.now()}`;
+                      onColumnsChange([...columns, { id, label: newColLabel.trim(), visible: true, width: 80, isCustom: true }]);
+                      setShowAddColForm(false);
+                      setNewColLabel('');
+                    }}
+                  >
+                    Add
+                  </button>
+                  <button
+                    style={{ ...styles.button, fontSize: 11, padding: '4px 8px' }}
+                    onClick={() => { setShowAddColForm(false); setNewColLabel(''); }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              {/* Remove custom columns */}
+              {columns.some(c => c.isCustom) && (
+                <button
+                  style={{ ...styles.button, marginTop: 4, fontSize: 10, color: '#f87171', borderColor: '#cc4444' }}
+                  onClick={() => onColumnsChange(columns.filter(c => !c.isCustom))}
+                >
+                  Remove custom columns
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Order Grouping */}
+        <div style={styles.section}>
+          <div
+            style={colSectionHeaderStyle}
+            onClick={() => setGroupSectionOpen(o => !o)}
+          >
+            <span style={{ marginRight: 6 }}>{groupSectionOpen ? '\u25BC' : '\u25B6'}</span>
+            Order Grouping
+          </div>
+          {groupSectionOpen && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: '#666688', marginBottom: 6 }}>
+                Drag to set priority. Checked fields create new section headers.
+              </div>
+              <DndContext collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
+                <SortableContext items={groupByFields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+                  {groupByFields.map(field => (
+                    <SortableGroupByRow
+                      key={field.id}
+                      field={field}
+                      onToggleActive={() => handleGroupVisToggle(field.id)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+              <button
+                style={{ ...styles.button, marginTop: 8, fontSize: 11 }}
+                onClick={() => onGroupByChange([...DEFAULT_GROUP_BY])}
+              >
+                Reset to defaults
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Cross Section Watermark */}
+        <div style={styles.section}>
+          <div
+            style={colSectionHeaderStyle}
+            onClick={() => setCsSectionOpen(o => !o)}
+          >
+            <span style={{ marginRight: 6 }}>{csSectionOpen ? '\u25BC' : '\u25B6'}</span>
+            Cross Section
+          </div>
+          {csSectionOpen && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: '#666688', marginBottom: 6 }}>
+                Diagonal watermark text drawn on cross-section snapshots.
+              </div>
+              <label style={{ ...styles.label, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>Watermark Text</label>
+              <input
+                type="text"
+                value={watermarkConfig.text}
+                onChange={e => onWatermarkChange({ ...watermarkConfig, text: e.target.value })}
+                placeholder="e.g. DRAFT, CONFIDENTIAL"
+                style={{ ...colLabelInputStyle, width: '100%', marginBottom: 8 }}
+              />
+              <label style={{ ...styles.label, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>Font Size</label>
+              <select
+                value={watermarkConfig.size}
+                onChange={e => onWatermarkChange({ ...watermarkConfig, size: e.target.value as WatermarkConfig['size'] })}
+                style={{ ...styles.selectInput, fontSize: 12, padding: '6px 10px', marginBottom: 8 }}
+              >
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+              </select>
+              <label style={{ ...styles.label, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>Opacity</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="range"
+                  min={0.03}
+                  max={0.6}
+                  step={0.01}
+                  value={watermarkConfig.opacity}
+                  onChange={e => onWatermarkChange({ ...watermarkConfig, opacity: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: '#5577aa' }}
+                />
+                <span style={{ fontSize: 11, color: '#aaaacc', minWidth: 32, textAlign: 'right' }}>
+                  {Math.round(watermarkConfig.opacity * 100)}%
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3D Viewer Settings */}
+        <div style={styles.section}>
+          <div
+            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }}
+            onClick={() => setViewerSectionOpen(o => !o)}
+          >
+            <span style={{ marginRight: 6 }}>{viewerSectionOpen ? '\u25BC' : '\u25B6'}</span>
+            <label style={{ ...styles.label, marginBottom: 0, cursor: 'pointer' }}>3D Viewer</label>
+          </div>
+          {viewerSectionOpen && (
+            <div style={{ marginTop: 8 }}>
+              {/* Model Opacity Slider */}
+              <label style={{ ...styles.label, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                Model Opacity
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={viewerSettings.modelOpacity}
+                  onChange={e => onViewerSettingsChange({
+                    ...viewerSettings,
+                    modelOpacity: Number(e.target.value),
+                  })}
+                  style={{ flex: 1, accentColor: '#5577aa' }}
+                />
+                <span style={{ fontSize: 11, color: '#aaaacc', minWidth: 32, textAlign: 'right' }}>
+                  {Math.round(viewerSettings.modelOpacity * 100)}%
+                </span>
+              </div>
+
+            </div>
+          )}
+        </div>
 
         {/* CNC Tools Folder */}
         <div style={styles.section}>
@@ -477,6 +771,121 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
     </div>
   );
 }
+
+// ── Order Columns sortable row ──────────────────────────────────────────────
+
+function SortableColumnRow({
+  col,
+  onToggleVisible,
+  onLabelChange,
+}: {
+  col: ColumnDef;
+  onToggleVisible: () => void;
+  onLabelChange: (label: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: col.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '3px 0',
+    fontSize: 12,
+    color: '#e0e0e0',
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      {/* Drag handle */}
+      <span
+        {...attributes}
+        {...listeners}
+        style={{ cursor: 'grab', fontSize: 14, color: '#888', flexShrink: 0, paddingRight: 2, userSelect: 'none' }}
+        title="Drag to reorder"
+      >
+        ⠿
+      </span>
+      {/* Visibility checkbox */}
+      <input
+        type="checkbox"
+        checked={col.visible}
+        onChange={onToggleVisible}
+        style={{ flexShrink: 0, accentColor: '#5577aa' }}
+      />
+      {/* Label input */}
+      <input
+        type="text"
+        value={col.label}
+        onChange={e => onLabelChange(e.target.value)}
+        style={colLabelInputStyle}
+      />
+    </div>
+  );
+}
+
+const colLabelInputStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '2px 6px',
+  borderRadius: 4,
+  border: '1px solid #444466',
+  background: '#2a2a4e',
+  color: '#e0e0e0',
+  fontSize: 12,
+  boxSizing: 'border-box',
+};
+
+const colSectionHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  fontSize: 12,
+  fontWeight: 600,
+  color: '#8888aa',
+  cursor: 'pointer',
+  userSelect: 'none',
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px',
+};
+
+function SortableGroupByRow({
+  field,
+  onToggleActive,
+}: {
+  field: GroupByField;
+  onToggleActive: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: field.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '3px 0',
+    fontSize: 12,
+    color: '#e0e0e0',
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <span
+        {...attributes}
+        {...listeners}
+        style={{ cursor: 'grab', fontSize: 14, color: '#888', flexShrink: 0, paddingRight: 2, userSelect: 'none' }}
+        title="Drag to reorder"
+      >
+        ⠿
+      </span>
+      <input
+        type="checkbox"
+        checked={field.active}
+        onChange={onToggleActive}
+        style={{ flexShrink: 0, accentColor: '#5577aa' }}
+      />
+      <span style={{ flex: 1, color: field.active ? '#e0e0e0' : '#666688' }}>{field.label}</span>
+    </div>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
