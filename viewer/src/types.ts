@@ -144,6 +144,27 @@ export function formatUnit(mm: number, units: UnitSystem, decimals?: number): st
   return `${mm.toFixed(decimals ?? 2)} mm`;
 }
 
+/** Fraction precision for imperial dimension display, or 'decimal' for decimal inches. */
+export type FractionPrecision = 16 | 32 | 64 | 'decimal';
+
+/** Format a mm value as fractional inches at the given precision (auto-reduced). */
+export function formatFraction(mm: number, precision: 16 | 32 | 64): string {
+  const inches = mm / 25.4;
+  const units = Math.round(inches * precision);
+  if (units === 0) return `0"`;
+  const sign = units < 0 ? '-' : '';
+  const absUnits = Math.abs(units);
+  const whole = Math.floor(absUnits / precision);
+  const remainder = absUnits % precision;
+  if (remainder === 0) return `${sign}${whole}"`;
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const g = gcd(remainder, precision);
+  const num = remainder / g;
+  const den = precision / g;
+  if (whole > 0) return `${sign}${whole}-${num}/${den}"`;
+  return `${sign}${num}/${den}"`;
+}
+
 // ---------------------------------------------------------------------------
 // Raw tool library types (loaded from toolGroups.json / tools.json)
 // ---------------------------------------------------------------------------
@@ -240,6 +261,7 @@ export interface KerfLine {
   orientation: 'H' | 'V';   // H = horizontal full-width cut, V = vertical full-height cut
   centerMm: number;          // center position in mm (height-axis for H, width-axis for V)
   toolGroupId: number | null;
+  depth?: number;            // cutting depth in mm from front surface (undefined = full-through)
 }
 
 export interface HandleConfig {

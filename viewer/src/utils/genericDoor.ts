@@ -35,6 +35,7 @@ export function buildGenericDoor(
   topRailW = 63.5,          // 2.5"
   bottomRailW = 63.5,       // 2.5"
   panelTree: PanelTree = { type: 'leaf' },
+  backPanelTree: PanelTree = { type: 'leaf' },
   holes: HoleData[] = [],
   backPocketMode: BackPocketMode = 'all',
   selectedPanelIndices: Set<number> = new Set(),
@@ -57,6 +58,18 @@ export function buildGenericDoor(
   const subPanelPaths: ToolPathNodeData[][] = [];
   for (const pb of panelBounds) {
     subPanelPaths.push([
+      { X: pb.xMin, Y: pb.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMin, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMax, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
+      { X: pb.xMax, Y: pb.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
+    ]);
+  }
+
+  // Back-face panel bounds (independent tree)
+  const backBounds = flattenTree(backPanelTree, rootBounds);
+  const backSubPanelPaths: ToolPathNodeData[][] = [];
+  for (const pb of backBounds) {
+    backSubPanelPaths.push([
       { X: pb.xMin, Y: pb.yMax, DepthOR: -9999, PtType: 0, Data: 0 },
       { X: pb.xMin, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
       { X: pb.xMax, Y: pb.yMin, DepthOR: -9999, PtType: 0, Data: 0 },
@@ -104,11 +117,11 @@ export function buildGenericDoor(
         ]];
       } else if (backPocketMode === 'selected' && selectedPanelIndices.size > 0) {
         backPaths = Array.from(selectedPanelIndices)
-          .filter(idx => idx < subPanelPaths.length)
-          .map(idx => subPanelPaths[idx]);
+          .filter(idx => idx < backSubPanelPaths.length)
+          .map(idx => backSubPanelPaths[idx]);
       } else {
         // 'all' — one back op per sub-panel (default)
-        backPaths = subPanelPaths;
+        backPaths = backSubPanelPaths;
       }
 
       for (const pathNodes of backPaths) {

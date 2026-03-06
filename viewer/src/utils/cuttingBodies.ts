@@ -702,19 +702,22 @@ export function buildCarvedDoor(
     for (const kerf of kerfs) {
       let kerfGeo: THREE.BoxGeometry;
       let kerfPos: [number, number, number];
+      const kerfDepth = (kerf.depth != null && kerf.depth > 0 ? kerf.depth : thickness) + SURFACE_OVERSHOOT;
       if (kerf.orientation === 'H') {
         // Horizontal slot: spans full slab width, narrow in Y (height axis)
-        // centerMm is on model X (height axis); scene Y = slabH/2 - centerMm
-        kerfGeo = new THREE.BoxGeometry(slabW + SURFACE_OVERSHOOT * 2, KERF_WIDTH, thickness + SURFACE_OVERSHOOT * 2);
-        kerfPos = [0, slabH / 2 - kerf.centerMm, 0];
+        // centerMm is distance from bottom (0) to top (slabH); scene Y = centerMm - slabH/2
+        kerfGeo = new THREE.BoxGeometry(slabW + SURFACE_OVERSHOOT * 2, KERF_WIDTH, kerfDepth);
+        kerfPos = [0, kerf.centerMm - slabH / 2, 0];
       } else {
         // Vertical slot: narrow in X (width axis), spans full slab height
-        // centerMm is on model Y (width axis); scene X = centerMm - slabW/2
-        kerfGeo = new THREE.BoxGeometry(KERF_WIDTH, slabH + SURFACE_OVERSHOOT * 2, thickness + SURFACE_OVERSHOOT * 2);
+        // centerMm is distance from left (0) to right (slabW); scene X = centerMm - slabW/2
+        kerfGeo = new THREE.BoxGeometry(KERF_WIDTH, slabH + SURFACE_OVERSHOOT * 2, kerfDepth);
         kerfPos = [kerf.centerMm - slabW / 2, 0, 0];
       }
       const kerfBrush = new Brush(kerfGeo);
-      kerfBrush.position.set(...kerfPos);
+      // Z-position: cut from front surface inward (front face is at +thickness/2)
+      const kerfZ = kerfDepth < thickness ? thickness / 2 - kerfDepth / 2 + SURFACE_OVERSHOOT / 2 : 0;
+      kerfBrush.position.set(kerfPos[0], kerfPos[1], kerfZ);
       kerfBrush.updateMatrixWorld(true);
       try {
         slabBrush = evaluator.evaluate(slabBrush, kerfBrush, SUBTRACTION);

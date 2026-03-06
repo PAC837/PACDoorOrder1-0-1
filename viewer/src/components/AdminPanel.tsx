@@ -4,7 +4,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-import type { TextureManifest, UnitSystem } from '../types.js';
+import type { TextureManifest, UnitSystem, FractionPrecision } from '../types.js';
 import type { ViewerSettings } from '../hooks/useViewerSettings.js';
 import type { ColumnDef } from '../hooks/useOrderColumns.js';
 import { DEFAULT_COLUMNS } from '../hooks/useOrderColumns.js';
@@ -40,6 +40,8 @@ interface AdminPanelProps {
   onWatermarkChange: (cfg: WatermarkConfig) => void;
   units: UnitSystem;
   onUnitsChange: (u: UnitSystem) => void;
+  fractionPrecision: FractionPrecision;
+  onFractionPrecisionChange: (p: FractionPrecision) => void;
   viewerSettings: ViewerSettings;
   onViewerSettingsChange: (settings: ViewerSettings) => void;
 }
@@ -76,7 +78,7 @@ function autoSelectTextures(
   }
 }
 
-export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged, textureManifest, onTextureManifestChanged, columns, onColumnsChange, groupByFields, onGroupByChange, watermarkConfig, onWatermarkChange, units, onUnitsChange, viewerSettings, onViewerSettingsChange }: AdminPanelProps) {
+export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected, onLibrariesChanged, textureManifest, onTextureManifestChanged, columns, onColumnsChange, groupByFields, onGroupByChange, watermarkConfig, onWatermarkChange, units, onUnitsChange, fractionPrecision, onFractionPrecisionChange, viewerSettings, onViewerSettingsChange }: AdminPanelProps) {
   // Folder handles (from IndexedDB or fresh pick)
   const [toolsHandle, setToolsHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [librariesHandle, setLibrariesHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -294,6 +296,24 @@ export function AdminPanel({ onDataReloaded, selectedTextures, onTextureSelected
               </button>
             ))}
           </div>
+          {units === 'in' && (
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 12, color: '#666' }}>Inch format:</label>
+              <select
+                value={fractionPrecision}
+                onChange={e => {
+                  const v = e.target.value;
+                  onFractionPrecisionChange(v === 'decimal' ? 'decimal' : Number(v) as FractionPrecision);
+                }}
+                style={{ ...styles.button, padding: '2px 6px', fontSize: 12 }}
+              >
+                <option value="decimal">Decimal</option>
+                <option value={16}>1/16"</option>
+                <option value={32}>1/32"</option>
+                <option value={64}>1/64"</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Order Columns */}

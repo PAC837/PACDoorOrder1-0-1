@@ -18,7 +18,7 @@ import { buildGenericDoor } from './utils/genericDoor.js';
 import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
 import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf, removeSplit, buildSplitChain, replaceLeafAt } from './utils/panelTree.js';
-import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest, KerfLine } from './types.js';
+import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest, KerfLine, FractionPrecision } from './types.js';
 import { MATERIAL_THICKNESS, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG, DEFAULT_LAYOUT, COMPACT_LAYOUT, PANEL_DISPLAY_NAMES, ALL_SLOTS } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
 import { computeAllHoles, validateHardware } from './utils/hardware.js';
@@ -29,12 +29,11 @@ import { useOrderColumns } from './hooks/useOrderColumns.js';
 import { useGroupByConfig } from './hooks/useGroupByConfig.js';
 import { useWatermarkConfig, watermarkFontSize } from './hooks/useWatermarkConfig.js';
 import { useViewerSettings } from './hooks/useViewerSettings.js';
-import { getPreset, LIGHTING_PRESETS } from './lightingPresets.js';
+import { getPreset } from './lightingPresets.js';
 import { SceneLighting } from './components/SceneLighting.js';
-import { TestViewer } from './components/TestViewer.js';
 import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue } from './configParams.js';
 
-type Tab = 'door' | 'admin' | 'configure' | 'test';
+type Tab = 'door' | 'admin' | 'configure';
 
 export interface OrderItem {
   id: number;
@@ -63,6 +62,7 @@ export interface OrderItem {
   price: number;
   crossSectionImage: string | null;
   panelTree: PanelTree;
+  backPanelTree: PanelTree;
   leftStileW: number;
   rightStileW: number;
   topRailW: number;
@@ -129,6 +129,14 @@ export default function App() {
     try { const s = localStorage.getItem('pac-units'); if (s === 'mm' || s === 'in') return s; } catch {}
     return 'in';
   });
+  const [fractionPrecision, setFractionPrecision] = useState<FractionPrecision>(() => {
+    try {
+      const s = localStorage.getItem('pac-fraction-precision');
+      if (s === 'decimal') return 'decimal';
+      if (s === '16' || s === '32' || s === '64') return Number(s) as FractionPrecision;
+    } catch {}
+    return 16;
+  });
   const [doorPartType, setDoorPartType] = useState<DoorPartType>('door');
   const [doorW, setDoorW] = useState(508);       // 20"
   const [doorH, setDoorH] = useState(762);       // 30"
@@ -141,9 +149,14 @@ export default function App() {
   const [showStyleEditor, setShowStyleEditor] = useState(false);
   const [savedSep, setSavedSep] = useState(101.6); // preserve last handle separation when switching to knob
   const [thickness, setThickness] = useState(MATERIAL_THICKNESS);
-  const [panelTree, setPanelTree] = useState<PanelTree>({ type: 'leaf' });
+  const [frontPanelTree, setFrontPanelTree] = useState<PanelTree>({ type: 'leaf' });
+  const [backPanelTree, setBackPanelTree] = useState<PanelTree>({ type: 'leaf' });
+  const [elevationFace, setElevationFace] = useState<'front' | 'back'>('front');
   const [selectedPanels, setSelectedPanels] = useState<Set<number>>(new Set());
   const [selectedSplitPath, setSelectedSplitPath] = useState<number[] | null>(null);
+  // Derived: active panel tree for split operations based on elevation face
+  const activePanelTree = elevationFace === 'back' ? backPanelTree : frontPanelTree;
+  const setActivePanelTree = elevationFace === 'back' ? setBackPanelTree : setFrontPanelTree;
   const [operationVisibility, setOperationVisibility] = useState<OperationVisibility>({});
   const [toolVisibility, setToolVisibility] = useState<ToolVisibility>({});
   const [libraries, setLibraries] = useState<string[]>([]);
@@ -191,6 +204,7 @@ export default function App() {
 
   // Persist layout + preferences to localStorage
   useEffect(() => { localStorage.setItem('pac-units', units); }, [units]);
+  useEffect(() => { localStorage.setItem('pac-fraction-precision', String(fractionPrecision)); }, [fractionPrecision]);
   useEffect(() => {
     localStorage.setItem('pac-layout-mapping', JSON.stringify(layoutMapping));
   }, [layoutMapping]);
@@ -233,13 +247,13 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if ((e.key === 'Delete' || e.key === 'Backspace') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
-        setPanelTree(prev => removeSplit(prev, selectedSplitPath));
+        setActivePanelTree(prev => removeSplit(prev, selectedSplitPath));
         setSelectedSplitPath(null);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedSplitPath]);
+  }, [selectedSplitPath, setActivePanelTree]);
 
   // Close Admin/Configure overlay on Escape
   useEffect(() => {
@@ -627,10 +641,12 @@ export default function App() {
       setEdgeGroupId(preSlabGroups.current.edgeGroupId);
       preSlabGroups.current = null;
     }
-    // Reset panel tree (clear mid rails/stiles)
-    setPanelTree({ type: 'leaf' });
+    // Reset panel trees (clear mid rails/stiles) and kerfs
+    setFrontPanelTree({ type: 'leaf' });
+    setBackPanelTree({ type: 'leaf' });
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
+    setKerfs([]);
   }, [frontGroupId, backGroupId, edgeGroupId, doorPartType]);
 
   const handleHingeSideChange = useCallback((side: 'left' | 'right' | 'top' | 'bottom') => {
@@ -738,7 +754,7 @@ export default function App() {
           doorW, doorH,
           isSlab ? 0 : leftStileW, isSlab ? 0 : rightStileW,
           isSlab ? 0 : topRailW, isSlab ? 0 : bottomRailW,
-          panelTree, holes,
+          frontPanelTree, backPanelTree, holes,
           backPocketMode, selectedPanels,
           isSlab ? null : edgeGroupId,
         );
@@ -752,7 +768,7 @@ export default function App() {
     }
     return { activeDoor: undefined, activeGraph: undefined, panelBounds: undefined };
   }, [isGenericDoor, frontGroupId, backGroupId, backPreset, effectiveFrontDepth, effectiveBackDepth,
-      leftStileW, rightStileW, topRailW, bottomRailW, panelTree, holes,
+      leftStileW, rightStileW, topRailW, bottomRailW, frontPanelTree, backPanelTree, holes,
       toolGroups, tools, doors, selectedIndex, graphs, doorW, doorH, doorPartType,
       backPocketMode, selectedPanels, edgeGroupId]);
 
@@ -776,7 +792,7 @@ export default function App() {
       REF_SIZE, REF_SIZE,
       isSlab ? 0 : REF_STILE, isSlab ? 0 : REF_STILE,
       isSlab ? 0 : REF_RAIL, isSlab ? 0 : REF_RAIL,
-      undefined, [],
+      undefined, undefined, [],
       backPocketMode, new Set<number>(),
       isSlab ? null : edgeGroupId,
     );
@@ -928,7 +944,8 @@ export default function App() {
       customData: {},
       price,
       crossSectionImage,
-      panelTree,
+      panelTree: frontPanelTree,
+      backPanelTree,
       leftStileW,
       rightStileW,
       topRailW,
@@ -941,7 +958,7 @@ export default function App() {
   }, [configData.matrix, selectedConfigStyleId, filteredEdgeToolGroups, edgeGroupId,
       backPreset, backGroupId, filteredPanelToolGroups, doorPartType, hingeConfig,
       handleConfig, activeTextureCategory, selectedTextures, frontPanelType, thickness, activeDoor,
-      panelTree, leftStileW, rightStileW, topRailW, bottomRailW, selectionRegistry]);
+      frontPanelTree, backPanelTree, leftStileW, rightStileW, topRailW, bottomRailW, selectionRegistry]);
 
   const handleUpdateOrderItem = useCallback((id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData' | 'doorH' | 'doorW' | 'thickness' | 'paintPath' | 'hingesDisplay' | 'hardwareDisplay'>>) => {
     setOrderItems(prev => prev.map(item => {
@@ -964,7 +981,8 @@ export default function App() {
   const handleLoadOrderItem = useCallback((item: OrderItem) => {
     setDoorW(item.doorW);
     setDoorH(item.doorH);
-    setPanelTree(item.panelTree);
+    setFrontPanelTree(item.panelTree);
+    setBackPanelTree(item.backPanelTree ?? { type: 'leaf' });
     setLeftStileW(item.leftStileW);
     setRightStileW(item.rightStileW);
     setTopRailW(item.topRailW);
@@ -1000,59 +1018,59 @@ export default function App() {
   }, []);
 
   const handleSplitDragEnd = useCallback((path: number[], newPos: number) => {
-    setPanelTree(prev => {
+    setActivePanelTree(prev => {
       const splits = enumerateSplits(prev);
       const split = splits.find(s => pathsEqual(s.path, path));
       return updateSplit(prev, path, newPos, split?.width ?? 76.2);
     });
-  }, []);
+  }, [setActivePanelTree]);
 
   const handleSplitWidthChange = useCallback((path: number[], newWidth: number) => {
-    setPanelTree(prev => {
+    setActivePanelTree(prev => {
       const splits = enumerateSplits(prev);
       const split = splits.find(s => pathsEqual(s.path, path));
       if (!split) return prev;
       return updateSplit(prev, path, split.pos, newWidth);
     });
-  }, []);
+  }, [setActivePanelTree]);
 
   // Add split at a panel's center (used by MR/MS buttons in elevation)
   const handleAddMidRail = useCallback((panelIdx: number) => {
     if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
     const pb = panelBounds[panelIdx];
-    setPanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'hsplit', (pb.xMin + pb.xMax) / 2, 76.2));
+    setActivePanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'hsplit', (pb.xMin + pb.xMax) / 2, 76.2));
     setSelectedPanels(new Set());
-  }, [panelBounds]);
+  }, [panelBounds, setActivePanelTree]);
 
   const handleAddMidStile = useCallback((panelIdx: number) => {
     if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
     const pb = panelBounds[panelIdx];
-    setPanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'vsplit', (pb.yMin + pb.yMax) / 2, 76.2));
+    setActivePanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'vsplit', (pb.yMin + pb.yMax) / 2, 76.2));
     setSelectedPanels(new Set());
-  }, [panelBounds]);
+  }, [panelBounds, setActivePanelTree]);
 
   const handleDeleteSplit = useCallback((path: number[]) => {
-    setPanelTree(prev => removeSplit(prev, path));
+    setActivePanelTree(prev => removeSplit(prev, path));
     setSelectedSplitPath(null);
-  }, []);
+  }, [setActivePanelTree]);
 
   const handleAddEqualMidRails = useCallback((panelIdx: number, count: number) => {
     if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
     const pb = panelBounds[panelIdx];
     const span = pb.xMax - pb.xMin;
     const positions = Array.from({ length: count - 1 }, (_, k) => pb.xMin + (k + 1) * span / count);
-    setPanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('hsplit', positions, 76.2)));
+    setActivePanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('hsplit', positions, 76.2)));
     setSelectedPanels(new Set());
-  }, [panelBounds]);
+  }, [panelBounds, setActivePanelTree]);
 
   const handleAddEqualMidStiles = useCallback((panelIdx: number, count: number) => {
     if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
     const pb = panelBounds[panelIdx];
     const span = pb.yMax - pb.yMin;
     const positions = Array.from({ length: count - 1 }, (_, k) => pb.yMin + (k + 1) * span / count);
-    setPanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('vsplit', positions, 76.2)));
+    setActivePanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('vsplit', positions, 76.2)));
     setSelectedPanels(new Set());
-  }, [panelBounds]);
+  }, [panelBounds, setActivePanelTree]);
 
   const handleDeselectAll = useCallback(() => {
     setSelectedPanels(new Set());
@@ -1069,14 +1087,24 @@ export default function App() {
     setRightStileW(defaultStile);
     setTopRailW(defaultRail);
     setBottomRailW(defaultRail);
-    setPanelTree({ type: 'leaf' });
+    setFrontPanelTree({ type: 'leaf' });
+    setBackPanelTree({ type: 'leaf' });
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
+    setKerfs([]);
   }, [selectedConfigStyleId, configData.matrix]);
 
   const handleAddKerf = useCallback((orientation: 'H' | 'V', centerMm: number, toolGroupId: number | null) => {
-    setKerfs(prev => [...prev, { id: Date.now(), orientation, centerMm, toolGroupId }]);
-  }, []);
+    // Look up kerf depth from configured tool group depths
+    let depth: number | undefined;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (style && toolGroupId != null) {
+      const param = style.params.kerfToolGroups as GroupDepthListValue | undefined;
+      const entry = param?.entries.find(e => e.groupId === toolGroupId);
+      if (entry?.depth != null) depth = entry.depth;
+    }
+    setKerfs(prev => [...prev, { id: Date.now(), orientation, centerMm, toolGroupId, depth }]);
+  }, [configData.matrix, selectedConfigStyleId]);
 
   const handleDeleteKerf = useCallback((id: number) => {
     setKerfs(prev => prev.filter(k => k.id !== id));
@@ -1096,8 +1124,10 @@ export default function App() {
 
   // Elevation tree — computed once, used by both standalone tab and embedded dashboard
   const elevationTree = activeDoor
-    ? (isGenericDoor ? panelTree : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider))
-    : panelTree; // fallback for when no door is active
+    ? (isGenericDoor ? activePanelTree : libraryDoorToTree(activeDoor.MainSection.Dividers?.Divider))
+    : activePanelTree; // fallback for when no door is active
+  // Opposite-face tree for green-hatched rendering
+  const oppositeTree = elevationFace === 'back' ? frontPanelTree : backPanelTree;
 
   // Current style key — used to auto-sync the Order panel's active tab to the selected style
   const currentSelectionKey = useMemo(() => {
@@ -1263,7 +1293,11 @@ export default function App() {
               compact
               door={activeDoor}
               units={units}
+              fractionPrecision={fractionPrecision}
               panelTree={elevationTree}
+              oppositeTree={oppositeTree}
+              elevationFace={elevationFace}
+              onElevationFaceChange={setElevationFace}
               handleConfig={handleConfig}
               renderMode={elevationRenderMode}
               onRenderModeChange={setElevationRenderMode}
@@ -1322,7 +1356,7 @@ export default function App() {
     );
   }, [layoutMapping, layoutPreset, toolbarProps, activeDoor, activeGraph, crossSectionDoor, crossSectionGraph,
       profiles, frontPanelType, backPanelType,
-      hasBackRabbit, units, edgeGroupId, thickness, loading, elevationTree, handleConfig,
+      hasBackRabbit, units, edgeGroupId, thickness, loading, elevationTree, oppositeTree, elevationFace, handleConfig,
       elevationRenderMode, selectedSplitPath, leftStileW, rightStileW, selectedPanels, hingeConfig,
       orderItems, selectionTabs, currentSelectionKey, columns, groupByFields, textureBlobUrls, handleAddOrderItem,
       handleUpdateOrderItem, handleSelectionTabClick, handleQuickAdd, handleLoadOrderItem,
@@ -1437,7 +1471,7 @@ export default function App() {
                 hasBackRabbit={frontPanelType === 'glass' ? hasBackRabbit : undefined}
                 selectedPanelIndices={selectedPanels}
                 selectedSplitPath={selectedSplitPath}
-                panelTree={panelTree}
+                panelTree={frontPanelTree}
                 thickness={thickness}
                 renderMode={doorRenderMode}
                 textureUrl={textureUrl}
@@ -1481,29 +1515,8 @@ export default function App() {
           )}
 
           {activeDoor && (
-            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 4, alignItems: 'center' }}>
+            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
               <RenderModeButton mode={doorRenderMode} onToggle={() => setDoorRenderMode(nextRenderMode(doorRenderMode))} />
-              <div style={{ height: 16, width: 1, background: '#ccc', margin: '0 2px' }} />
-              {LIGHTING_PRESETS.map(p => (
-                <button
-                  key={p.key}
-                  onClick={() => setViewerSettings(prev => ({ ...prev, lightingPreset: p.key }))}
-                  style={{
-                    padding: '4px 6px',
-                    borderRadius: 4,
-                    border: viewerSettings.lightingPreset === p.key ? '1px solid #4488cc' : '1px solid #999',
-                    background: viewerSettings.lightingPreset === p.key ? '#e0eeff' : '#fff',
-                    color: viewerSettings.lightingPreset === p.key ? '#2266aa' : '#333',
-                    fontSize: 10,
-                    cursor: 'pointer',
-                    fontWeight: viewerSettings.lightingPreset === p.key ? 600 : 400,
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={p.description}
-                >
-                  {p.label}
-                </button>
-              ))}
             </div>
           )}
 
@@ -1568,6 +1581,8 @@ export default function App() {
               onWatermarkChange={setWatermarkConfig}
               units={units}
               onUnitsChange={setUnits}
+              fractionPrecision={fractionPrecision}
+              onFractionPrecisionChange={setFractionPrecision}
               viewerSettings={viewerSettings}
               onViewerSettingsChange={setViewerSettings}
             />
@@ -1598,21 +1613,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Test Viewer — full overlay with its own Canvas */}
-      {currentTab === 'test' && activeDoor && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
-          <TestViewer
-            door={activeDoor}
-            graph={activeGraph}
-            profiles={profiles}
-            operationVisibility={operationVisibility}
-            toolVisibility={toolVisibility}
-            thickness={thickness}
-            kerfs={kerfs}
-            textureUrl={textureUrl}
-          />
-        </div>
-      )}
 
       {/* Hinge Advanced Dialog */}
       {showHingeDialog && (
@@ -1712,15 +1712,6 @@ function TabBar({ currentTab, onTabChange, units, onUnitsChange }: {
         onClick={() => onTabChange(currentTab === 'admin' ? 'door' : 'admin')}
       >
         Admin
-      </button>
-      <button
-        style={{
-          ...tabStyles.tab,
-          ...(currentTab === 'test' ? tabStyles.activeTab : {}),
-        }}
-        onClick={() => onTabChange(currentTab === 'test' ? 'door' : 'test')}
-      >
-        Test
       </button>
       <button
         style={{ ...tabStyles.tab, marginLeft: 8, fontWeight: 'bold', minWidth: 36 }}

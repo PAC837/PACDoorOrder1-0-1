@@ -6,6 +6,17 @@
 export type DimSide = 'left' | 'right' | 'above' | 'below';
 export type CoordTransform = (v: number) => number;
 
+/** Screen-space bounds of a drawn dimension, for hit-testing draggable offsets. */
+export interface DimBounds {
+  id: string;
+  side: DimSide;
+  offset: number;
+  /** Label bounding rect (screen px) */
+  labelX: number; labelY: number; labelW: number; labelH: number;
+  /** Dimension line endpoints */
+  d1x: number; d1y: number; d2x: number; d2y: number;
+}
+
 /**
  * Draw a filled arrowhead at (x, y) pointing in the direction of `angle`.
  */
@@ -41,6 +52,8 @@ export function drawLinearDim(
   toX: CoordTransform,
   toY: CoordTransform,
   color = '#000000',
+  dimId?: string,
+  outBounds?: DimBounds[],
 ) {
   const sx1 = toX(mx1), sy1 = toY(my1);
   const sx2 = toX(mx2), sy2 = toY(my2);
@@ -113,6 +126,17 @@ export function drawLinearDim(
     ctx.fillRect(midX - tw / 2, midY - th / 2 - 1, tw, th);
     ctx.fillStyle = color;
     ctx.fillText(label, midX, midY);
+  }
+
+  // Collect bounds for hit-testing if requested
+  if (dimId && outBounds) {
+    let lx: number, ly: number;
+    if (side === 'left' || side === 'right') {
+      lx = midX - 3; ly = midY - th / 2 - 1;
+    } else {
+      lx = midX - tw / 2; ly = midY - th / 2 - 1;
+    }
+    outBounds.push({ id: dimId, side, offset, labelX: lx, labelY: ly, labelW: tw, labelH: th, d1x, d1y, d2x, d2y });
   }
 
   ctx.restore();

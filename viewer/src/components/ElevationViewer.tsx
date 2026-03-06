@@ -1,16 +1,18 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { DoorData, UnitSystem, HoleData, HandleConfig, HingeConfig, RenderMode, KerfLine, RawToolGroup } from '../types.js';
-import { formatUnit } from '../types.js';
+import type { DoorData, UnitSystem, HoleData, HandleConfig, HingeConfig, RenderMode, KerfLine, RawToolGroup, FractionPrecision } from '../types.js';
+import { formatUnit, formatFraction } from '../types.js';
 import { RenderModeButton, nextRenderMode } from './RenderModeButton.js';
 import type { PanelTree, PanelBounds, SplitInfoWithBounds } from '../utils/panelTree.js';
 import { flattenTree, enumerateSplits, enumerateSplitsWithBounds, pathsEqual } from '../utils/panelTree.js';
 import { drawArrowHead, drawLinearDim, drawSnapIndicator, drawMeasurePreview, drawGeneralDim } from '../utils/canvasDrawing.js';
+import type { DimBounds } from '../utils/canvasDrawing.js';
 import { useMeasureTool } from '../hooks/useMeasureTool.js';
 import type { SnapTarget, SnapLine } from '../hooks/useMeasureTool.js';
 
 interface ElevationViewerProps {
   door: DoorData;
   units: UnitSystem;
+  fractionPrecision?: FractionPrecision;
   panelTree: PanelTree;
   handleConfig?: HandleConfig;
   renderMode: RenderMode;
@@ -46,6 +48,9 @@ interface ElevationViewerProps {
   onAddKerf?: (orientation: 'H' | 'V', centerMm: number, toolGroupId: number | null) => void;
   onDeleteKerf?: (id: number) => void;
   onMoveKerf?: (id: number, newCenterMm: number) => void;
+  oppositeTree?: PanelTree;
+  elevationFace?: 'front' | 'back';
+  onElevationFaceChange?: (face: 'front' | 'back') => void;
 }
 
 const MIN_PANEL_SIZE = 25.4; // 1" minimum panel dimension for drag constraints
@@ -55,6 +60,7 @@ interface DragState {
   type: 'hsplit' | 'vsplit';
   currentPos: number;
   range: { min: number; max: number };
+  committed?: boolean; // true after mouseup, cleared when panelTree updates
 }
 
 /** Hit-test splits against a screen coordinate. Returns the deepest hit. */
@@ -143,7 +149,7 @@ function getNearestBoundaries(
 }
 
 export function ElevationViewer({
-  door, units, panelTree, handleConfig, renderMode, onRenderModeChange,
+  door, units, fractionPrecision, panelTree, handleConfig, renderMode, onRenderModeChange,
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
   onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
   onSplitWidthChange, overrideLeftStileW, overrideRightStileW, overrideTopRailW, overrideBottomRailW,
@@ -151,6 +157,7 @@ export function ElevationViewer({
   onDeleteSplit, onAddEqualMidRails, onAddEqualMidStiles, onDeselectAll,
   hingeConfig, onHingePositionChange, onHandleElevationChange, compact, onReset,
   kerfs, kerfEnabled, kerfToolGroups, onAddKerf, onDeleteKerf, onMoveKerf,
+  oppositeTree, elevationFace: elevationFaceProp, onElevationFaceChange,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -167,6 +174,10 @@ export function ElevationViewer({
   const [showHardware, setShowHardware] = useState(true);
   const [showUserDimensions, setShowUserDimensions] = useState(true);
   const [singleView, setSingleView] = useState(false);
+  const [localElevationFace, setLocalElevationFace] = useState<'front' | 'back'>('front');
+  const elevationFace = elevationFaceProp ?? localElevationFace;
+  const setElevationFace = onElevationFaceChange ?? setLocalElevationFace;
+  const [isFlipping, setIsFlipping] = useState(false);
 
   const [hoveredSplit, setHoveredSplit] = useState<{ path: number[]; type: 'hsplit' | 'vsplit' } | null>(null);
   const [draggingSplit, setDraggingSplit] = useState<DragState | null>(null);
@@ -191,6 +202,12 @@ export function ElevationViewer({
   const [kerfToolGroupId, setKerfToolGroupId] = useState<number | null>(null);
   const [selectedKerfId, setSelectedKerfId] = useState<number | null>(null);
   const [kerfHoverMm, setKerfHoverMm] = useState<number | null>(null);
+  const [draggingKerf, setDraggingKerf] = useState<{ id: number; orientation: 'H' | 'V'; currentPos: number } | null>(null);
+
+  // Dimension drag state
+  const [dimOffsets, setDimOffsets] = useState<Record<string, number>>({});
+  const [draggingDim, setDraggingDim] = useState<{ id: string; side: 'left' | 'right' | 'above' | 'below'; startOffset: number; startMouse: number } | null>(null);
+  const dimBoundsRef = useRef<DimBounds[]>([]);
 
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
 
@@ -266,10 +283,25 @@ export function ElevationViewer({
   const fromY = useCallback((sy: number) => -(sy - panY - cy) / scale + doorH / 2, [cy, doorH, scale, panY]);
   // Back view X transform (right half, mirrored)
   const toXBack = useCallback((x: number) => halfW + halfW / 2 + (doorW / 2 - x) * scale + panX, [halfW, doorW, scale, panX]);
-  const fmtDim = useCallback((mm: number) => formatUnit(mm, units), [units]);
+  // Back view inverse X transform (right half → model)
+  const fromXBack = useCallback((sx: number) => doorW / 2 - (sx - panX - halfW - halfW / 2) / scale, [halfW, doorW, scale, panX]);
+  // Back view X transform (single-view, mirrored, centered in full width)
+  const toXBackSingle = useCallback((x: number) => cx + (doorW / 2 - x) * scale + panX, [cx, doorW, scale, panX]);
+  const fromXBackSingle = useCallback((sx: number) => doorW / 2 - (sx - panX - cx) / scale, [cx, doorW, scale, panX]);
+  // Active transforms: use mirrored versions when viewing back in single view
+  const isBackSingle = singleView && elevationFace === 'back';
+  const activeToX = useMemo(() => isBackSingle ? toXBackSingle : toX, [isBackSingle, toXBackSingle, toX]);
+  const activeFromX = useMemo(() => isBackSingle ? fromXBackSingle : fromX, [isBackSingle, fromXBackSingle, fromX]);
+  const fmtDim = useCallback((mm: number) => {
+    if (units === 'in' && fractionPrecision && fractionPrecision !== 'decimal') return formatFraction(mm, fractionPrecision);
+    return formatUnit(mm, units);
+  }, [units, fractionPrecision]);
 
   // Panel leaves for snap targets
   const leaves = useMemo(() => flattenTree(panelTree, rootBounds), [panelTree, rootBounds]);
+
+  // Memoized splits for dimension drawing + sidebar
+  const dimSplits = useMemo(() => enumerateSplits(panelTree), [panelTree]);
 
   // --- Snap targets for measure tool ---
   const snapTargets = useMemo((): SnapTarget[] => {
@@ -325,6 +357,10 @@ export function ElevationViewer({
     snapTargets,
     snapLines,
     formatDistance: fmtDim,
+    doorBounds: { width: doorW, height: doorH },
+    boundsPadding: 10,
+    backFromX: fromXBack,
+    backToX: toXBack,
   });
 
   // Keyboard listener for measure tool
@@ -354,12 +390,20 @@ export function ElevationViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kerfsLen]); // intentionally watching length only
 
-  // Arrow key nudge of selected kerf
+  // Arrow key nudge + Delete key for selected kerf
   useEffect(() => {
-    if (!selectedKerfId || !onMoveKerf) return;
+    if (!selectedKerfId) return;
     const NUDGE = 1.5875; // 1/16 inch
     const handler = (e: KeyboardEvent) => {
+      // Delete selected kerf
+      if ((e.key === 'Delete' || e.key === 'Backspace') && onDeleteKerf) {
+        e.preventDefault();
+        onDeleteKerf(selectedKerfId);
+        setSelectedKerfId(null);
+        return;
+      }
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (!onMoveKerf) return;
       const kerf = (kerfs ?? []).find(k => k.id === selectedKerfId);
       if (!kerf) return;
       e.preventDefault();
@@ -379,12 +423,18 @@ export function ElevationViewer({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedKerfId, kerfs, onMoveKerf, doorH, doorW]);
+  }, [selectedKerfId, kerfs, onMoveKerf, onDeleteKerf, doorH, doorW]);
+
+  // Clear committed split drag ghost when panelTree updates
+  useEffect(() => {
+    if (draggingSplit?.committed) setDraggingSplit(null);
+  }, [panelTree]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cursor
   const cursor = useMemo(() => {
     if (measure.measureMode) return measure.draggingIdx !== null ? 'grabbing' : 'crosshair';
     if (kerfMode) return 'crosshair';
+    if (draggingDim) return 'grabbing';
     if (draggingHinge || draggingHandle) return 'ns-resize';
     if (draggingSplit) {
       return draggingSplit.type === 'hsplit' ? 'ns-resize' : 'ew-resize';
@@ -394,36 +444,37 @@ export function ElevationViewer({
     }
     if (isPanning) return 'grabbing';
     return 'grab';
-  }, [measure.measureMode, measure.draggingIdx, kerfMode, draggingHinge, draggingHandle, draggingSplit, hoveredSplit, isPanning]);
+  }, [measure.measureMode, measure.draggingIdx, kerfMode, draggingDim, draggingHinge, draggingHandle, draggingKerf, draggingSplit, hoveredSplit, isPanning]);
 
   // Wheel zoom (center-anchored)
   // Hit-test fixed frame members (returns member type and width, or null)
-  const hitTestFrame = useCallback((mx: number, my: number): EditingMember => {
+  const hitTestFrame = useCallback((mx: number, my: number, localToX?: (x: number) => number): EditingMember => {
+    const txFn = localToX ?? activeToX;
     // mx, my are model coords (from fromX/fromY)
     if (mx < 0 || mx > doorW || my < 0 || my > doorH) return null;
     // Left stile
     if (mx >= 0 && mx <= leftStileW && onLeftStileWidthChange) {
-      return { type: 'left-stile', screenX: toX(leftStileW / 2), screenY: toY(doorH / 2), currentValue: leftStileW };
+      return { type: 'left-stile', screenX: txFn(leftStileW / 2), screenY: toY(doorH / 2), currentValue: leftStileW };
     }
     // Right stile
     if (mx >= doorW - rightStileW && mx <= doorW && onRightStileWidthChange) {
-      return { type: 'right-stile', screenX: toX(doorW - rightStileW / 2), screenY: toY(doorH / 2), currentValue: rightStileW };
+      return { type: 'right-stile', screenX: txFn(doorW - rightStileW / 2), screenY: toY(doorH / 2), currentValue: rightStileW };
     }
     // Top rail (between stiles)
     if (mx > leftStileW && mx < doorW - rightStileW && my >= doorH - topRailW && my <= doorH && onTopRailWidthChange) {
-      return { type: 'top-rail', screenX: toX(doorW / 2), screenY: toY(doorH - topRailW / 2), currentValue: topRailW };
+      return { type: 'top-rail', screenX: txFn(doorW / 2), screenY: toY(doorH - topRailW / 2), currentValue: topRailW };
     }
     // Bottom rail (between stiles)
     if (mx > leftStileW && mx < doorW - rightStileW && my >= 0 && my <= bottomRailW && onBottomRailWidthChange) {
-      return { type: 'bottom-rail', screenX: toX(doorW / 2), screenY: toY(bottomRailW / 2), currentValue: bottomRailW };
+      return { type: 'bottom-rail', screenX: txFn(doorW / 2), screenY: toY(bottomRailW / 2), currentValue: bottomRailW };
     }
     return null;
-  }, [doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, toX, toY,
+  }, [doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW, activeToX, toY,
       onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange]);
 
   // Hit-test panels — returns leaf index or -1
-  const hitTestPanels = useCallback((sx: number, sy: number): number => {
-    const mx = fromX(sx);
+  const hitTestPanels = useCallback((sx: number, sy: number, customFromX?: (sx: number) => number): number => {
+    const mx = (customFromX ?? activeFromX)(sx);
     const my = fromY(sy);
     for (let i = 0; i < leaves.length; i++) {
       const pb = leaves[i];
@@ -432,7 +483,7 @@ export function ElevationViewer({
       }
     }
     return -1;
-  }, [leaves, fromX, fromY]);
+  }, [leaves, activeFromX, fromY]);
 
   // Hit-test hinge cups — returns cup index or -1
   const hitTestHingeCup = useCallback((sx: number, sy: number): number => {
@@ -444,7 +495,7 @@ export function ElevationViewer({
       // Cups are FlipSideOp=true (back face)
       // In dual view, they appear in the back half (right side) — use toXBack
       // In single view, they appear as dotted outlines in front half — use toX
-      const hsx = singleView ? toX(hole.Y) : toXBack(hole.Y);
+      const hsx = singleView ? activeToX(hole.Y) : toXBack(hole.Y);
       const hsy = toY(hole.X);
       const sr = (hole.Diameter / 2) * scale;
       const dist = Math.hypot(sx - hsx, sy - hsy);
@@ -453,7 +504,7 @@ export function ElevationViewer({
       }
     }
     return -1;
-  }, [holes, toX, toXBack, toY, scale, singleView, onHingePositionChange]);
+  }, [holes, activeToX, toXBack, toY, scale, singleView, onHingePositionChange]);
 
   // Hit-test handle holes — returns first handle hole index or -1
   const hitTestHandle = useCallback((sx: number, sy: number): number => {
@@ -464,8 +515,8 @@ export function ElevationViewer({
       const hole = handleHoles[i];
       // Handles can be on front or back
       const hsx = hole.FlipSideOp
-        ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
-        : toX(hole.Y);
+        ? (singleView ? activeToX(hole.Y) : toXBack(hole.Y))
+        : activeToX(hole.Y);
       const hsy = toY(hole.X);
       const sr = (hole.Diameter / 2) * scale;
       const dist = Math.hypot(sx - hsx, sy - hsy);
@@ -474,7 +525,7 @@ export function ElevationViewer({
       }
     }
     return -1;
-  }, [holes, toX, toXBack, toY, scale, singleView, onHandleElevationChange]);
+  }, [holes, activeToX, toXBack, toY, scale, singleView, onHandleElevationChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -490,6 +541,7 @@ export function ElevationViewer({
 
   // Mouse handlers — measure mode > split hit-testing > frame hit-testing > pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only process left-click; right-click handled by handleContextMenu
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
@@ -502,26 +554,32 @@ export function ElevationViewer({
 
     // Measure mode has highest priority
     if (measure.measureMode) {
+      const inBack = !singleView && sx >= halfW;
+      measure.setBackHalf(inBack);
       if (measure.handleDimMouseDown(sx, sy)) return;
       measure.handleMouseDown(sx, sy);
       return;
     }
 
     // Kerf mode — hit-test existing kerfs first, otherwise place a new one
-    if (kerfMode && sx < halfW) {
+    if (kerfMode) {
+      const inBack = !singleView && sx >= halfW;
+      const localToXKerf = inBack ? toXBack : activeToX;
+      const localFromXKerf = inBack ? fromXBack : activeFromX;
       const HIT_PX = 6;
       const existingHit = (kerfs ?? []).find(k => {
         if (k.orientation !== kerfMode) return false;
-        const screenPos = kerfMode === 'H' ? toY(k.centerMm) : toX(k.centerMm);
+        const screenPos = kerfMode === 'H' ? toY(k.centerMm) : localToXKerf(k.centerMm);
         const mousePos = kerfMode === 'H' ? sy : sx;
         return Math.abs(screenPos - mousePos) < HIT_PX;
       });
       if (existingHit) {
         setSelectedKerfId(existingHit.id);
+        setDraggingKerf({ id: existingHit.id, orientation: existingHit.orientation, currentPos: existingHit.centerMm });
         return;
       }
       if (onAddKerf) {
-        let centerMm = kerfMode === 'H' ? fromY(sy) : fromX(sx);
+        let centerMm = kerfMode === 'H' ? fromY(sy) : localFromXKerf(sx);
         const clamp = kerfMode === 'H' ? doorH : doorW;
         centerMm = Math.max(0, Math.min(clamp, centerMm));
         // Snap to selected split center if within 10mm
@@ -533,7 +591,6 @@ export function ElevationViewer({
           }
         }
         onAddKerf(kerfMode, centerMm, kerfToolGroupId);
-        // selectedKerfId updated by the kerfsLen useEffect
       }
       return;
     }
@@ -568,11 +625,15 @@ export function ElevationViewer({
     setSelectedHingeIdx(null);
     setSelectedHandleIdx(null);
 
-    // Only interact in front half (left side)
-    if (sx < halfW) {
+    // Determine which half we're in and use appropriate transforms
+    {
+      const inBackHalf = !singleView && sx >= halfW;
+      const localToXHit = inBackHalf ? toXBack : activeToX;
+      const localFromXHit = inBackHalf ? fromXBack : activeFromX;
+
       // Hit-test dividers first (only when interactive)
       if (onSplitSelect) {
-        const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+        const hit = hitTestSplits(sx, sy, splitsWithBounds, localToXHit, toY);
         if (hit) {
           e.preventDefault();
           onSplitSelect(hit.path);
@@ -585,7 +646,7 @@ export function ElevationViewer({
 
       // Hit-test panels
       if (onPanelSelect) {
-        const panelIdx = hitTestPanels(sx, sy);
+        const panelIdx = hitTestPanels(sx, sy, localFromXHit);
         if (panelIdx >= 0) {
           e.preventDefault();
           onPanelSelect(panelIdx, { ctrlKey: e.ctrlKey });
@@ -596,8 +657,8 @@ export function ElevationViewer({
       }
 
       // Hit-test fixed frame members
-      const mx = fromX(sx), my = fromY(sy);
-      const frameHit = hitTestFrame(mx, my);
+      const mx = localFromXHit(sx), my = fromY(sy);
+      const frameHit = hitTestFrame(mx, my, localToXHit);
       if (frameHit) {
         e.preventDefault();
         setEditingMember(frameHit);
@@ -614,7 +675,27 @@ export function ElevationViewer({
     // Start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [measure.measureMode, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle, kerfMode, kerfs, onAddKerf, kerfToolGroupId, selectedSplitPath, doorH, doorW]);
+  }, [measure.measureMode, measure.setBackHalf, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, activeFromX, toXBack, fromXBack, singleView, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle, kerfMode, kerfs, onAddKerf, kerfToolGroupId, selectedSplitPath, doorH, doorW]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    // Suppress context menu during active dim drag
+    if (draggingDim) { e.preventDefault(); return; }
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || !showDimensions) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    for (const db of dimBoundsRef.current) {
+      if (sx >= db.labelX && sx <= db.labelX + db.labelW &&
+          sy >= db.labelY && sy <= db.labelY + db.labelH) {
+        e.preventDefault();
+        const mousePos = (db.side === 'left' || db.side === 'right') ? sx : sy;
+        setDraggingDim({ id: db.id, side: db.side, startOffset: db.offset, startMouse: mousePos });
+        return;
+      }
+    }
+    // If no dimension hit, let browser context menu show (don't prevent default)
+  }, [showDimensions, draggingDim]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -624,6 +705,8 @@ export function ElevationViewer({
 
     // Measure mode
     if (measure.measureMode) {
+      const inBack = !singleView && sx >= halfW;
+      measure.setBackHalf(inBack);
       measure.handleMouseMove(sx, sy);
       if (measure.draggingIdx !== null) {
         measure.handleDimMouseMove(sx, sy);
@@ -633,13 +716,11 @@ export function ElevationViewer({
 
     // Kerf hover preview — update ghost position when in kerf mode
     if (kerfMode) {
-      if (sx < halfW) {
-        const pos = kerfMode === 'H' ? fromY(sy) : fromX(sx);
-        const clamp = kerfMode === 'H' ? doorH : doorW;
-        setKerfHoverMm(Math.max(0, Math.min(clamp, pos)));
-      } else if (kerfHoverMm !== null) {
-        setKerfHoverMm(null);
-      }
+      const inBackHover = !singleView && sx >= halfW;
+      const localFromXHover = inBackHover ? fromXBack : activeFromX;
+      const pos = kerfMode === 'H' ? fromY(sy) : localFromXHover(sx);
+      const clamp = kerfMode === 'H' ? doorH : doorW;
+      setKerfHoverMm(Math.max(0, Math.min(clamp, pos)));
     }
 
     // Check if pending hinge click should convert to drag (3px threshold)
@@ -667,8 +748,7 @@ export function ElevationViewer({
         newPos = fromY(sy); // screen Y → model height (X axis in Mozaik)
       } else {
         // For top/bottom hinges, drag along width
-        // Use appropriate inverse transform based on which half we're in
-        newPos = fromX(sx);
+        newPos = activeFromX(sx);
       }
       newPos = Math.max(0, Math.min(isVerticalAxis ? doorH : doorW, newPos));
       setDraggingHinge(prev => prev ? { ...prev, currentPos: newPos } : null);
@@ -697,6 +777,33 @@ export function ElevationViewer({
       return;
     }
 
+    // Kerf dragging
+    if (draggingKerf) {
+      let newPos = draggingKerf.orientation === 'H' ? fromY(sy) : activeFromX(sx);
+      const snapInc = units === 'in' ? 1.5875 : 1;
+      newPos = Math.round(newPos / snapInc) * snapInc;
+      const clamp = draggingKerf.orientation === 'H' ? doorH : doorW;
+      newPos = Math.max(0, Math.min(clamp, newPos));
+      setDraggingKerf(prev => prev ? { ...prev, currentPos: newPos } : null);
+      return;
+    }
+
+    // Dimension offset dragging (right-click initiated)
+    if (draggingDim) {
+      // If right button no longer held, end drag
+      if (!(e.buttons & 2)) {
+        setDraggingDim(null);
+        return;
+      }
+      const mousePos = (draggingDim.side === 'left' || draggingDim.side === 'right') ? sx : sy;
+      const delta = mousePos - draggingDim.startMouse;
+      // For 'left' and 'above', increasing mouse coord means decreasing offset (moving toward feature)
+      const sign = (draggingDim.side === 'left' || draggingDim.side === 'above') ? -1 : 1;
+      const newOffset = Math.max(8, draggingDim.startOffset + delta * sign);
+      setDimOffsets(prev => ({ ...prev, [draggingDim.id]: newOffset }));
+      return;
+    }
+
     // Check if pending click should convert to drag (3px threshold)
     if (pendingClick.current && !draggingSplit) {
       const dx = e.clientX - pendingClick.current.startX;
@@ -712,13 +819,16 @@ export function ElevationViewer({
       }
     }
 
-    if (draggingSplit) {
+    if (draggingSplit && !draggingSplit.committed) {
       let newPos: number;
       if (draggingSplit.type === 'hsplit') {
         newPos = fromY(sy);
       } else {
-        newPos = fromX(sx);
+        newPos = activeFromX(sx);
       }
+      // Snap to grid: 1/16" (1.5875mm) in inches mode, 1mm in mm mode
+      const snapInc = units === 'in' ? 1.5875 : 1;
+      newPos = Math.round(newPos / snapInc) * snapInc;
       newPos = Math.max(draggingSplit.range.min, Math.min(draggingSplit.range.max, newPos));
       setDraggingSplit(prev => prev ? { ...prev, currentPos: newPos } : null);
       return;
@@ -734,9 +844,11 @@ export function ElevationViewer({
       return;
     }
 
-    // Hover detection for cursor (front half only)
-    if (onSplitSelect && sx < halfW) {
-      const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+    // Hover detection for cursor (both halves)
+    if (onSplitSelect) {
+      const inBackHover = !singleView && sx >= halfW;
+      const localToXHover = inBackHover ? toXBack : activeToX;
+      const hit = hitTestSplits(sx, sy, splitsWithBounds, localToXHover, toY);
       if (hit) {
         if (!hoveredSplit || !pathsEqual(hoveredSplit.path, hit.path)) {
           setHoveredSplit({ path: hit.path, type: hit.type });
@@ -744,10 +856,8 @@ export function ElevationViewer({
       } else if (hoveredSplit) {
         setHoveredSplit(null);
       }
-    } else if (hoveredSplit && sx >= halfW) {
-      setHoveredSplit(null);
     }
-  }, [measure.measureMode, measure.phase, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, draggingHinge, draggingHandle, isPanning, splitsWithBounds, toX, toY, fromX, fromY, halfW, onSplitSelect, hoveredSplit, holes, hingeConfig, doorH, doorW, kerfMode, kerfHoverMm]);
+  }, [measure.measureMode, measure.phase, measure.setBackHalf, measure.handleMouseMove, measure.draggingIdx, measure.handleDimMouseMove, draggingSplit, draggingHinge, draggingHandle, draggingKerf, draggingDim, isPanning, splitsWithBounds, toX, toY, fromX, fromY, activeFromX, toXBack, fromXBack, singleView, halfW, onSplitSelect, hoveredSplit, holes, hingeConfig, doorH, doorW, kerfMode, kerfHoverMm, units]);
 
   const handleMouseUp = useCallback(() => {
     if (measure.draggingIdx !== null) {
@@ -766,7 +876,7 @@ export function ElevationViewer({
       if (cup) {
         const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
         const currentValue = isVerticalAxis ? cup.X : cup.Y;
-        const hsx = singleView ? toX(cup.Y) : toXBack(cup.Y);
+        const hsx = singleView ? activeToX(cup.Y) : toXBack(cup.Y);
         const hsy = toY(cup.X);
         setEditingHinge({
           index: pendingHingeClick.current.index,
@@ -789,8 +899,8 @@ export function ElevationViewer({
       if (handleHoles.length > 0) {
         const hole = handleHoles[0];
         const hsx = hole.FlipSideOp
-          ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
-          : toX(hole.Y);
+          ? (singleView ? activeToX(hole.Y) : toXBack(hole.Y))
+          : activeToX(hole.Y);
         const hsy = toY(hole.X);
         setEditingHandle({
           screenX: hsx,
@@ -801,9 +911,21 @@ export function ElevationViewer({
       pendingHandleClick.current = null;
     }
 
+    // Commit kerf drag
+    if (draggingKerf) {
+      onMoveKerf?.(draggingKerf.id, draggingKerf.currentPos);
+      setDraggingKerf(null);
+    }
+
+    // Dimension offset drag — just clear (offset already applied)
+    if (draggingDim) {
+      setDraggingDim(null);
+    }
+
     if (draggingSplit) {
       onSplitDragEnd?.(draggingSplit.path, draggingSplit.currentPos);
-      setDraggingSplit(null);
+      // Keep ghost visible until panelTree updates (committed state)
+      setDraggingSplit(prev => prev ? { ...prev, committed: true } : null);
     }
     // If pending click wasn't converted to drag → open width editor for that split
     if (pendingClick.current && !draggingSplit) {
@@ -816,7 +938,7 @@ export function ElevationViewer({
         setEditingMember({
           type: 'split',
           path: pc.path,
-          screenX: toX(centerX),
+          screenX: activeToX(centerX),
           screenY: toY(centerY),
           currentValue: splitInfo.width,
         });
@@ -824,7 +946,7 @@ export function ElevationViewer({
       pendingClick.current = null;
     }
     setIsPanning(false);
-  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, draggingHinge, draggingHandle, onSplitDragEnd, splitsWithBounds, onSplitWidthChange, toX, toY, toXBack, holes, hingeConfig, singleView, onHingePositionChange, onHandleElevationChange]);
+  }, [measure.draggingIdx, measure.handleDimMouseUp, draggingSplit, draggingHinge, draggingHandle, draggingKerf, draggingDim, onSplitDragEnd, onMoveKerf, splitsWithBounds, onSplitWidthChange, toX, toY, toXBack, holes, hingeConfig, singleView, onHingePositionChange, onHandleElevationChange]);
 
   // Touch handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -833,7 +955,7 @@ export function ElevationViewer({
       if (rect && onSplitSelect) {
         const sx = e.touches[0].clientX - rect.left;
         const sy = e.touches[0].clientY - rect.top;
-        const hit = hitTestSplits(sx, sy, splitsWithBounds, toX, toY);
+        const hit = hitTestSplits(sx, sy, splitsWithBounds, activeToX, toY);
         if (hit) {
           onSplitSelect(hit.path);
           const range = getDragRange(hit);
@@ -858,7 +980,7 @@ export function ElevationViewer({
         if (rect) {
           const sx = e.touches[0].clientX - rect.left;
           const sy = e.touches[0].clientY - rect.top;
-          let newPos = draggingSplit.type === 'hsplit' ? fromY(sy) : fromX(sx);
+          let newPos = draggingSplit.type === 'hsplit' ? fromY(sy) : activeFromX(sx);
           newPos = Math.max(draggingSplit.range.min, Math.min(draggingSplit.range.max, newPos));
           setDraggingSplit(prev => prev ? { ...prev, currentPos: newPos } : null);
         }
@@ -936,7 +1058,7 @@ export function ElevationViewer({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    const leaves = flattenTree(panelTree, rootBounds);
+    // Use activeToX for all front-half drawing (auto-mirrors for back single view)
 
     // --- Draw one elevation view (reused for front and back) ---
     // simplified=true: solid door outline + hardware only (for back view)
@@ -950,6 +1072,7 @@ export function ElevationViewer({
       simplified: boolean,
       backPocketRects?: { yMin: number; xMin: number; yMax: number; xMax: number }[],
       singleViewMode = false,
+      viewingBack = false,
     ) {
       ctx.save();
       ctx.beginPath();
@@ -998,7 +1121,30 @@ export function ElevationViewer({
           ctx.fillStyle = '#f0f0f0';
           for (const pb of leaves) {
             drawRect(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
-            if (renderMode === 'solid') drawHatch(pb.yMin, pb.xMin, pb.yMax, pb.xMax);
+          }
+          if (renderMode === 'solid' && showHatching) {
+            ctx.save();
+            ctx.beginPath();
+            for (const pb of leaves) {
+              const sx1 = localToX(pb.yMin), sy1 = toY(pb.xMax);
+              const sx2 = localToX(pb.yMax), sy2 = toY(pb.xMin);
+              ctx.rect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+            }
+            ctx.clip();
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 0.5;
+            const hx1 = localToX(leftStileW), hy1 = toY(doorH - topRailW);
+            const hx2 = localToX(doorW - rightStileW), hy2 = toY(bottomRailW);
+            const spacing = 6;
+            const ox = Math.min(hx1, hx2), oy = Math.min(hy1, hy2);
+            const hw = Math.abs(hx2 - hx1), hh = Math.abs(hy2 - hy1);
+            for (let d = -(hw + hh); d < hw + hh; d += spacing) {
+              ctx.beginPath();
+              ctx.moveTo(ox + d, oy);
+              ctx.lineTo(ox + d + hh, oy + hh);
+              ctx.stroke();
+            }
+            ctx.restore();
           }
 
           // Frame members (stile/rail fill)
@@ -1042,6 +1188,61 @@ export function ElevationViewer({
             }
           }
           drawDividers(panelTree, rootBounds);
+
+          // Opposite-face dividers — green dashed with hatching (batched)
+          if (oppositeTree && oppositeTree.type !== 'leaf') {
+            // Collect all opposite divider screen rects
+            const oppRects: { x: number; y: number; w: number; h: number }[] = [];
+            function collectOppositeDividers(tree: PanelTree, bounds: PanelBounds) {
+              if (tree.type === 'leaf') return;
+              const half = tree.width / 2;
+              if (tree.type === 'hsplit') {
+                const sx1 = localToX(bounds.yMin), sy1 = toY(tree.pos + half);
+                const sx2 = localToX(bounds.yMax), sy2 = toY(tree.pos - half);
+                oppRects.push({ x: Math.min(sx1, sx2), y: Math.min(sy1, sy2), w: Math.abs(sx2 - sx1), h: Math.abs(sy2 - sy1) });
+                collectOppositeDividers(tree.children[0], { ...bounds, xMax: tree.pos - half });
+                collectOppositeDividers(tree.children[1], { ...bounds, xMin: tree.pos + half });
+              } else {
+                const sx1 = localToX(tree.pos - half), sy1 = toY(bounds.xMax);
+                const sx2 = localToX(tree.pos + half), sy2 = toY(bounds.xMin);
+                oppRects.push({ x: Math.min(sx1, sx2), y: Math.min(sy1, sy2), w: Math.abs(sx2 - sx1), h: Math.abs(sy2 - sy1) });
+                collectOppositeDividers(tree.children[0], { ...bounds, yMax: tree.pos - half });
+                collectOppositeDividers(tree.children[1], { ...bounds, yMin: tree.pos + half });
+              }
+            }
+            collectOppositeDividers(oppositeTree, rootBounds);
+
+            if (oppRects.length > 0) {
+              // Single batched hatch pass
+              ctx.save();
+              ctx.beginPath();
+              for (const r of oppRects) ctx.rect(r.x, r.y, r.w, r.h);
+              ctx.clip();
+              ctx.strokeStyle = 'rgba(0, 160, 0, 0.25)';
+              ctx.lineWidth = 0.5;
+              let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+              for (const r of oppRects) {
+                bx0 = Math.min(bx0, r.x); by0 = Math.min(by0, r.y);
+                bx1 = Math.max(bx1, r.x + r.w); by1 = Math.max(by1, r.y + r.h);
+              }
+              const bw = bx1 - bx0, bh = by1 - by0;
+              const spacing = 6;
+              for (let d = -(bw + bh); d < bw + bh; d += spacing) {
+                ctx.beginPath();
+                ctx.moveTo(bx0 + d, by0);
+                ctx.lineTo(bx0 + d + bh, by0 + bh);
+                ctx.stroke();
+              }
+              ctx.restore();
+
+              // Dashed outlines per-rect (no clipping needed)
+              ctx.strokeStyle = '#33aa33';
+              ctx.lineWidth = 1;
+              ctx.setLineDash([4, 3]);
+              for (const r of oppRects) ctx.strokeRect(r.x, r.y, r.w, r.h);
+              ctx.setLineDash([]);
+            }
+          }
         }
 
         // Outer door perimeter
@@ -1111,8 +1312,8 @@ export function ElevationViewer({
           const sy = toY(hole.X);
           const sr = (hole.Diameter / 2) * scale;
 
-          // In single-view mode, back-face holes render as dotted red outlines
-          const isBackInSingle = singleViewMode && hole.FlipSideOp;
+          // In single-view mode, opposite-face holes render as dotted red outlines
+          const isBackInSingle = singleViewMode && (viewingBack ? !hole.FlipSideOp : hole.FlipSideOp);
 
           if (isBackInSingle) {
             ctx.setLineDash([4, 4]);
@@ -1178,14 +1379,21 @@ export function ElevationViewer({
         return { xMin: minX, xMax: maxX, yMin: minY, yMax: maxY };
       });
 
-    // --- Draw front elevation (left half, or full width in single view) ---
-    const frontHoles = singleView ? holes : holes.filter(h => !h.FlipSideOp);
-    drawElevation(ctx, toX, 0, halfW, frontHoles, singleView ? '' : 'FRONT', false, undefined, singleView);
-
-    // --- Draw back elevation (right half, mirrored + simplified) — skip in single view ---
-    if (!singleView) {
+    // --- Draw elevation views ---
+    if (singleView) {
+      if (elevationFace === 'back') {
+        // Back single view — mirrored, showing back as primary face
+        drawElevation(ctx, toXBackSingle, 0, halfW, holes, '', false, backPocketRects, true, true);
+      } else {
+        // Front single view — standard
+        drawElevation(ctx, toX, 0, halfW, holes, '', false, undefined, true);
+      }
+    } else {
+      // Dual view: front left, back right
+      const frontHoles = holes.filter(h => !h.FlipSideOp);
+      drawElevation(ctx, toX, 0, halfW, frontHoles, 'FRONT', false);
       const backHoles = holes.filter(h => h.FlipSideOp);
-      drawElevation(ctx, toXBack, halfW, halfW, backHoles, 'BACK', true, backPocketRects);
+      drawElevation(ctx, toXBack, halfW, halfW, backHoles, 'BACK', false, backPocketRects);
 
       // --- Divider line between front and back ---
       ctx.strokeStyle = '#cccccc';
@@ -1206,8 +1414,8 @@ export function ElevationViewer({
         ctx.rect(0, 0, halfW, ch);
         ctx.clip();
         ctx.fillStyle = 'rgba(255, 200, 100, 0.2)';
-        const sx1 = toX(b.yMin), sy1 = toY(b.xMax);
-        const sx2 = toX(b.yMax), sy2 = toY(b.xMin);
+        const sx1 = activeToX(b.yMin), sy1 = toY(b.xMax);
+        const sx2 = activeToX(b.yMax), sy2 = toY(b.xMin);
         ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
         ctx.strokeStyle = '#ffaa44';
         ctx.lineWidth = 1.5;
@@ -1225,8 +1433,8 @@ export function ElevationViewer({
         ctx.rect(0, 0, halfW, ch);
         ctx.clip();
         ctx.fillStyle = 'rgba(255, 165, 0, 0.35)';
-        const sx1 = toX(b.yMin), sy1 = toY(b.xMax);
-        const sx2 = toX(b.yMax), sy2 = toY(b.xMin);
+        const sx1 = activeToX(b.yMin), sy1 = toY(b.xMax);
+        const sx2 = activeToX(b.yMax), sy2 = toY(b.xMin);
         ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
         ctx.strokeStyle = '#ff8800';
         ctx.lineWidth = 2;
@@ -1244,8 +1452,8 @@ export function ElevationViewer({
       for (const idx of selectedPanelIndices) {
         if (idx >= 0 && idx < leaves.length) {
           const pb = leaves[idx];
-          const sx1 = toX(pb.yMin), sy1 = toY(pb.xMax);
-          const sx2 = toX(pb.yMax), sy2 = toY(pb.xMin);
+          const sx1 = activeToX(pb.yMin), sy1 = toY(pb.xMax);
+          const sx2 = activeToX(pb.yMax), sy2 = toY(pb.xMin);
           ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
           ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
           ctx.strokeStyle = '#3c78ff';
@@ -1267,14 +1475,14 @@ export function ElevationViewer({
       ctx.setLineDash([6, 4]);
       if (draggingSplit.type === 'hsplit') {
         const syLine = toY(draggingSplit.currentPos);
-        const sxLeft = toX(leftStileW);
-        const sxRight = toX(doorW - rightStileW);
+        const sxLeft = activeToX(leftStileW);
+        const sxRight = activeToX(doorW - rightStileW);
         ctx.beginPath();
         ctx.moveTo(sxLeft, syLine);
         ctx.lineTo(sxRight, syLine);
         ctx.stroke();
       } else {
-        const sxLine = toX(draggingSplit.currentPos);
+        const sxLine = activeToX(draggingSplit.currentPos);
         const syTop = toY(doorH - topRailW);
         const syBot = toY(bottomRailW);
         ctx.beginPath();
@@ -1292,7 +1500,7 @@ export function ElevationViewer({
       // Selection highlight on selected cup
       if (selectedHingeIdx !== null && selectedHingeIdx < cupHoles.length && !draggingHinge) {
         const cup = cupHoles[selectedHingeIdx];
-        const hsx = singleView ? toX(cup.Y) : toXBack(cup.Y);
+        const hsx = singleView ? activeToX(cup.Y) : toXBack(cup.Y);
         const hsy = toY(cup.X);
         const sr = (cup.Diameter / 2) * scale;
         ctx.strokeStyle = '#ff8800';
@@ -1308,7 +1516,7 @@ export function ElevationViewer({
         const isVerticalAxis = hingeConfig?.side === 'left' || hingeConfig?.side === 'right';
         const ghostX = isVerticalAxis ? cup.Y : draggingHinge.currentPos;
         const ghostY = isVerticalAxis ? draggingHinge.currentPos : cup.X;
-        const hsx = singleView ? toX(ghostX) : toXBack(ghostX);
+        const hsx = singleView ? activeToX(ghostX) : toXBack(ghostX);
         const hsy = toY(ghostY);
         const sr = (cup.Diameter / 2) * scale;
 
@@ -1338,8 +1546,8 @@ export function ElevationViewer({
       if (selectedHandleIdx !== null && selectedHandleIdx < handleHoles.length && !draggingHandle) {
         const hole = handleHoles[selectedHandleIdx];
         const hsx = hole.FlipSideOp
-          ? (singleView ? toX(hole.Y) : toXBack(hole.Y))
-          : toX(hole.Y);
+          ? (singleView ? activeToX(hole.Y) : toXBack(hole.Y))
+          : activeToX(hole.Y);
         const hsy = toY(hole.X);
         const sr = (hole.Diameter / 2) * scale;
         ctx.strokeStyle = '#2266cc';
@@ -1358,8 +1566,8 @@ export function ElevationViewer({
           const ghostX = hole.Y;
           const ghostY = hole.X + elevationDelta;
           const hsx = hole.FlipSideOp
-            ? (singleView ? toX(ghostX) : toXBack(ghostX))
-            : toX(ghostX);
+            ? (singleView ? activeToX(ghostX) : toXBack(ghostX))
+            : activeToX(ghostX);
           const hsy = toY(ghostY);
           const sr = (hole.Diameter / 2) * scale;
 
@@ -1374,8 +1582,8 @@ export function ElevationViewer({
 
         // Position label on first hole
         const labelHsx = firstHole.FlipSideOp
-          ? (singleView ? toX(firstHole.Y) : toXBack(firstHole.Y))
-          : toX(firstHole.Y);
+          ? (singleView ? activeToX(firstHole.Y) : toXBack(firstHole.Y))
+          : activeToX(firstHole.Y);
         const labelHsy = toY(draggingHandle.currentPos);
         const sr = (firstHole.Diameter / 2) * scale;
         ctx.fillStyle = '#2266cc';
@@ -1385,58 +1593,122 @@ export function ElevationViewer({
       }
     }
 
-    // Dimensions (front view only)
+    // Dimensions
+    const db = dimBoundsRef.current;
+    db.length = 0; // clear for this frame
     if (showDimensions) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, halfW, ch);
-      ctx.clip();
+      const o = dimOffsets; // shorthand
 
-      drawLinearDim(ctx, 0, 0, doorW, 0, fmtDim(doorW), 35, 'below', toX, toY);
-      drawLinearDim(ctx, doorW, 0, doorW, doorH, fmtDim(doorH), 35, 'right', toX, toY);
+      // Helper: draw all structural dims for one half
+      function drawDimsForHalf(
+        c: CanvasRenderingContext2D,
+        clipLeft: number, clipWidth: number,
+        dToX: (x: number) => number,
+        idPrefix: string,
+        filteredHoles: { holeType?: string; FlipSideOp?: boolean; X: number; Y: number }[],
+      ) {
+        c.save();
+        c.beginPath();
+        c.rect(clipLeft, 0, clipWidth, ch);
+        c.clip();
+        const pfx = (id: string) => idPrefix ? `${idPrefix}-${id}` : id;
 
-      drawLinearDim(ctx, 0, doorH, leftStileW, doorH, fmtDim(leftStileW), 15, 'above', toX, toY);
-      drawLinearDim(ctx, doorW - rightStileW, doorH, doorW, doorH, fmtDim(rightStileW), 15, 'above', toX, toY);
-      drawLinearDim(ctx, 0, doorH - topRailW, 0, doorH, fmtDim(topRailW), 15, 'left', toX, toY);
-      drawLinearDim(ctx, 0, 0, 0, bottomRailW, fmtDim(bottomRailW), 15, 'left', toX, toY);
+        drawLinearDim(c, 0, 0, doorW, 0, fmtDim(doorW), o[pfx('doorW')] ?? 35, 'below', dToX, toY, '#000000', pfx('doorW'), db);
+        drawLinearDim(c, doorW, 0, doorW, doorH, fmtDim(doorH), o[pfx('doorH')] ?? 35, 'right', dToX, toY, '#000000', pfx('doorH'), db);
 
-      const splits = enumerateSplits(panelTree);
-      for (const split of splits) {
-        if (split.type === 'hsplit') {
-          drawLinearDim(ctx, 0, 0, 0, split.pos, fmtDim(split.pos), 55 + split.depth * 20, 'left', toX, toY);
-          drawLinearDim(ctx, doorW, split.pos - split.width / 2, doorW, split.pos + split.width / 2,
-            fmtDim(split.width), 15 + split.depth * 20, 'right', toX, toY);
-        } else {
-          drawLinearDim(ctx, 0, 0, split.pos, 0, fmtDim(split.pos), 55 + split.depth * 20, 'below', toX, toY);
-          drawLinearDim(ctx, split.pos - split.width / 2, doorH, split.pos + split.width / 2, doorH,
-            fmtDim(split.width), 15 + split.depth * 20, 'above', toX, toY);
+        drawLinearDim(c, 0, doorH, leftStileW, doorH, fmtDim(leftStileW), o[pfx('leftStile')] ?? 15, 'above', dToX, toY, '#000000', pfx('leftStile'), db);
+        drawLinearDim(c, doorW - rightStileW, doorH, doorW, doorH, fmtDim(rightStileW), o[pfx('rightStile')] ?? 15, 'above', dToX, toY, '#000000', pfx('rightStile'), db);
+        drawLinearDim(c, doorW, doorH - topRailW, doorW, doorH, fmtDim(topRailW), o[pfx('topRail')] ?? 15, 'right', dToX, toY, '#000000', pfx('topRail'), db);
+        drawLinearDim(c, doorW, 0, doorW, bottomRailW, fmtDim(bottomRailW), o[pfx('bottomRail')] ?? 15, 'right', dToX, toY, '#000000', pfx('bottomRail'), db);
+
+        for (const split of dimSplits) {
+          const sid = split.type === 'hsplit' ? `hsplit-${split.depth}` : `vsplit-${split.depth}`;
+          const defOff = 15 + split.depth * 20;
+          if (split.type === 'hsplit') {
+            drawLinearDim(c, doorW, split.pos - split.width / 2, doorW, split.pos + split.width / 2,
+              fmtDim(split.width), o[pfx(sid)] ?? defOff, 'right', dToX, toY, '#000000', pfx(sid), db);
+          } else {
+            drawLinearDim(c, split.pos - split.width / 2, doorH, split.pos + split.width / 2, doorH,
+              fmtDim(split.width), o[pfx(sid)] ?? defOff, 'above', dToX, toY, '#000000', pfx(sid), db);
+          }
         }
+
+        const hSplitCount = splits.filter(s => s.type === 'hsplit').length;
+        const vSplitCount = splits.filter(s => s.type === 'vsplit').length;
+        for (let li = 0; li < leaves.length; li++) {
+          const pb = leaves[li];
+          const panelH = pb.xMax - pb.xMin;
+          const panelW = pb.yMax - pb.yMin;
+          const pcx = (pb.yMin + pb.yMax) / 2;
+          const pcy = (pb.xMin + pb.xMax) / 2;
+          const hId = pfx(`panel-${li}-h`), wId = pfx(`panel-${li}-w`);
+          const hOff = 35 + hSplitCount * 20 + li * 10;
+          const vOff = 35 + vSplitCount * 20 + li * 10;
+          drawLinearDim(c, pcx, pb.xMin, pcx, pb.xMax,
+            fmtDim(panelH), o[hId] ?? hOff, 'right', dToX, toY, '#000000', hId, db);
+          drawLinearDim(c, pb.yMin, pcy, pb.yMax, pcy,
+            fmtDim(panelW), o[wId] ?? vOff, 'above', dToX, toY, '#000000', wId, db);
+        }
+
+        // Hinge center dimensions
+        if (showHardware && hingeConfig?.enabled && hingeConfig.count > 0) {
+          const cupHoles = filteredHoles.filter(h => h.holeType === 'hinge-cup');
+          const isVertical = hingeConfig.side === 'left' || hingeConfig.side === 'right';
+          const hingeDimColor = '#8B6914';
+
+          if (isVertical) {
+            const dimSide = hingeConfig.side === 'right' ? 'right' as const : 'left' as const;
+            const dimX = hingeConfig.side === 'right' ? doorW : 0;
+            for (let i = 0; i < cupHoles.length; i++) {
+              const cupPos = cupHoles[i].X;
+              const loId = pfx(`hinge-${i}-lo`), hiId = pfx(`hinge-${i}-hi`);
+              const defOff = 55 + i * 20;
+              drawLinearDim(c, dimX, 0, dimX, cupPos,
+                fmtDim(cupPos), o[loId] ?? defOff, dimSide, dToX, toY, hingeDimColor, loId, db);
+              drawLinearDim(c, dimX, cupPos, dimX, doorH,
+                fmtDim(doorH - cupPos), o[hiId] ?? defOff, dimSide, dToX, toY, hingeDimColor, hiId, db);
+            }
+          } else {
+            const dimSide = hingeConfig.side === 'top' ? 'above' as const : 'below' as const;
+            const dimY = hingeConfig.side === 'top' ? doorH : 0;
+            for (let i = 0; i < cupHoles.length; i++) {
+              const cupPos = cupHoles[i].Y;
+              const loId = pfx(`hinge-${i}-lo`), hiId = pfx(`hinge-${i}-hi`);
+              const defOff = 55 + i * 20;
+              drawLinearDim(c, 0, dimY, cupPos, dimY,
+                fmtDim(cupPos), o[loId] ?? defOff, dimSide, dToX, toY, hingeDimColor, loId, db);
+              drawLinearDim(c, cupPos, dimY, doorW, dimY,
+                fmtDim(doorW - cupPos), o[hiId] ?? defOff, dimSide, dToX, toY, hingeDimColor, hiId, db);
+            }
+          }
+        }
+
+        c.restore();
       }
 
-      for (const pb of leaves) {
-        const panelH = pb.xMax - pb.xMin;
-        const panelW = pb.yMax - pb.yMin;
-        const pcx = (pb.yMin + pb.yMax) / 2;
-        const pcy = (pb.xMin + pb.xMax) / 2;
-        drawLinearDim(ctx, pcx, pb.xMin, pcx, pb.xMax,
-          fmtDim(panelH), 10, 'right', toX, toY);
-        drawLinearDim(ctx, pb.yMin, pcy, pb.yMax, pcy,
-          fmtDim(panelW), 10, 'above', toX, toY);
-      }
+      // Front dims (or single view)
+      const dimToX = (singleView && elevationFace === 'back') ? toXBackSingle : toX;
+      const frontHingHoles = holes.filter(h => !h.FlipSideOp);
+      drawDimsForHalf(ctx, 0, halfW, dimToX, '', frontHingHoles);
 
-      ctx.restore();
+      // Back dims (only in dual view)
+      if (!singleView) {
+        const backHingHoles = holes.filter(h => h.FlipSideOp);
+        drawDimsForHalf(ctx, halfW, halfW, toXBack, 'back', backHingHoles);
+      }
     }
 
     // Handle dimension annotations (front view only, for front-facing handles)
     if (showHardware && handleConfig) {
       const handleHoles = holes.filter(h => h.holeType === 'handle' && !h.FlipSideOp);
       const dimColor = '#2255aa';
+      const o = dimOffsets;
 
       if (handleHoles.length === 2) {
         const h0 = handleHoles[0], h1 = handleHoles[1];
         drawLinearDim(ctx, h0.Y, h0.X, h1.Y, h1.X,
           fmtDim(Math.hypot(h1.X - h0.X, h1.Y - h0.Y)),
-          20, 'left', toX, toY, dimColor);
+          o['handle-sep'] ?? 20, 'left', toX, toY, dimColor, 'handle-sep', db);
       }
 
       if (handleHoles.length > 0) {
@@ -1447,73 +1719,173 @@ export function ElevationViewer({
         const dp = handleConfig.doorPlacement;
         if (dp === 'top' || dp === 'center-top') {
           drawLinearDim(ctx, h.Y, handleMidX, h.Y, doorH,
-            fmtDim(doorH - handleMidX), 40, 'left', toX, toY, dimColor);
+            fmtDim(doorH - handleMidX), o['handle-elev'] ?? 40, 'left', toX, toY, dimColor, 'handle-elev', db);
         } else if (dp === 'bottom' || dp === 'custom') {
           drawLinearDim(ctx, h.Y, 0, h.Y, handleMidX,
-            fmtDim(handleMidX), 40, 'left', toX, toY, dimColor);
+            fmtDim(handleMidX), o['handle-elev'] ?? 40, 'left', toX, toY, dimColor, 'handle-elev', db);
         }
       }
     }
 
-    // --- Measure tool overlays (front view only) ---
+    // --- Measure tool overlays ---
     if (showUserDimensions) {
       for (const m of measure.measurements) {
-        drawGeneralDim(ctx, toX(m.ax), toY(m.ay), toX(m.bx), toY(m.by), m.label, m.perpOffset, '#0088cc');
+        const mtx = m.backHalf ? toXBack : activeToX;
+        drawGeneralDim(ctx, mtx(m.ax), toY(m.ay), mtx(m.bx), toY(m.by), m.label, m.perpOffset, '#0088cc');
       }
     }
 
     if (measure.measureMode && measure.dimPreview) {
       const dp = measure.dimPreview;
-      drawGeneralDim(ctx, toX(dp.ax), toY(dp.ay), toX(dp.bx), toY(dp.by), dp.label, dp.perpOffset, 'rgba(0, 136, 204, 0.6)');
+      const dtx = dp.backHalf ? toXBack : activeToX;
+      drawGeneralDim(ctx, dtx(dp.ax), toY(dp.ay), dtx(dp.bx), toY(dp.by), dp.label, dp.perpOffset, 'rgba(0, 136, 204, 0.6)');
     }
 
     if (measure.measureMode && measure.snap && measure.phase !== 'placing-dim') {
-      drawSnapIndicator(ctx, toX(measure.snap.x), toY(measure.snap.y), measure.snap.label);
+      const stx = measure.currentBack ? toXBack : activeToX;
+      drawSnapIndicator(ctx, stx(measure.snap.x), toY(measure.snap.y), measure.snap.label);
     }
     if (measure.measureMode && measure.phase === 'placing-b' && measure.pointA && measure.snap) {
-      const sax = toX(measure.pointA.x), say = toY(measure.pointA.y);
-      const sbx = toX(measure.snap.x), sby = toY(measure.snap.y);
+      const ptATx = measure.pointABack ? toXBack : activeToX;
+      const snapTx = measure.currentBack ? toXBack : activeToX;
+      const sax = ptATx(measure.pointA.x), say = toY(measure.pointA.y);
+      const sbx = snapTx(measure.snap.x), sby = toY(measure.snap.y);
       drawMeasurePreview(ctx, sax, say, sbx, sby, sbx, sby);
     }
     if (measure.measureMode && measure.pointA) {
+      const ptATx = measure.pointABack ? toXBack : activeToX;
       ctx.save();
       ctx.fillStyle = '#00aaff';
       ctx.beginPath();
-      ctx.arc(toX(measure.pointA.x), toY(measure.pointA.y), 4, 0, Math.PI * 2);
+      ctx.arc(ptATx(measure.pointA.x), toY(measure.pointA.y), 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
 
-    // Draw kerf lines (front view)
+    // Draw kerf lines (front view, or dotted in single-view back)
     if (kerfs && kerfs.length > 0) {
       const KERF_HALF = 3.175 / 2; // half of 1/8" kerf width
+      const isBackView = singleView && elevationFace === 'back';
       ctx.save();
       for (const k of kerfs) {
         const isSelected = k.id === selectedKerfId;
-        ctx.fillStyle = isSelected ? 'rgba(200, 100, 0, 0.45)' : 'rgba(200, 100, 0, 0.25)';
+        // Skip kerf being dragged — draw it as ghost instead
+        if (draggingKerf && k.id === draggingKerf.id) continue;
+        ctx.fillStyle = isBackView
+          ? 'rgba(200, 100, 0, 0.10)'
+          : (isSelected ? 'rgba(200, 100, 0, 0.45)' : 'rgba(200, 100, 0, 0.25)');
         ctx.strokeStyle = '#cc6600';
         ctx.lineWidth = isSelected ? 2 : 1;
+        if (isBackView) ctx.setLineDash([4, 3]);
         if (k.orientation === 'H') {
-          const x1 = toX(0);
-          const x2 = toX(doorW);
+          const x1 = activeToX(0);
+          const x2 = activeToX(doorW);
           const y1 = toY(k.centerMm + KERF_HALF);
           const y2 = toY(k.centerMm - KERF_HALF);
           ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
           ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
         } else {
-          const x1 = toX(k.centerMm - KERF_HALF);
-          const x2 = toX(k.centerMm + KERF_HALF);
+          const x1 = activeToX(k.centerMm - KERF_HALF);
+          const x2 = activeToX(k.centerMm + KERF_HALF);
           const y1 = toY(doorH);
           const y2 = toY(0);
           ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
           ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
         }
+        if (isBackView) ctx.setLineDash([]);
       }
       ctx.restore();
     }
 
-    // Ghost kerf preview + dimension lines when in kerf mode and hovering
-    if (kerfMode && kerfHoverMm !== null) {
+    // Ghost kerf during drag — orange dashed + boundary dims
+    if (draggingKerf) {
+      const KERF_HALF = 3.175 / 2;
+      const pos = draggingKerf.currentPos;
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.fillStyle = 'rgba(200, 100, 0, 0.25)';
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 2;
+      if (draggingKerf.orientation === 'H') {
+        const x1 = activeToX(0); const x2 = activeToX(doorW);
+        const y1 = toY(pos + KERF_HALF); const y2 = toY(pos - KERF_HALF);
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      } else {
+        const x1 = activeToX(pos - KERF_HALF); const x2 = activeToX(pos + KERF_HALF);
+        const y1 = toY(doorH); const y2 = toY(0);
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Boundary dims for dragging kerf
+      const { lo, hi } = getNearestBoundaries(pos, draggingKerf.orientation,
+        doorH, doorW, bottomRailW, topRailW, leftStileW, rightStileW, splitsWithBounds);
+      const distLo = pos - lo;
+      const distHi = hi - pos;
+      if (draggingKerf.orientation === 'H') {
+        if (distLo > 0.5) drawLinearDim(ctx, doorW, lo, doorW, pos, fmtDim(distLo), 28, 'right', activeToX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, doorW, pos, doorW, hi, fmtDim(distHi), 28, 'right', activeToX, toY, '#cc6600');
+      } else {
+        if (distLo > 0.5) drawLinearDim(ctx, lo, doorH, pos, doorH, fmtDim(distLo), 28, 'above', activeToX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, pos, doorH, hi, doorH, fmtDim(distHi), 28, 'above', activeToX, toY, '#cc6600');
+      }
+    }
+
+    // Between-kerf measurements on left side when kerf selected or dragging
+    if ((selectedKerfId || draggingKerf) && kerfs && kerfs.length > 0) {
+      const activeOrientation = draggingKerf?.orientation
+        ?? kerfs.find(k => k.id === selectedKerfId)?.orientation;
+      if (activeOrientation) {
+        const activeKerfs = kerfs
+          .filter(k => k.orientation === activeOrientation)
+          .map(k => draggingKerf?.id === k.id ? { ...k, centerMm: draggingKerf.currentPos } : k)
+          .sort((a, b) => a.centerMm - b.centerMm);
+        if (activeKerfs.length > 0) {
+          // Bottom/left edge to first kerf
+          if (activeKerfs[0].centerMm > 0.5) {
+            if (activeOrientation === 'H') {
+              drawLinearDim(ctx, 0, 0, 0, activeKerfs[0].centerMm,
+                fmtDim(activeKerfs[0].centerMm), 35, 'left', activeToX, toY, '#cc6600');
+            } else {
+              drawLinearDim(ctx, 0, 0, activeKerfs[0].centerMm, 0,
+                fmtDim(activeKerfs[0].centerMm), 35, 'below', activeToX, toY, '#cc6600');
+            }
+          }
+          // Between each pair of kerfs
+          for (let i = 1; i < activeKerfs.length; i++) {
+            const gap = activeKerfs[i].centerMm - activeKerfs[i - 1].centerMm;
+            if (gap > 0.5) {
+              if (activeOrientation === 'H') {
+                drawLinearDim(ctx, 0, activeKerfs[i - 1].centerMm, 0, activeKerfs[i].centerMm,
+                  fmtDim(gap), 35, 'left', activeToX, toY, '#cc6600');
+              } else {
+                drawLinearDim(ctx, activeKerfs[i - 1].centerMm, 0, activeKerfs[i].centerMm, 0,
+                  fmtDim(gap), 35, 'below', activeToX, toY, '#cc6600');
+              }
+            }
+          }
+          // Last kerf to top/right edge
+          const last = activeKerfs[activeKerfs.length - 1];
+          const edge = activeOrientation === 'H' ? doorH : doorW;
+          const gap = edge - last.centerMm;
+          if (gap > 0.5) {
+            if (activeOrientation === 'H') {
+              drawLinearDim(ctx, 0, last.centerMm, 0, edge,
+                fmtDim(gap), 35, 'left', activeToX, toY, '#cc6600');
+            } else {
+              drawLinearDim(ctx, last.centerMm, 0, edge, 0,
+                fmtDim(gap), 35, 'below', activeToX, toY, '#cc6600');
+            }
+          }
+        }
+      }
+    }
+
+    // Ghost kerf preview + dimension lines when in kerf mode and hovering (not dragging)
+    if (kerfMode && kerfHoverMm !== null && !draggingKerf) {
       const KERF_HALF = 3.175 / 2;
       ctx.save();
       ctx.setLineDash([4, 3]);
@@ -1521,12 +1893,12 @@ export function ElevationViewer({
       ctx.strokeStyle = '#cc6600';
       ctx.lineWidth = 1;
       if (kerfMode === 'H') {
-        const x1 = toX(0); const x2 = toX(doorW);
+        const x1 = activeToX(0); const x2 = activeToX(doorW);
         const y1 = toY(kerfHoverMm + KERF_HALF); const y2 = toY(kerfHoverMm - KERF_HALF);
         ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
       } else {
-        const x1 = toX(kerfHoverMm - KERF_HALF); const x2 = toX(kerfHoverMm + KERF_HALF);
+        const x1 = activeToX(kerfHoverMm - KERF_HALF); const x2 = activeToX(kerfHoverMm + KERF_HALF);
         const y1 = toY(doorH); const y2 = toY(0);
         ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
@@ -1540,11 +1912,11 @@ export function ElevationViewer({
       const distLo = kerfHoverMm - lo;
       const distHi = hi - kerfHoverMm;
       if (kerfMode === 'H') {
-        if (distLo > 0.5) drawLinearDim(ctx, doorW, lo, doorW, kerfHoverMm, fmtDim(distLo), 28, 'right', toX, toY, '#cc6600');
-        if (distHi > 0.5) drawLinearDim(ctx, doorW, kerfHoverMm, doorW, hi, fmtDim(distHi), 28, 'right', toX, toY, '#cc6600');
+        if (distLo > 0.5) drawLinearDim(ctx, doorW, lo, doorW, kerfHoverMm, fmtDim(distLo), 28, 'right', activeToX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, doorW, kerfHoverMm, doorW, hi, fmtDim(distHi), 28, 'right', activeToX, toY, '#cc6600');
       } else {
-        if (distLo > 0.5) drawLinearDim(ctx, lo, doorH, kerfHoverMm, doorH, fmtDim(distLo), 28, 'above', toX, toY, '#cc6600');
-        if (distHi > 0.5) drawLinearDim(ctx, kerfHoverMm, doorH, hi, doorH, fmtDim(distHi), 28, 'above', toX, toY, '#cc6600');
+        if (distLo > 0.5) drawLinearDim(ctx, lo, doorH, kerfHoverMm, doorH, fmtDim(distLo), 28, 'above', activeToX, toY, '#cc6600');
+        if (distHi > 0.5) drawLinearDim(ctx, kerfHoverMm, doorH, hi, doorH, fmtDim(distHi), 28, 'above', activeToX, toY, '#cc6600');
       }
     }
 
@@ -1577,17 +1949,17 @@ export function ElevationViewer({
       ctx.restore();
     }
 
-  }, [cw, ch, halfW, toX, toXBack, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
-      panelTree, rootBounds, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
-      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView,
+  }, [cw, ch, halfW, toX, toXBack, toXBackSingle, activeToX, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
+      panelTree, oppositeTree, rootBounds, dimSplits, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
+      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView, elevationFace,
       measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase,
       selectedHingeIdx, draggingHinge, hingeConfig,
-      selectedHandleIdx, draggingHandle, kerfs, selectedKerfId, kerfMode, kerfHoverMm]);
+      selectedHandleIdx, draggingHandle, kerfs, selectedKerfId, kerfMode, kerfHoverMm, draggingKerf, dimOffsets]);
 
   const isZoomed = zoom !== 1 || panX !== 0 || panY !== 0;
 
   // Sidebar data
-  const splits = enumerateSplits(panelTree);
+  const splits = dimSplits;
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
@@ -1646,11 +2018,18 @@ export function ElevationViewer({
           ref={canvasRef}
           width={cw}
           height={ch}
-          style={{ width: '100%', height: '100%', cursor }}
+          style={{
+            width: '100%',
+            height: '100%',
+            cursor,
+            transition: isFlipping ? 'transform 0.2s ease-in-out' : 'none',
+            transform: isFlipping ? 'scaleX(0)' : 'scaleX(1)',
+          }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onContextMenu={handleContextMenu}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1789,7 +2168,7 @@ export function ElevationViewer({
           const idx = [...selectedPanelIndices][0];
           if (idx < 0 || idx >= leaves.length) return null;
           const pb = leaves[idx];
-          const btnX = toX((pb.yMin + pb.yMax) / 2);
+          const btnX = activeToX((pb.yMin + pb.yMax) / 2);
           const btnY = toY((pb.xMin + pb.xMax) / 2);
           return (
             <div style={{
@@ -1842,10 +2221,10 @@ export function ElevationViewer({
           const b = sp.bounds;
           let btnX: number, btnY: number;
           if (sp.type === 'hsplit') {
-            btnX = toX((b.yMin + b.yMax) / 2);
+            btnX = activeToX((b.yMin + b.yMax) / 2);
             btnY = toY(sp.pos);
           } else {
-            btnX = toX(sp.pos);
+            btnX = activeToX(sp.pos);
             btnY = toY((b.xMin + b.xMax) / 2);
           }
           return (
@@ -1881,7 +2260,7 @@ export function ElevationViewer({
           if (draggingSplit.type === 'hsplit') {
             const botH = Math.max(0, pos - hw - pb.xMin);
             const topH = Math.max(0, pb.xMax - pos - hw);
-            const cx = toX((pb.yMin + pb.yMax) / 2);
+            const cx = activeToX((pb.yMin + pb.yMax) / 2);
             const botY = toY(pb.xMin + botH / 2);
             const topY = toY(pb.xMax - topH / 2);
             return (
@@ -1894,8 +2273,8 @@ export function ElevationViewer({
             const leftW = Math.max(0, pos - hw - pb.yMin);
             const rightW = Math.max(0, pb.yMax - pos - hw);
             const cy = toY((pb.xMin + pb.xMax) / 2);
-            const leftX = toX(pb.yMin + leftW / 2);
-            const rightX = toX(pb.yMax - rightW / 2);
+            const leftX = activeToX(pb.yMin + leftW / 2);
+            const rightX = activeToX(pb.yMax - rightW / 2);
             return (
               <>
                 <div style={{ ...pillStyle, left: leftX, top: cy }}>{fmtDim(leftW)}</div>
@@ -1933,7 +2312,10 @@ export function ElevationViewer({
             >Clear</button>
           )}
           <button
-            onClick={() => setSingleView(v => !v)}
+            onClick={() => setSingleView(v => {
+              if (v) setElevationFace('front');
+              return !v;
+            })}
             style={{
               ...measureBtnStyle,
               background: singleView ? '#0088cc' : '#fff',
@@ -1951,6 +2333,24 @@ export function ElevationViewer({
               title="Reset stile/rail widths and mid splits to style defaults"
             >Reset</button>
           )}
+          <button
+            onClick={() => setShowDimensions(d => !d)}
+            style={{
+              ...measureBtnStyle,
+              background: showDimensions ? '#fff' : '#666',
+              color: showDimensions ? '#333' : '#fff',
+              borderColor: showDimensions ? '#999' : '#555',
+            }}
+            title={showDimensions ? 'Hide Dimensions' : 'Show Dimensions'}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="2" y1="2" x2="2" y2="12" />
+              <line x1="12" y1="2" x2="12" y2="12" />
+              <line x1="2" y1="7" x2="12" y2="7" />
+              <polyline points="4,5 2,7 4,9" />
+              <polyline points="10,5 12,7 10,9" />
+            </svg>
+          </button>
           {kerfEnabled && (
             <>
               <button
@@ -2021,6 +2421,59 @@ export function ElevationViewer({
             </>
           )}
         </div>
+        {singleView && (
+          <div style={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            gap: 0,
+            zIndex: 12,
+          }}>
+            <button
+              onClick={() => {
+                if (elevationFace === 'front' || isFlipping) return;
+                setIsFlipping(true);
+                setTimeout(() => {
+                  setElevationFace('front');
+                  setTimeout(() => setIsFlipping(false), 200);
+                }, 200);
+              }}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '4px 0 0 4px',
+                border: '1px solid #0077b3',
+                borderRight: 'none',
+                background: elevationFace === 'front' ? '#0088cc' : '#fff',
+                color: elevationFace === 'front' ? '#fff' : '#333',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: elevationFace === 'front' ? 'default' : 'pointer',
+              }}
+            >Front</button>
+            <button
+              onClick={() => {
+                if (elevationFace === 'back' || isFlipping) return;
+                setIsFlipping(true);
+                setTimeout(() => {
+                  setElevationFace('back');
+                  setTimeout(() => setIsFlipping(false), 200);
+                }, 200);
+              }}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '0 4px 4px 0',
+                border: '1px solid #0077b3',
+                background: elevationFace === 'back' ? '#0088cc' : '#fff',
+                color: elevationFace === 'back' ? '#fff' : '#333',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: elevationFace === 'back' ? 'default' : 'pointer',
+              }}
+            >Back</button>
+          </div>
+        )}
         {isZoomed && (
           <button
             style={resetBtnStyle}
