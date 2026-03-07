@@ -215,25 +215,54 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
     const rawDx = Math.abs(rawB.x - a.x);
     const rawDy = Math.abs(rawB.y - a.y);
 
-    // Determine orientation from mouse position relative to A→B midpoint
-    const midSx = (sax + sbx) / 2, midSy = (say + sby) / 2;
-    const mouseDx = Math.abs(sx - midSx);
-    const mouseDy = Math.abs(sy - midSy);
-    const mouseAngle = Math.atan2(mouseDy, mouseDx) * (180 / Math.PI);
+    // Extent-based orientation: cursor position relative to A→B bounding box
+    const cursorX = getFx(sx);
+    const cursorY = fromY(sy);
+    const minX = Math.min(a.x, rawB.x), maxX = Math.max(a.x, rawB.x);
+    const minY = Math.min(a.y, rawB.y), maxY = Math.max(a.y, rawB.y);
 
-    // Classify with hysteresis — wide 60° diagonal zone (15°–75°)
-    const HYST = 5; // degrees of hysteresis band
+    // Pad bounding box to minimum 1" (25.4mm) per axis for close-together points
+    const MIN_EXTENT = 25.4;
+    const midBx = (minX + maxX) / 2, midBy = (minY + maxY) / 2;
+    const halfExtX = Math.max((maxX - minX) / 2, MIN_EXTENT / 2);
+    const halfExtY = Math.max((maxY - minY) / 2, MIN_EXTENT / 2);
+    const extMinX = midBx - halfExtX, extMaxX = midBx + halfExtX;
+    const extMinY = midBy - halfExtY, extMaxY = midBy + halfExtY;
+
+    const outsideX = cursorX < extMinX || cursorX > extMaxX;
+    const outsideY = cursorY < extMinY || cursorY > extMaxY;
+
     let detected: 'diagonal' | 'horizontal' | 'vertical';
-    if (mouseAngle < 15) detected = 'horizontal';
-    else if (mouseAngle > 75) detected = 'vertical';
-    else detected = 'diagonal';
+    if (outsideX && outsideY) {
+      // Outside both — pick based on relative excess
+      const excessX = Math.max(cursorX - extMaxX, extMinX - cursorX, 0);
+      const excessY = Math.max(cursorY - extMaxY, extMinY - cursorY, 0);
+      const normX = rawDx > 1e-6 ? excessX / rawDx : excessX;
+      const normY = rawDy > 1e-6 ? excessY / rawDy : excessY;
+      detected = normX > normY ? 'vertical' : 'horizontal';
+    } else if (outsideX) {
+      detected = 'vertical';     // past horizontal extent → vertical dimension
+    } else if (outsideY) {
+      detected = 'horizontal';   // past vertical extent → horizontal dimension
+    } else {
+      detected = 'diagonal';     // inside bounding box → aligned dimension
+    }
 
-    // Apply hysteresis: only switch if past the hysteresis band
+    // Hysteresis: once locked, require crossing boundary by tolerance to switch
+    const tolerance = 3 / scale;
     const prev = lockedOrientation.current;
     if (prev && prev !== detected) {
-      if (prev === 'horizontal' && mouseAngle < 15 + HYST) detected = 'horizontal';
-      else if (prev === 'vertical' && mouseAngle > 75 - HYST) detected = 'vertical';
-      else if (prev === 'diagonal' && mouseAngle > 15 - HYST && mouseAngle < 75 + HYST) detected = 'diagonal';
+      if (prev === 'diagonal') {
+        const outX = cursorX < extMinX - tolerance || cursorX > extMaxX + tolerance;
+        const outY = cursorY < extMinY - tolerance || cursorY > extMaxY + tolerance;
+        if (!outX && !outY) detected = 'diagonal';
+      } else if (prev === 'vertical') {
+        const insideX = cursorX > extMinX + tolerance && cursorX < extMaxX - tolerance;
+        if (!insideX) detected = 'vertical';
+      } else if (prev === 'horizontal') {
+        const insideY = cursorY > extMinY + tolerance && cursorY < extMaxY - tolerance;
+        if (!insideY) detected = 'horizontal';
+      }
     }
     lockedOrientation.current = detected;
 
@@ -284,7 +313,7 @@ export function useMeasureTool(opts: UseMeasureToolOptions) {
       label: formatDistance(dist),
       backHalf: activeBack.current,
     });
-  }, [pointA, getTx, toY, formatDistance]);
+  }, [pointA, getTx, toY, getFx, fromY, scale, formatDistance]);
 
   // ---- Mouse move → update snap or dim preview ----
 

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { ParamDefinition, CheckboxListValue, NumberValue, PresetCheckboxValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, TextureCheckboxListValue } from '../../configParams.js';
+import type { ParamDefinition, CheckboxListValue, NumberValue, PresetCheckboxValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, TextureCheckboxListValue, DoorTypeDefaultsValue } from '../../configParams.js';
+import { DEFAULT_DOOR_TYPE_DEFAULTS } from '../../configParams.js';
 import type { TextureManifest } from '../../types.js';
 import { CommitNumberInput } from '../CommitNumberInput.js';
 import { CheckboxListCell } from './CheckboxListCell.js';
@@ -8,6 +9,7 @@ import { BooleanRadioCell } from './BooleanRadioCell.js';
 import { FixedCheckboxListCell } from './FixedCheckboxListCell.js';
 import { GroupDepthListCell } from './GroupDepthListCell.js';
 import { TextureCheckboxListCell } from './TextureCheckboxListCell.js';
+import { DoorTypeDefaultsCell } from './DoorTypeDefaultsCell.js';
 
 interface ParamCellProps {
   param: ParamDefinition;
@@ -113,6 +115,19 @@ export function ParamCell({ param, value, allParams, panelGroups, edgeGroups, on
           selectedPaths={selected}
           onChange={paths => onChange({ enabledTextures: paths })}
           onCopyToAll={onCopyToAll ?? (() => {})}
+        />
+      );
+    }
+
+    case 'door-type-defaults': {
+      const defaults = (value as DoorTypeDefaultsValue | undefined) ?? DEFAULT_DOOR_TYPE_DEFAULTS;
+      return (
+        <DoorTypeDefaultsCell
+          value={defaults}
+          onChange={onChange}
+          toDisplay={toDisplay}
+          fromDisplay={fromDisplay}
+          inputStep={inputStep}
         />
       );
     }

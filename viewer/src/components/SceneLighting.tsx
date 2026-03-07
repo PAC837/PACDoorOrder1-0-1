@@ -7,14 +7,17 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SAOPass } from 'three/examples/jsm/postprocessing/SAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { HalftonePass } from 'three/examples/jsm/postprocessing/HalftonePass.js';
+import { Environment } from '@react-three/drei';
 import { getPreset } from '../lightingPresets.js';
-import type { LightingPresetKey } from '../hooks/useViewerSettings.js';
+import type { LightingPresetKey, EnvPresetKey } from '../hooks/useViewerSettings.js';
 
 interface SceneLightingProps {
   presetKey: LightingPresetKey;
+  envPreset?: EnvPresetKey;
+  envIntensity?: number;
 }
 
-export function SceneLighting({ presetKey }: SceneLightingProps) {
+export function SceneLighting({ presetKey, envPreset, envIntensity = 1 }: SceneLightingProps) {
   const preset = getPreset(presetKey);
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
@@ -89,6 +92,12 @@ export function SceneLighting({ presetKey }: SceneLightingProps) {
           intensity={d.intensity}
         />
       ))}
+      {envPreset && envPreset !== 'none' && (
+        <Environment
+          preset={envPreset}
+          environmentIntensity={envIntensity}
+        />
+      )}
     </>
   );
 }

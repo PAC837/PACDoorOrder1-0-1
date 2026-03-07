@@ -110,9 +110,59 @@ export function LayoutCustomizer({
           >
             Compact
           </button>
+          <button
+            onClick={() => onPresetChange('simple')}
+            style={{
+              ...st.presetBtn,
+              ...(layoutPreset === 'simple' ? st.presetBtnActive : {}),
+            }}
+          >
+            Simple
+          </button>
+          <button
+            onClick={() => onPresetChange('simple-xs')}
+            style={{
+              ...st.presetBtn,
+              ...(layoutPreset === 'simple-xs' ? st.presetBtnActive : {}),
+            }}
+          >
+            Simple + XS
+          </button>
         </div>
 
-        {layoutPreset === 'default' ? (
+        {layoutPreset === 'simple' ? (
+          <>
+            <p style={st.hint}>Toolbar + Order List only. Click eye icon to view doors.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gridTemplateRows: '1fr 2fr', gap: 4, height: 160 }}>
+              <div style={{ ...st.cell, borderColor: '#444466', background: 'rgba(42, 42, 66, 0.6)' }}>
+                <span style={st.cellIcon}>{PANEL_ICONS.toolbar}</span>
+                <span style={st.cellLabel}>Toolbar</span>
+              </div>
+              <div style={{ ...st.cell, borderColor: '#444466', background: 'rgba(42, 42, 66, 0.6)' }}>
+                <span style={st.cellIcon}>{PANEL_ICONS.orderList}</span>
+                <span style={st.cellLabel}>Order List</span>
+              </div>
+            </div>
+          </>
+        ) : layoutPreset === 'simple-xs' ? (
+          <>
+            <p style={st.hint}>Toolbar + Cross Section + Order List. Click eye icon to view doors.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gridTemplateRows: '2fr 1fr 3fr', gap: 4, height: 180 }}>
+              <div style={{ ...st.cell, borderColor: '#444466', background: 'rgba(42, 42, 66, 0.6)' }}>
+                <span style={st.cellIcon}>{PANEL_ICONS.toolbar}</span>
+                <span style={st.cellLabel}>Toolbar</span>
+              </div>
+              <div style={{ ...st.cell, borderColor: '#444466', background: 'rgba(42, 42, 66, 0.6)' }}>
+                <span style={st.cellIcon}>{PANEL_ICONS.crossSection}</span>
+                <span style={st.cellLabel}>Cross Section</span>
+              </div>
+              <div style={{ ...st.cell, borderColor: '#444466', background: 'rgba(42, 42, 66, 0.6)' }}>
+                <span style={st.cellIcon}>{PANEL_ICONS.orderList}</span>
+                <span style={st.cellLabel}>Order List</span>
+              </div>
+            </div>
+          </>
+        ) : layoutPreset === 'default' ? (
           <>
             <p style={st.hint}>Drag panels to swap positions</p>
             <div style={st.grid}>

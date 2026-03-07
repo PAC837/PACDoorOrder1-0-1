@@ -5,14 +5,22 @@ export type LightingPresetKey =
   | 'rim-backlit' | 'three-point' | 'ambient-occlusion' | 'bloom' | 'halftone'
   | 'raking';
 
+export type EnvPresetKey =
+  | 'none' | 'apartment' | 'city' | 'dawn' | 'forest' | 'lobby'
+  | 'night' | 'park' | 'studio' | 'sunset' | 'warehouse';
+
 export interface ViewerSettings {
   modelOpacity: number;        // 0–1
   lightingPreset: LightingPresetKey;
+  envPreset: EnvPresetKey;     // HDRI environment preset or 'none'
+  envIntensity: number;        // 0–3
 }
 
 const DEFAULT_SETTINGS: ViewerSettings = {
   modelOpacity: 1,
   lightingPreset: 'studio',
+  envPreset: 'none',
+  envIntensity: 1,
 };
 
 export function useViewerSettings() {

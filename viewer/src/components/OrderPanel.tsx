@@ -21,6 +21,7 @@ interface OrderPanelProps {
   onRemoveItem: (id: number) => void;
   onUpdateItem: (id: number, changes: Partial<Pick<OrderItem, 'qty' | 'note' | 'roomName' | 'cabNumber' | 'material' | 'customData' | 'doorH' | 'doorW' | 'thickness' | 'paintPath' | 'hingesDisplay' | 'hardwareDisplay'>>) => void;
   onViewItem: (item: OrderItem) => void;
+  onViewAndLoad?: (item: OrderItem) => void;
   onStyleTabClick: (styleKey: string) => void;
   onQuickAdd: (h: number, w: number) => void;
   onLoadItem: (item: OrderItem) => void;
@@ -58,7 +59,7 @@ const BATCH_EDITABLE = new Set(['height', 'width', 'thickness', 'roomName', 'not
 
 export function OrderPanel({
   items, columns, groupByFields, styleTabs, currentStyleKey, units, textureBlobUrls,
-  onAddItem: _onAddItem, onRemoveItem, onUpdateItem, onViewItem, onStyleTabClick,
+  onAddItem: _onAddItem, onRemoveItem, onUpdateItem, onViewItem, onViewAndLoad, onStyleTabClick,
   onQuickAdd, onLoadItem,
 }: OrderPanelProps) {
   const [activeTab, setActiveTab] = useState<'all' | string>(currentStyleKey);
@@ -225,7 +226,7 @@ export function OrderPanel({
                   textureBlobUrls={textureBlobUrls}
                   selectedColIds={new Set([...selectedCells.values()].filter(c => c.id === item.id).map(c => c.colId))}
                   onRemove={() => onRemoveItem(item.id)}
-                  onView={() => onViewItem(item)}
+                  onView={() => onViewAndLoad ? onViewAndLoad(item) : onViewItem(item)}
                   onLoad={() => onLoadItem(item)}
                   onUpdateQty={(qty) => onUpdateItem(item.id, { qty })}
                   onUpdateNote={(note) => onUpdateItem(item.id, { note })}

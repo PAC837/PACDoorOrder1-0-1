@@ -17,7 +17,7 @@ import { StyleEditorDialog } from './components/StyleEditorDialog.js';
 import { buildGenericDoor } from './utils/genericDoor.js';
 import { equidistantPositions } from './utils/hardware.js';
 import type { PanelTree } from './utils/panelTree.js';
-import { enumerateSplits, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf, removeSplit, buildSplitChain, replaceLeafAt } from './utils/panelTree.js';
+import { enumerateSplits, flattenTree, updateSplit, libraryDoorToTree, pathsEqual, addSplitAtLeaf, removeSplit, buildSplitChain, replaceLeafAt } from './utils/panelTree.js';
 import type { DoorData, DoorHandlePlacement, OperationVisibility, ToolVisibility, PanelType, UnitSystem, DoorPartType, BackPocketMode, HingeConfig, HandleConfig, RenderMode, LayoutMapping, SlotPosition, PanelContentId, LayoutPreset, CompactSlotPosition, CompactLayoutMapping, TextureManifest, KerfLine, FractionPrecision } from './types.js';
 import { MATERIAL_THICKNESS, DEFAULT_HINGE_CONFIG, DEFAULT_HANDLE_CONFIG, DEFAULT_LAYOUT, COMPACT_LAYOUT, PANEL_DISPLAY_NAMES, ALL_SLOTS } from './types.js';
 import { RenderModeButton, nextRenderMode } from './components/RenderModeButton.js';
@@ -29,9 +29,11 @@ import { useOrderColumns } from './hooks/useOrderColumns.js';
 import { useGroupByConfig } from './hooks/useGroupByConfig.js';
 import { useWatermarkConfig, watermarkFontSize } from './hooks/useWatermarkConfig.js';
 import { useViewerSettings } from './hooks/useViewerSettings.js';
+import type { EnvPresetKey } from './hooks/useViewerSettings.js';
 import { getPreset } from './lightingPresets.js';
 import { SceneLighting } from './components/SceneLighting.js';
-import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue } from './configParams.js';
+import type { CheckboxListValue, BooleanRadioValue, FixedCheckboxListValue, GroupDepthListValue, PresetCheckboxValue, NumberValue, TextureCheckboxListValue, DoorTypeDefaultsValue } from './configParams.js';
+import { DEFAULT_DOOR_TYPE_DEFAULTS } from './configParams.js';
 
 type Tab = 'door' | 'admin' | 'configure';
 
@@ -153,6 +155,7 @@ export default function App() {
   const [backPanelTree, setBackPanelTree] = useState<PanelTree>({ type: 'leaf' });
   const [elevationFace, setElevationFace] = useState<'front' | 'back'>('front');
   const [selectedPanels, setSelectedPanels] = useState<Set<number>>(new Set());
+  const [selectionFace, setSelectionFace] = useState<'front' | 'back'>('front');
   const [selectedSplitPath, setSelectedSplitPath] = useState<number[] | null>(null);
   // Derived: active panel tree for split operations based on elevation face
   const activePanelTree = elevationFace === 'back' ? backPanelTree : frontPanelTree;
@@ -169,7 +172,7 @@ export default function App() {
     return { ...DEFAULT_LAYOUT };
   });
   const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>(() => {
-    try { const s = localStorage.getItem('pac-layout-preset'); if (s === 'compact') return 'compact'; } catch {}
+    try { const s = localStorage.getItem('pac-layout-preset'); if (s === 'compact' || s === 'simple' || s === 'simple-xs') return s as LayoutPreset; } catch {}
     return 'default';
   });
   const [compactLayoutMapping, setCompactLayoutMapping] = useState<CompactLayoutMapping>(() => {
@@ -193,6 +196,9 @@ export default function App() {
   const activePreset = useMemo(() => getPreset(viewerSettings.lightingPreset), [viewerSettings.lightingPreset]);
   const [orderQty, setOrderQty] = useState(1);
   const [viewingItem, setViewingItem] = useState<OrderItem | null>(null);
+  const [simpleOverlayOpen, setSimpleOverlayOpen] = useState(false);
+  const [showCrossSectionPopover, setShowCrossSectionPopover] = useState(false);
+  const simpleOverlayCanvasRef = useRef<HTMLDivElement>(null);
   const preSlabGroups = useRef<{ frontGroupId: number | null; backGroupId: number | null; edgeGroupId: number | null } | null>(null);
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [selectedTextures, setSelectedTextures] = useState<{
@@ -217,6 +223,7 @@ export default function App() {
 
   // Which slot currently holds the 3D canvas?
   const canvasSlot = useMemo(() => {
+    if (layoutPreset === 'simple' || layoutPreset === 'simple-xs') return null; // No canvas slot in simple modes
     if (layoutPreset === 'compact') {
       for (const [slot, panel] of Object.entries(compactLayoutMapping)) {
         if (panel === 'canvas3d') return slot;
@@ -267,7 +274,24 @@ export default function App() {
   useEffect(() => {
     // Admin is an overlay — keep canvas positioned underneath
     if (currentTab !== 'door' && currentTab !== 'admin' && currentTab !== 'configure') { setCanvasRect(null); return; }
-    const el = slotRefs.current[canvasSlot];
+
+    // Simple modes: canvas only visible when overlay is open, positioned in overlay's left pane
+    if (layoutPreset === 'simple' || layoutPreset === 'simple-xs') {
+      if (!simpleOverlayOpen) { setCanvasRect(null); return; }
+      const el = simpleOverlayCanvasRef.current;
+      if (!el) return;
+      const update = () => {
+        const r = el.getBoundingClientRect();
+        // Use raw viewport coords — canvas wrapper will be position:fixed to match the fixed overlay
+        setCanvasRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      };
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      update();
+      return () => ro.disconnect();
+    }
+
+    const el = slotRefs.current[canvasSlot!];
     if (!el) return;
 
     const update = () => {
@@ -289,7 +313,7 @@ export default function App() {
     if (containerRef.current) ro.observe(containerRef.current);
     update();
     return () => ro.disconnect();
-  }, [canvasSlot, currentTab]);
+  }, [canvasSlot, currentTab, layoutPreset, simpleOverlayOpen]);
 
   // Unit conversion helpers for number inputs (internal state always mm)
   const toDisplay = useCallback((mm: number) => units === 'in' ? parseFloat((mm / 25.4).toFixed(4)) : mm, [units]);
@@ -438,6 +462,12 @@ export default function App() {
     return BACK_PRESETS_WITH_NONE.filter(bp => enabled.includes(bp.value));
   }, [selectedConfigStyleId, configData.matrix, BACK_PRESETS_WITH_NONE]);
 
+  // Check if pocket/bridge back options are available for warning messages
+  const hasBackPocketOption = useMemo(() => {
+    if (!filteredBackPresets) return true;
+    return filteredBackPresets.some(bp => bp.value === 'back-pocket' || bp.value === 'back-bridge');
+  }, [filteredBackPresets]);
+
   // Filter door types based on selected config style
   const filteredDoorTypes = useMemo(() => {
     if (!selectedConfigStyleId) return undefined;
@@ -457,6 +487,27 @@ export default function App() {
     const param = style.params.stileRailPresets as PresetCheckboxValue | undefined;
     const widths = param?.enabledWidths ?? [];
     return [...widths].sort((a, b) => a - b);
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Extract door-type defaults from selected config style (base from Configure DB)
+  const configDoorTypeDefaults = useMemo((): DoorTypeDefaultsValue => {
+    if (!selectedConfigStyleId) return DEFAULT_DOOR_TYPE_DEFAULTS;
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    if (!style) return DEFAULT_DOOR_TYPE_DEFAULTS;
+    return (style.params.doorTypeDefaults as DoorTypeDefaultsValue | undefined) ?? DEFAULT_DOOR_TYPE_DEFAULTS;
+  }, [selectedConfigStyleId, configData.matrix]);
+
+  // Session-level override: starts from Configure, editable via Style Editor
+  const [sessionDoorTypeDefaults, setSessionDoorTypeDefaults] = useState<DoorTypeDefaultsValue>(DEFAULT_DOOR_TYPE_DEFAULTS);
+  useEffect(() => {
+    setSessionDoorTypeDefaults(configDoorTypeDefaults);
+  }, [configDoorTypeDefaults]);
+
+  // Reduced rail reduction amount (configurable per style)
+  const reducedRailReduction = useMemo(() => {
+    if (!selectedConfigStyleId) return 19.05; // 0.75"
+    const style = configData.matrix.find(s => s.id === selectedConfigStyleId);
+    return (style?.params.reducedRailReduction as NumberValue | undefined)?.value ?? 19.05;
   }, [selectedConfigStyleId, configData.matrix]);
 
   // Extract configured back route groups with resolved names
@@ -549,7 +600,16 @@ export default function App() {
     setToolVisibility({});
     setBackPreset('');
     setBackGroupId(null);
-  }, [configData.matrix, edgeGroupId]);
+    // Apply current door type's stile/rail defaults from the new style
+    const dtDefaults = (style?.params.doorTypeDefaults as DoorTypeDefaultsValue | undefined) ?? DEFAULT_DOOR_TYPE_DEFAULTS;
+    if (doorPartType !== 'slab') {
+      const def = dtDefaults[doorPartType];
+      setLeftStileW(def.stile);
+      setRightStileW(def.stile);
+      setTopRailW(def.rail);
+      setBottomRailW('bottomRail' in def ? def.bottomRail : def.rail);
+    }
+  }, [configData.matrix, edgeGroupId, doorPartType]);
 
   // Auto-select the default style on initial load
   const defaultAutoSelected = useRef(false);
@@ -590,13 +650,30 @@ export default function App() {
     }
   }, [selectedConfigStyleId, configData.matrix]);
 
-  // Style editor preset — sets all four stile/rail widths to the same value
-  const handleStylePresetSelect = useCallback((widthMm: number) => {
-    setLeftStileW(widthMm);
-    setRightStileW(widthMm);
-    setTopRailW(widthMm);
-    setBottomRailW(widthMm);
-  }, []);
+  // Style editor preset — applies offset from base to all door type defaults
+  const handleStylePresetSelect = useCallback((presetMm: number) => {
+    const base = configDoorTypeDefaults;
+    const delta = presetMm - base.door.stile;
+
+    const newDefaults: DoorTypeDefaultsValue = {
+      door:           { stile: presetMm, rail: base.door.rail + delta },
+      drawer:         { stile: base.drawer.stile + delta, rail: base.drawer.rail + delta },
+      'reduced-rail': { stile: base['reduced-rail'].stile + delta, rail: presetMm - reducedRailReduction },
+      'end-panel':    { stile: base['end-panel'].stile + delta, rail: base['end-panel'].rail + delta,
+                        bottomRail: base['end-panel'].bottomRail + delta },
+      slab:           base.slab,
+    };
+    setSessionDoorTypeDefaults(newDefaults);
+
+    // Apply current door type's values to UI
+    if (doorPartType !== 'slab') {
+      const def = newDefaults[doorPartType];
+      setLeftStileW(def.stile);
+      setRightStileW(def.stile);
+      setTopRailW(def.rail);
+      setBottomRailW('bottomRail' in def ? def.bottomRail : def.rail);
+    }
+  }, [configDoorTypeDefaults, reducedRailReduction, doorPartType]);
 
   // Back route group+depth selection from sub-dropdown (depth now derived, no longer stored)
   const handleBackRouteGroupSelect = useCallback((groupId: number, _depth: number) => {
@@ -621,13 +698,28 @@ export default function App() {
 
   const handleDoorPartTypeChange = useCallback((type: DoorPartType) => {
     setDoorPartType(type);
-    switch (type) {
-      case 'door': setDoorH(762); break;
-      case 'drawer': setDoorH(203.2); break;
-      case 'reduced-rail': setDoorH(152.4); break;
-      case 'end-panel': setDoorH(762); setBottomRailW(139.7); break; // 30" height, 5.5" bottom rail
-      case 'slab': setDoorH(152.4); break;
+
+    // Apply per-type defaults from configure
+    if (type === 'slab') {
+      const slabDef = sessionDoorTypeDefaults.slab;
+      setDoorW(w => Math.max(w, slabDef.minWidth));
+      setDoorH(h => Math.max(h, slabDef.minLength));
+    } else {
+      const def = sessionDoorTypeDefaults[type];
+      setLeftStileW(def.stile);
+      setRightStileW(def.stile);
+      setTopRailW(def.rail);
+      setBottomRailW('bottomRail' in def ? def.bottomRail : def.rail);
+
+      // Default heights per type
+      switch (type) {
+        case 'door': setDoorH(762); break;
+        case 'drawer': setDoorH(203.2); break;
+        case 'reduced-rail': setDoorH(152.4); break;
+        case 'end-panel': setDoorH(762); break;
+      }
     }
+
     if (type === 'slab') {
       // Save current tool groups before clearing
       preSlabGroups.current = { frontGroupId, backGroupId, edgeGroupId };
@@ -647,7 +739,7 @@ export default function App() {
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
     setKerfs([]);
-  }, [frontGroupId, backGroupId, edgeGroupId, doorPartType]);
+  }, [frontGroupId, backGroupId, edgeGroupId, doorPartType, sessionDoorTypeDefaults]);
 
   const handleHingeSideChange = useCallback((side: 'left' | 'right' | 'top' | 'bottom') => {
     setHingeConfig(prev => ({ ...prev, side }));
@@ -999,7 +1091,8 @@ export default function App() {
     if (meta.styleId !== null) handleConfigStyleChange(meta.styleId);
   }, [selectionRegistry, handleConfigStyleChange]);
 
-  const handlePanelSelect = useCallback((idx: number, event: { ctrlKey: boolean }) => {
+  const handlePanelSelect = useCallback((idx: number, event: { ctrlKey: boolean; face?: 'front' | 'back' }) => {
+    setSelectionFace(event.face ?? 'front');
     setSelectedSplitPath(null);
     if (event.ctrlKey) {
       setSelectedPanels(prev => {
@@ -1011,6 +1104,18 @@ export default function App() {
       setSelectedPanels(new Set([idx]));
     }
   }, []);
+
+  const handleBackPanelBlocked = useCallback(() => {
+    if (backPreset === 'back-route') {
+      setSplitWarning("'Routed' Back Type not eligible for mullions.");
+    } else if (backPreset === 'back-bridge') {
+      setSplitWarning("'Bridge' Back Type not eligible for mullions.");
+    } else if (hasBackPocketOption) {
+      setSplitWarning('Select a back type to add mullions');
+    } else {
+      setSplitWarning('No back mullions allowed');
+    }
+  }, [backPreset, hasBackPocketOption]);
 
   const handleSplitSelect = useCallback((path: number[] | null) => {
     setSelectedSplitPath(path);
@@ -1034,20 +1139,50 @@ export default function App() {
     });
   }, [setActivePanelTree]);
 
+  // Warning toast for invalid back-face split attempts
+  const [splitWarning, setSplitWarning] = useState<string | null>(null);
+  useEffect(() => {
+    if (!splitWarning) return;
+    const t = setTimeout(() => setSplitWarning(null), 3000);
+    return () => clearTimeout(t);
+  }, [splitWarning]);
+
   // Add split at a panel's center (used by MR/MS buttons in elevation)
   const handleAddMidRail = useCallback((panelIdx: number) => {
-    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
-    const pb = panelBounds[panelIdx];
-    setActivePanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'hsplit', (pb.xMin + pb.xMax) / 2, 76.2));
+    if (selectionFace === 'back' && (backPreset === '' || backPreset === 'back-route' || backPreset === 'back-bridge')) {
+      setSplitWarning(backPreset === 'back-route' ? "'Routed' Back Type not eligible for mullions."
+        : backPreset === 'back-bridge' ? "'Bridge' Back Type not eligible for mullions."
+        : 'Select a back type to add mullions');
+      return;
+    }
+    const tree = selectionFace === 'back' ? backPanelTree : frontPanelTree;
+    const setTree = selectionFace === 'back' ? setBackPanelTree : setFrontPanelTree;
+    const rb = { xMin: bottomRailW, xMax: doorH - topRailW, yMin: leftStileW, yMax: doorW - rightStileW };
+    const bounds = flattenTree(tree, rb);
+    if (panelIdx < 0 || panelIdx >= bounds.length) return;
+    const pb = bounds[panelIdx];
+    setTree(prev => addSplitAtLeaf(prev, panelIdx, 'hsplit', (pb.xMin + pb.xMax) / 2, 76.2));
     setSelectedPanels(new Set());
-  }, [panelBounds, setActivePanelTree]);
+  }, [selectionFace, backPreset, frontPanelTree, backPanelTree, setFrontPanelTree, setBackPanelTree,
+      bottomRailW, doorH, topRailW, leftStileW, doorW, rightStileW]);
 
   const handleAddMidStile = useCallback((panelIdx: number) => {
-    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
-    const pb = panelBounds[panelIdx];
-    setActivePanelTree(prev => addSplitAtLeaf(prev, panelIdx, 'vsplit', (pb.yMin + pb.yMax) / 2, 76.2));
+    if (selectionFace === 'back' && (backPreset === '' || backPreset === 'back-route' || backPreset === 'back-bridge')) {
+      setSplitWarning(backPreset === 'back-route' ? "'Routed' Back Type not eligible for mullions."
+        : backPreset === 'back-bridge' ? "'Bridge' Back Type not eligible for mullions."
+        : 'Select a back type to add mullions');
+      return;
+    }
+    const tree = selectionFace === 'back' ? backPanelTree : frontPanelTree;
+    const setTree = selectionFace === 'back' ? setBackPanelTree : setFrontPanelTree;
+    const rb = { xMin: bottomRailW, xMax: doorH - topRailW, yMin: leftStileW, yMax: doorW - rightStileW };
+    const bounds = flattenTree(tree, rb);
+    if (panelIdx < 0 || panelIdx >= bounds.length) return;
+    const pb = bounds[panelIdx];
+    setTree(prev => addSplitAtLeaf(prev, panelIdx, 'vsplit', (pb.yMin + pb.yMax) / 2, 76.2));
     setSelectedPanels(new Set());
-  }, [panelBounds, setActivePanelTree]);
+  }, [selectionFace, backPreset, frontPanelTree, backPanelTree, setFrontPanelTree, setBackPanelTree,
+      bottomRailW, doorH, topRailW, leftStileW, doorW, rightStileW]);
 
   const handleDeleteSplit = useCallback((path: number[]) => {
     setActivePanelTree(prev => removeSplit(prev, path));
@@ -1055,22 +1190,52 @@ export default function App() {
   }, [setActivePanelTree]);
 
   const handleAddEqualMidRails = useCallback((panelIdx: number, count: number) => {
-    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
-    const pb = panelBounds[panelIdx];
+    if (selectionFace === 'back' && (backPreset === '' || backPreset === 'back-route' || backPreset === 'back-bridge')) {
+      setSplitWarning(backPreset === 'back-route' ? "'Routed' Back Type not eligible for mullions."
+        : backPreset === 'back-bridge' ? "'Bridge' Back Type not eligible for mullions."
+        : 'Select a back type to add mullions');
+      return;
+    }
+    const tree = selectionFace === 'back' ? backPanelTree : frontPanelTree;
+    const setTree = selectionFace === 'back' ? setBackPanelTree : setFrontPanelTree;
+    const rb = { xMin: bottomRailW, xMax: doorH - topRailW, yMin: leftStileW, yMax: doorW - rightStileW };
+    const bounds = flattenTree(tree, rb);
+    if (panelIdx < 0 || panelIdx >= bounds.length) return;
+    const pb = bounds[panelIdx];
     const span = pb.xMax - pb.xMin;
-    const positions = Array.from({ length: count - 1 }, (_, k) => pb.xMin + (k + 1) * span / count);
-    setActivePanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('hsplit', positions, 76.2)));
+    const dividerW = 76.2;
+    const panelW = (span - (count - 1) * dividerW) / count;
+    const positions = Array.from({ length: count - 1 }, (_, k) =>
+      pb.xMin + (k + 1) * panelW + (k + 0.5) * dividerW
+    );
+    setTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('hsplit', positions, dividerW)));
     setSelectedPanels(new Set());
-  }, [panelBounds, setActivePanelTree]);
+  }, [selectionFace, backPreset, frontPanelTree, backPanelTree, setFrontPanelTree, setBackPanelTree,
+      bottomRailW, doorH, topRailW, leftStileW, doorW, rightStileW]);
 
   const handleAddEqualMidStiles = useCallback((panelIdx: number, count: number) => {
-    if (!panelBounds || panelIdx < 0 || panelIdx >= panelBounds.length) return;
-    const pb = panelBounds[panelIdx];
+    if (selectionFace === 'back' && (backPreset === '' || backPreset === 'back-route' || backPreset === 'back-bridge')) {
+      setSplitWarning(backPreset === 'back-route' ? "'Routed' Back Type not eligible for mullions."
+        : backPreset === 'back-bridge' ? "'Bridge' Back Type not eligible for mullions."
+        : 'Select a back type to add mullions');
+      return;
+    }
+    const tree = selectionFace === 'back' ? backPanelTree : frontPanelTree;
+    const setTree = selectionFace === 'back' ? setBackPanelTree : setFrontPanelTree;
+    const rb = { xMin: bottomRailW, xMax: doorH - topRailW, yMin: leftStileW, yMax: doorW - rightStileW };
+    const bounds = flattenTree(tree, rb);
+    if (panelIdx < 0 || panelIdx >= bounds.length) return;
+    const pb = bounds[panelIdx];
     const span = pb.yMax - pb.yMin;
-    const positions = Array.from({ length: count - 1 }, (_, k) => pb.yMin + (k + 1) * span / count);
-    setActivePanelTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('vsplit', positions, 76.2)));
+    const dividerW = 76.2;
+    const panelW = (span - (count - 1) * dividerW) / count;
+    const positions = Array.from({ length: count - 1 }, (_, k) =>
+      pb.yMin + (k + 1) * panelW + (k + 0.5) * dividerW
+    );
+    setTree(prev => replaceLeafAt(prev, panelIdx, buildSplitChain('vsplit', positions, dividerW)));
     setSelectedPanels(new Set());
-  }, [panelBounds, setActivePanelTree]);
+  }, [selectionFace, backPreset, frontPanelTree, backPanelTree, setFrontPanelTree, setBackPanelTree,
+      bottomRailW, doorH, topRailW, leftStileW, doorW, rightStileW]);
 
   const handleDeselectAll = useCallback(() => {
     setSelectedPanels(new Set());
@@ -1078,21 +1243,19 @@ export default function App() {
   }, []);
 
   const handleResetElevation = useCallback(() => {
-    const style = selectedConfigStyleId
-      ? configData.matrix.find(s => s.id === selectedConfigStyleId)
-      : null;
-    const defaultStile = (style?.params.stileMin as NumberValue | undefined)?.value ?? 63.5;
-    const defaultRail  = (style?.params.railMin  as NumberValue | undefined)?.value ?? 63.5;
-    setLeftStileW(defaultStile);
-    setRightStileW(defaultStile);
-    setTopRailW(defaultRail);
-    setBottomRailW(defaultRail);
+    if (doorPartType !== 'slab') {
+      const def = sessionDoorTypeDefaults[doorPartType];
+      setLeftStileW(def.stile);
+      setRightStileW(def.stile);
+      setTopRailW(def.rail);
+      setBottomRailW('bottomRail' in def ? def.bottomRail : def.rail);
+    }
     setFrontPanelTree({ type: 'leaf' });
     setBackPanelTree({ type: 'leaf' });
     setSelectedPanels(new Set());
     setSelectedSplitPath(null);
     setKerfs([]);
-  }, [selectedConfigStyleId, configData.matrix]);
+  }, [doorPartType, sessionDoorTypeDefaults]);
 
   const handleAddKerf = useCallback((orientation: 'H' | 'V', centerMm: number, toolGroupId: number | null) => {
     // Look up kerf depth from configured tool group depths
@@ -1160,6 +1323,11 @@ export default function App() {
     backPreset,
     onBackPresetChange: (preset: string) => {
       setBackPreset(preset);
+      if (preset === '' || preset === 'back-route' || preset === 'back-bridge') {
+        // Reset back splits when switching to None, Route, or Bridge (mullions not supported)
+        setBackPanelTree({ type: 'leaf' });
+        setSelectedPanels(new Set());
+      }
       if (preset === '') {
         // None — clear back
         setBackGroupId(null);
@@ -1247,10 +1415,10 @@ export default function App() {
   const camDist = maxDim * 1.8;
 
   // Render content for a given layout slot
-  const renderSlotContent = useCallback((slot: string) => {
-    const panelId = layoutPreset === 'compact'
+  const renderSlotContent = useCallback((slot: string, forcePanelId?: PanelContentId) => {
+    const panelId = forcePanelId ?? (layoutPreset === 'compact'
       ? compactLayoutMapping[slot as CompactSlotPosition]
-      : layoutMapping[slot as SlotPosition];
+      : layoutMapping[slot as SlotPosition]);
     const placeholder = (text: string) => (
       <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
         {text}
@@ -1298,6 +1466,10 @@ export default function App() {
               oppositeTree={oppositeTree}
               elevationFace={elevationFace}
               onElevationFaceChange={setElevationFace}
+              selectionFace={selectionFace}
+              splitWarning={splitWarning}
+              backPreset={backPreset}
+              onBackPanelBlocked={handleBackPanelBlocked}
               handleConfig={handleConfig}
               renderMode={elevationRenderMode}
               onRenderModeChange={setElevationRenderMode}
@@ -1347,6 +1519,7 @@ export default function App() {
             onUpdateItem={handleUpdateOrderItem}
             textureBlobUrls={textureBlobUrls}
             onViewItem={setViewingItem}
+            onViewAndLoad={layoutPreset === 'simple' || layoutPreset === 'simple-xs' ? (item: OrderItem) => { handleLoadOrderItem(item); setSimpleOverlayOpen(true); } : undefined}
             onStyleTabClick={handleSelectionTabClick}
             onQuickAdd={handleQuickAdd}
             onLoadItem={handleLoadOrderItem}
@@ -1368,7 +1541,33 @@ export default function App() {
       <TabBar currentTab={currentTab} onTabChange={setCurrentTab} units={units} onUnitsChange={setUnits} />
 
       <div ref={containerRef} style={{ position: 'absolute', inset: 0, top: 40 }}>
-        {layoutPreset === 'compact' ? (
+        {layoutPreset === 'simple' ? (
+          /* Simple: toolbar on top, order list below */
+          <PanelGroup orientation="vertical" style={{ width: '100%', height: '100%' }}>
+            <Panel defaultSize={35} minSize={15}>
+              {renderSlotContent('left-top', 'toolbar')}
+            </Panel>
+            <Separator className="resize-handle-v" />
+            <Panel defaultSize={65} minSize={30}>
+              {renderSlotContent('right-bot', 'orderList')}
+            </Panel>
+          </PanelGroup>
+        ) : layoutPreset === 'simple-xs' ? (
+          /* Simple + XS: toolbar on top, thin cross-section in middle, order list below */
+          <PanelGroup orientation="vertical" style={{ width: '100%', height: '100%' }}>
+            <Panel defaultSize={30} minSize={15}>
+              {renderSlotContent('left-top', 'toolbar')}
+            </Panel>
+            <Separator className="resize-handle-v" />
+            <Panel defaultSize={15} minSize={8}>
+              {renderSlotContent('left-mid', 'crossSection')}
+            </Panel>
+            <Separator className="resize-handle-v" />
+            <Panel defaultSize={55} minSize={20}>
+              {renderSlotContent('right-bot', 'orderList')}
+            </Panel>
+          </PanelGroup>
+        ) : layoutPreset === 'compact' ? (
           /* Compact: 2 tall left panels + top-right split (3D | elevation) + bottom-right order list */
           <PanelGroup orientation="horizontal" style={{ width: '100%', height: '100%' }}>
             <Panel defaultSize={35} minSize={20}>
@@ -1436,10 +1635,13 @@ export default function App() {
           </PanelGroup>
         )}
 
-        {/* 3D Canvas — always mounted, absolutely positioned over its assigned slot */}
+        {/* 3D Canvas — always mounted, positioned over its assigned slot (or fixed over overlay) */}
+        {(() => {
+          const isSimpleOverlay = simpleOverlayOpen && (layoutPreset === 'simple' || layoutPreset === 'simple-xs');
+          return (
         <div style={{
-          position: 'absolute',
-          zIndex: 5,
+          position: isSimpleOverlay ? 'fixed' : 'absolute',
+          zIndex: isSimpleOverlay ? 110 : 5,
           top: canvasRect?.top ?? 0,
           left: canvasRect?.left ?? 0,
           width: canvasRect?.width ?? 0,
@@ -1458,7 +1660,7 @@ export default function App() {
             onPointerMissed={() => { setSelectedPanels(new Set()); setSelectedSplitPath(null); }}
           >
             <color attach="background" args={[activePreset.background ?? '#ffffff']} />
-            <SceneLighting presetKey={viewerSettings.lightingPreset} />
+            <SceneLighting presetKey={viewerSettings.lightingPreset} envPreset={viewerSettings.envPreset} envIntensity={viewerSettings.envIntensity} />
             {activeDoor && (
               <DoorViewer
                 door={activeDoor}
@@ -1470,6 +1672,7 @@ export default function App() {
                 backPanelType={backPanelType}
                 hasBackRabbit={frontPanelType === 'glass' ? hasBackRabbit : undefined}
                 selectedPanelIndices={selectedPanels}
+                selectionFace={selectionFace}
                 selectedSplitPath={selectedSplitPath}
                 panelTree={frontPanelTree}
                 thickness={thickness}
@@ -1520,12 +1723,54 @@ export default function App() {
             </div>
           )}
 
+          {/* HDRI Environment controls */}
+          {activeDoor && (
+            <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 50, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.85)', borderRadius: 6, padding: '4px 8px', fontSize: 11 }}>
+              <label style={{ fontWeight: 500, color: '#444' }}>HDRI</label>
+              <select
+                value={viewerSettings.envPreset}
+                onChange={e => setViewerSettings({ ...viewerSettings, envPreset: e.target.value as EnvPresetKey })}
+                style={{ fontSize: 11, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, background: '#fff' }}
+              >
+                <option value="none">None</option>
+                <option value="apartment">Apartment</option>
+                <option value="city">City</option>
+                <option value="dawn">Dawn</option>
+                <option value="forest">Forest</option>
+                <option value="lobby">Lobby</option>
+                <option value="night">Night</option>
+                <option value="park">Park</option>
+                <option value="studio">Studio</option>
+                <option value="sunset">Sunset</option>
+                <option value="warehouse">Warehouse</option>
+              </select>
+              {viewerSettings.envPreset !== 'none' && (
+                <>
+                  <input
+                    type="range"
+                    min={0}
+                    max={3}
+                    step={0.05}
+                    value={viewerSettings.envIntensity}
+                    onChange={e => setViewerSettings({ ...viewerSettings, envIntensity: Number(e.target.value) })}
+                    style={{ width: 80, accentColor: '#5577aa' }}
+                  />
+                  <span style={{ color: '#666', minWidth: 28, textAlign: 'right' }}>
+                    {viewerSettings.envIntensity.toFixed(1)}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
           {loading && activeDoor && (
             <div style={styles.loadingOverlay}>
               Loading...
             </div>
           )}
         </div>
+          );
+        })()}
 
         {/* Layout customizer button — top-right corner */}
         <button
@@ -1550,6 +1795,109 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* Simple mode: interactive overlay with 3D + elevation */}
+      {(layoutPreset === 'simple' || layoutPreset === 'simple-xs') && simpleOverlayOpen && activeDoor && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setSimpleOverlayOpen(false)}
+        >
+          <div
+            style={{ width: '85vw', height: '85vh', background: '#fff', borderRadius: 8, display: 'flex', overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.4)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Left pane: 3D canvas target */}
+            <div ref={simpleOverlayCanvasRef} style={{ flex: 1, position: 'relative', background: '#f8f8f8' }} />
+            {/* Right pane: Elevation */}
+            <div style={{ width: '45%', flexShrink: 0, borderLeft: '1px solid #e0e0e0', overflow: 'hidden' }}>
+              <ElevationViewer
+                compact
+                door={activeDoor}
+                units={units}
+                fractionPrecision={fractionPrecision}
+                panelTree={elevationTree}
+                oppositeTree={oppositeTree}
+                elevationFace={elevationFace}
+                onElevationFaceChange={setElevationFace}
+                selectionFace={selectionFace}
+                splitWarning={splitWarning}
+                backPreset={backPreset}
+                onBackPanelBlocked={handleBackPanelBlocked}
+                handleConfig={handleConfig}
+                renderMode={elevationRenderMode}
+                onRenderModeChange={setElevationRenderMode}
+                selectedSplitPath={selectedSplitPath}
+                onSplitSelect={handleSplitSelect}
+                onSplitDragEnd={handleSplitDragEnd}
+                onLeftStileWidthChange={setLeftStileW}
+                onRightStileWidthChange={setRightStileW}
+                onTopRailWidthChange={setTopRailW}
+                onBottomRailWidthChange={setBottomRailW}
+                onSplitWidthChange={handleSplitWidthChange}
+                overrideLeftStileW={leftStileW}
+                overrideRightStileW={rightStileW}
+                overrideTopRailW={topRailW}
+                overrideBottomRailW={bottomRailW}
+                onReset={handleResetElevation}
+                onPanelSelect={handlePanelSelect}
+                selectedPanelIndices={selectedPanels}
+                onAddMidRail={handleAddMidRail}
+                onAddMidStile={handleAddMidStile}
+                onDeleteSplit={handleDeleteSplit}
+                onAddEqualMidRails={handleAddEqualMidRails}
+                onAddEqualMidStiles={handleAddEqualMidStiles}
+                onDeselectAll={handleDeselectAll}
+                hingeConfig={hingeConfig}
+                onHingePositionChange={handleHingePositionChange}
+                onHandleElevationChange={handleHandleElevationChange}
+                kerfs={kerfs}
+                kerfEnabled={kerfEnabled}
+                kerfToolGroups={kerfToolGroups}
+                onAddKerf={handleAddKerf}
+                onDeleteKerf={handleDeleteKerf}
+                onMoveKerf={handleMoveKerf}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simple mode: floating cross-section button */}
+      {layoutPreset === 'simple' && !simpleOverlayOpen && (
+        <button
+          onClick={() => setShowCrossSectionPopover(true)}
+          title="Cross Section"
+          style={{ position: 'fixed', bottom: 20, right: 20, width: 48, height: 48, borderRadius: '50%', background: '#5577aa', color: '#fff', border: 'none', fontSize: 20, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {'\u2295'}
+        </button>
+      )}
+
+      {/* Simple mode: cross-section popover */}
+      {(layoutPreset === 'simple' || layoutPreset === 'simple-xs') && showCrossSectionPopover && crossSectionDoor && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowCrossSectionPopover(false)}
+        >
+          <div
+            style={{ width: '70vw', height: '50vh', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.4)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <CrossSectionViewer
+              compact
+              door={crossSectionDoor}
+              graph={crossSectionGraph}
+              profiles={profiles}
+              frontPanelType={frontPanelType}
+              backPanelType={backPanelType}
+              hasBackRabbit={frontPanelType === 'glass' ? hasBackRabbit : undefined}
+              units={units}
+              edgeGroupId={edgeGroupId}
+              thickness={thickness}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Admin Panel — overlay on top of the dashboard */}
       {currentTab === 'admin' && (
@@ -1652,7 +2000,11 @@ export default function App() {
           onPresetSelect={handleStylePresetSelect}
           presets={stylePresets}
           toDisplay={toDisplay}
+          fromDisplay={fromDisplay}
+          inputStep={inputStep}
           units={units}
+          doorTypeDefaults={sessionDoorTypeDefaults}
+          onDoorTypeDefaultsChange={setSessionDoorTypeDefaults}
           onClose={() => setShowStyleEditor(false)}
         />
       )}

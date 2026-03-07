@@ -312,10 +312,10 @@ export const DEFAULT_HANDLE_CONFIG: HandleConfig = {
 };
 
 // ---------------------------------------------------------------------------
-// Layout slot system — 5-panel swappable layout (default) / 4-panel compact
+// Layout slot system — 5-panel swappable layout (default) / 4-panel compact / simple (toolbar + order list)
 // ---------------------------------------------------------------------------
 
-export type LayoutPreset = 'default' | 'compact';
+export type LayoutPreset = 'default' | 'compact' | 'simple' | 'simple-xs';
 
 export type PanelContentId = 'toolbar' | 'crossSection' | 'canvas3d' | 'elevation' | 'orderList';
 export type SlotPosition = 'left-top' | 'left-mid' | 'left-bot' | 'right-top' | 'right-bot';

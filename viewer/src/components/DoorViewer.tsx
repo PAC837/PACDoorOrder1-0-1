@@ -19,6 +19,7 @@ interface DoorViewerProps {
   hasBackRabbit?: boolean;
   selectedPanelIndices?: Set<number>;
   onPanelSelect?: (idx: number, event: { ctrlKey: boolean }) => void;
+  selectionFace?: 'front' | 'back';
   selectedSplitPath?: number[] | null;
   onSplitSelect?: (path: number[] | null) => void;
   panelTree?: PanelTree;
@@ -30,7 +31,7 @@ interface DoorViewerProps {
   materialOverrides?: { roughness?: number; metalness?: number };
 }
 
-export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl, kerfs, modelOpacity, materialOverrides }: DoorViewerProps) {
+export function DoorViewer({ door, graph, profiles, operationVisibility, toolVisibility, frontPanelType, backPanelType, hasBackRabbit, selectedPanelIndices, onPanelSelect, selectionFace, selectedSplitPath, onSplitSelect, panelTree, thickness: thicknessProp, renderMode, textureUrl, kerfs, modelOpacity, materialOverrides }: DoorViewerProps) {
   // Note: onPanelSelect/onSplitSelect may be undefined — overlays render read-only highlights when absent
   const operations = door.RoutedLockedShape?.Operations?.OperationPocket ?? [];
   const holes: HoleData[] = door.RoutedLockedShape?.Operations?.OperationHole ?? [];
@@ -88,31 +89,35 @@ export function DoorViewer({ door, graph, profiles, operationVisibility, toolVis
       />
 
       {/* Panel selection highlights (read-only unless onPanelSelect is provided) */}
-      {selectedPanelIndices && selectedPanelIndices.size > 0 && frontOps.map((op, i) => {
-        if (!selectedPanelIndices.has(i)) return null;
-        if (!op.OperationToolPathNode || op.OperationToolPathNode.length < 3) return null;
-        const rect = toolPathToRect(op.OperationToolPathNode, doorW, doorH);
-        return (
-          <mesh
-            key={`panel-select-${i}`}
-            position={[rect.x, rect.y, thickness / 2 + 0.5]}
-            {...(onPanelSelect ? {
-              onClick: (e: THREE.Event) => { (e as any).stopPropagation(); onPanelSelect(i, { ctrlKey: (e as any).ctrlKey || (e as any).metaKey }); },
-              onPointerOver: () => { document.body.style.cursor = 'pointer'; },
-              onPointerOut: () => { document.body.style.cursor = 'default'; },
-            } : {})}
-          >
-            <planeGeometry args={[rect.width, rect.height]} />
-            <meshStandardMaterial
-              color="#4488ff"
-              transparent
-              opacity={0.25}
-              side={THREE.DoubleSide}
-              depthWrite={false}
-            />
-          </mesh>
-        );
-      })}
+      {selectedPanelIndices && selectedPanelIndices.size > 0 && (() => {
+        const opsToHighlight = selectionFace === 'back' ? backPocketOps : frontOps;
+        const zPos = selectionFace === 'back' ? -(thickness / 2 + 0.5) : (thickness / 2 + 0.5);
+        return opsToHighlight.map((op, i) => {
+          if (!selectedPanelIndices.has(i)) return null;
+          if (!op.OperationToolPathNode || op.OperationToolPathNode.length < 3) return null;
+          const rect = toolPathToRect(op.OperationToolPathNode, doorW, doorH);
+          return (
+            <mesh
+              key={`panel-select-${i}`}
+              position={[rect.x, rect.y, zPos]}
+              {...(onPanelSelect ? {
+                onClick: (e: THREE.Event) => { (e as any).stopPropagation(); onPanelSelect(i, { ctrlKey: (e as any).ctrlKey || (e as any).metaKey }); },
+                onPointerOver: () => { document.body.style.cursor = 'pointer'; },
+                onPointerOut: () => { document.body.style.cursor = 'default'; },
+              } : {})}
+            >
+              <planeGeometry args={[rect.width, rect.height]} />
+              <meshStandardMaterial
+                color="#4488ff"
+                transparent
+                opacity={0.25}
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
+            </mesh>
+          );
+        });
+      })()}
 
       {/* Split selection highlights (read-only unless onSplitSelect is provided) */}
       {selectedSplitPath && splitOverlays.map((split, i) => {

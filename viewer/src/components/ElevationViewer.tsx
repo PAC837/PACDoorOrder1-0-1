@@ -30,8 +30,10 @@ interface ElevationViewerProps {
   overrideTopRailW?: number;
   overrideBottomRailW?: number;
   onReset?: () => void;
-  onPanelSelect?: (idx: number, event: { ctrlKey: boolean }) => void;
+  onPanelSelect?: (idx: number, event: { ctrlKey: boolean; face?: 'front' | 'back' }) => void;
   selectedPanelIndices?: Set<number>;
+  selectionFace?: 'front' | 'back';
+  splitWarning?: string | null;
   onAddMidRail?: (panelIdx: number) => void;
   onAddMidStile?: (panelIdx: number) => void;
   onDeleteSplit?: (path: number[]) => void;
@@ -51,6 +53,8 @@ interface ElevationViewerProps {
   oppositeTree?: PanelTree;
   elevationFace?: 'front' | 'back';
   onElevationFaceChange?: (face: 'front' | 'back') => void;
+  backPreset?: string;
+  onBackPanelBlocked?: () => void;
 }
 
 const MIN_PANEL_SIZE = 25.4; // 1" minimum panel dimension for drag constraints
@@ -153,11 +157,12 @@ export function ElevationViewer({
   selectedSplitPath, onSplitSelect, onSplitDragEnd,
   onLeftStileWidthChange, onRightStileWidthChange, onTopRailWidthChange, onBottomRailWidthChange,
   onSplitWidthChange, overrideLeftStileW, overrideRightStileW, overrideTopRailW, overrideBottomRailW,
-  onPanelSelect, selectedPanelIndices, onAddMidRail, onAddMidStile,
+  onPanelSelect, selectedPanelIndices, selectionFace, splitWarning,
+  onAddMidRail, onAddMidStile,
   onDeleteSplit, onAddEqualMidRails, onAddEqualMidStiles, onDeselectAll,
   hingeConfig, onHingePositionChange, onHandleElevationChange, compact, onReset,
   kerfs, kerfEnabled, kerfToolGroups, onAddKerf, onDeleteKerf, onMoveKerf,
-  oppositeTree, elevationFace: elevationFaceProp, onElevationFaceChange,
+  oppositeTree, elevationFace: elevationFaceProp, onElevationFaceChange, backPreset, onBackPanelBlocked,
 }: ElevationViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -230,6 +235,16 @@ export function ElevationViewer({
   const splitsWithBounds = useMemo(
     () => enumerateSplitsWithBounds(panelTree, rootBounds),
     [panelTree, rootBounds],
+  );
+
+  // Opposite-tree data for back-half hit-testing in split view
+  const oppositeLeaves = useMemo(
+    () => flattenTree(oppositeTree ?? { type: 'leaf' }, rootBounds),
+    [oppositeTree, rootBounds],
+  );
+  const oppositeSplitsWithBounds = useMemo(
+    () => enumerateSplitsWithBounds(oppositeTree ?? { type: 'leaf' }, rootBounds),
+    [oppositeTree, rootBounds],
   );
 
   // Reset zoom/pan when door changes (name or dimensions)
@@ -631,11 +646,20 @@ export function ElevationViewer({
       const localToXHit = inBackHalf ? toXBack : activeToX;
       const localFromXHit = inBackHalf ? fromXBack : activeFromX;
 
+      // Determine which face this click targets
+      const clickedFace = inBackHalf
+        ? (elevationFace === 'front' ? 'back' : 'front')
+        : elevationFace;
+      // Block back panel/split selection when back type doesn't support it
+      const backBlocked = clickedFace === 'back' && (backPreset === '' || backPreset === 'back-route' || backPreset === 'back-bridge');
+
       // Hit-test dividers first (only when interactive)
-      if (onSplitSelect) {
-        const hit = hitTestSplits(sx, sy, splitsWithBounds, localToXHit, toY);
+      if (onSplitSelect && !backBlocked) {
+        const splitsToTest = inBackHalf ? oppositeSplitsWithBounds : splitsWithBounds;
+        const hit = hitTestSplits(sx, sy, splitsToTest, localToXHit, toY);
         if (hit) {
           e.preventDefault();
+          if (inBackHalf) setElevationFace(elevationFace === 'front' ? 'back' : 'front');
           onSplitSelect(hit.path);
           setSelectedFrameMember(null);
           pendingClick.current = { path: hit.path, type: hit.type, pos: hit.pos, startX: e.clientX, startY: e.clientY };
@@ -644,19 +668,33 @@ export function ElevationViewer({
         }
       }
 
-      // Hit-test panels
+      // Hit-test panels (use opposite tree leaves for back half)
       if (onPanelSelect) {
-        const panelIdx = hitTestPanels(sx, sy, localFromXHit);
+        const leavesToTest = inBackHalf ? oppositeLeaves : leaves;
+        const mx = localFromXHit(sx), my = fromY(sy);
+        let panelIdx = -1;
+        for (let i = 0; i < leavesToTest.length; i++) {
+          const pb = leavesToTest[i];
+          if (mx >= pb.yMin && mx <= pb.yMax && my >= pb.xMin && my <= pb.xMax) {
+            panelIdx = i; break;
+          }
+        }
         if (panelIdx >= 0) {
+          if (backBlocked) {
+            e.preventDefault();
+            onBackPanelBlocked?.();
+            lastMouse.current = { x: e.clientX, y: e.clientY };
+            return;
+          }
           e.preventDefault();
-          onPanelSelect(panelIdx, { ctrlKey: e.ctrlKey });
+          onPanelSelect(panelIdx, { ctrlKey: e.ctrlKey, face: clickedFace });
           setSelectedFrameMember(null);
           lastMouse.current = { x: e.clientX, y: e.clientY };
           return;
         }
       }
 
-      // Hit-test fixed frame members
+      // Hit-test fixed frame members (no face-switch — stile/rail widths are shared)
       const mx = localFromXHit(sx), my = fromY(sy);
       const frameHit = hitTestFrame(mx, my, localToXHit);
       if (frameHit) {
@@ -675,7 +713,7 @@ export function ElevationViewer({
     // Start canvas pan
     setIsPanning(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, [measure.measureMode, measure.setBackHalf, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, toX, toY, fromX, fromY, activeFromX, toXBack, fromXBack, singleView, halfW, onSplitSelect, hitTestFrame, hitTestPanels, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle, kerfMode, kerfs, onAddKerf, kerfToolGroupId, selectedSplitPath, doorH, doorW]);
+  }, [measure.measureMode, measure.setBackHalf, measure.handleDimMouseDown, measure.handleMouseDown, splitsWithBounds, oppositeSplitsWithBounds, oppositeLeaves, leaves, toX, toY, fromX, fromY, activeFromX, toXBack, fromXBack, singleView, halfW, onSplitSelect, hitTestFrame, onPanelSelect, onDeselectAll, hitTestHingeCup, hitTestHandle, kerfMode, kerfs, onAddKerf, kerfToolGroupId, selectedSplitPath, doorH, doorW, elevationFace, setElevationFace]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     // Suppress context menu during active dim drag
@@ -1213,34 +1251,13 @@ export function ElevationViewer({
             collectOppositeDividers(oppositeTree, rootBounds);
 
             if (oppRects.length > 0) {
-              // Single batched hatch pass
-              ctx.save();
-              ctx.beginPath();
-              for (const r of oppRects) ctx.rect(r.x, r.y, r.w, r.h);
-              ctx.clip();
-              ctx.strokeStyle = 'rgba(0, 160, 0, 0.25)';
+              // Solid beige fill matching active-face dividers
+              ctx.fillStyle = '#e8dcc8';
+              for (const r of oppRects) ctx.fillRect(r.x, r.y, r.w, r.h);
+              // Thin outline
+              ctx.strokeStyle = '#333333';
               ctx.lineWidth = 0.5;
-              let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
-              for (const r of oppRects) {
-                bx0 = Math.min(bx0, r.x); by0 = Math.min(by0, r.y);
-                bx1 = Math.max(bx1, r.x + r.w); by1 = Math.max(by1, r.y + r.h);
-              }
-              const bw = bx1 - bx0, bh = by1 - by0;
-              const spacing = 6;
-              for (let d = -(bw + bh); d < bw + bh; d += spacing) {
-                ctx.beginPath();
-                ctx.moveTo(bx0 + d, by0);
-                ctx.lineTo(bx0 + d + bh, by0 + bh);
-                ctx.stroke();
-              }
-              ctx.restore();
-
-              // Dashed outlines per-rect (no clipping needed)
-              ctx.strokeStyle = '#33aa33';
-              ctx.lineWidth = 1;
-              ctx.setLineDash([4, 3]);
               for (const r of oppRects) ctx.strokeRect(r.x, r.y, r.w, r.h);
-              ctx.setLineDash([]);
             }
           }
         }
@@ -1443,17 +1460,22 @@ export function ElevationViewer({
       }
     }
 
-    // Panel selection highlights (front view only)
+    // Panel selection highlights — render on correct half based on selectionFace
     if (selectedPanelIndices && selectedPanelIndices.size > 0) {
+      const selOnActiveHalf = !selectionFace || selectionFace === elevationFace;
+      const highlightLeaves = selOnActiveHalf ? leaves : oppositeLeaves;
+      const highlightToX = selOnActiveHalf ? activeToX : toXBack;
+      const clipX = selOnActiveHalf ? 0 : (singleView ? 0 : halfW);
+
       ctx.save();
       ctx.beginPath();
-      ctx.rect(0, 0, halfW, ch);
+      ctx.rect(clipX, 0, halfW, ch);
       ctx.clip();
       for (const idx of selectedPanelIndices) {
-        if (idx >= 0 && idx < leaves.length) {
-          const pb = leaves[idx];
-          const sx1 = activeToX(pb.yMin), sy1 = toY(pb.xMax);
-          const sx2 = activeToX(pb.yMax), sy2 = toY(pb.xMin);
+        if (idx >= 0 && idx < highlightLeaves.length) {
+          const pb = highlightLeaves[idx];
+          const sx1 = highlightToX(pb.yMin), sy1 = toY(pb.xMax);
+          const sx2 = highlightToX(pb.yMax), sy2 = toY(pb.xMin);
           ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
           ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
           ctx.strokeStyle = '#3c78ff';
@@ -1951,7 +1973,7 @@ export function ElevationViewer({
 
   }, [cw, ch, halfW, toX, toXBack, toXBackSingle, activeToX, toY, scale, baseScale, doorW, doorH, leftStileW, rightStileW, topRailW, bottomRailW,
       panelTree, oppositeTree, rootBounds, dimSplits, showDimensions, showHatching, showHardware, showUserDimensions, holes, handleConfig, renderMode, fmtDim, door,
-      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectedFrameMember, singleView, elevationFace,
+      selectedSplitPath, hoveredSplit, draggingSplit, splitsWithBounds, selectedPanelIndices, selectionFace, oppositeLeaves, leaves, selectedFrameMember, singleView, elevationFace,
       measure.measurements, measure.measureMode, measure.snap, measure.pointA, measure.dimPreview, measure.phase,
       selectedHingeIdx, draggingHinge, hingeConfig,
       selectedHandleIdx, draggingHandle, kerfs, selectedKerfId, kerfMode, kerfHoverMm, draggingKerf, dimOffsets]);
@@ -2012,8 +2034,9 @@ export function ElevationViewer({
         </button>
       </div>}
 
-      {/* Canvas area */}
-      <div ref={containerRef} style={{ flex: 1, position: 'relative' }}>
+      {/* Canvas area + optional Front/Back row */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div ref={containerRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <canvas
           ref={canvasRef}
           width={cw}
@@ -2165,10 +2188,13 @@ export function ElevationViewer({
         )}
         {/* MR/MS + equal-split overlay — show when exactly 1 panel selected */}
         {selectedPanelIndices && selectedPanelIndices.size === 1 && (onAddMidRail || onAddMidStile || onAddEqualMidRails || onAddEqualMidStiles) && (() => {
+          const selOnActiveHalf = !selectionFace || selectionFace === elevationFace;
+          const btnLeaves = selOnActiveHalf ? leaves : oppositeLeaves;
+          const btnToX = selOnActiveHalf ? activeToX : toXBack;
           const idx = [...selectedPanelIndices][0];
-          if (idx < 0 || idx >= leaves.length) return null;
-          const pb = leaves[idx];
-          const btnX = activeToX((pb.yMin + pb.yMax) / 2);
+          if (idx < 0 || idx >= btnLeaves.length) return null;
+          const pb = btnLeaves[idx];
+          const btnX = btnToX((pb.yMin + pb.yMax) / 2);
           const btnY = toY((pb.xMin + pb.xMax) / 2);
           return (
             <div style={{
@@ -2421,59 +2447,6 @@ export function ElevationViewer({
             </>
           )}
         </div>
-        {singleView && (
-          <div style={{
-            position: 'absolute',
-            top: 8,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            gap: 0,
-            zIndex: 12,
-          }}>
-            <button
-              onClick={() => {
-                if (elevationFace === 'front' || isFlipping) return;
-                setIsFlipping(true);
-                setTimeout(() => {
-                  setElevationFace('front');
-                  setTimeout(() => setIsFlipping(false), 200);
-                }, 200);
-              }}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '4px 0 0 4px',
-                border: '1px solid #0077b3',
-                borderRight: 'none',
-                background: elevationFace === 'front' ? '#0088cc' : '#fff',
-                color: elevationFace === 'front' ? '#fff' : '#333',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: elevationFace === 'front' ? 'default' : 'pointer',
-              }}
-            >Front</button>
-            <button
-              onClick={() => {
-                if (elevationFace === 'back' || isFlipping) return;
-                setIsFlipping(true);
-                setTimeout(() => {
-                  setElevationFace('back');
-                  setTimeout(() => setIsFlipping(false), 200);
-                }, 200);
-              }}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '0 4px 4px 0',
-                border: '1px solid #0077b3',
-                background: elevationFace === 'back' ? '#0088cc' : '#fff',
-                color: elevationFace === 'back' ? '#fff' : '#333',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: elevationFace === 'back' ? 'default' : 'pointer',
-              }}
-            >Back</button>
-          </div>
-        )}
         {isZoomed && (
           <button
             style={resetBtnStyle}
@@ -2482,6 +2455,80 @@ export function ElevationViewer({
             Reset View
           </button>
         )}
+        {splitWarning && (
+          <div style={{
+            position: 'absolute',
+            left: (singleView ? cx : halfW + halfW / 2) + panX,
+            top: cy + panY,
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(180, 60, 30, 0.92)',
+            color: '#fff',
+            padding: '8px 16px',
+            borderRadius: 6,
+            fontSize: 13,
+            fontWeight: 500,
+            zIndex: 30,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          }}>
+            {splitWarning}
+          </div>
+        )}
+      </div>
+      {singleView && (
+        <div style={{
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 0,
+          padding: '4px 0',
+          borderTop: '1px solid #ddd',
+          background: '#fff',
+        }}>
+          <button
+            onClick={() => {
+              if (elevationFace === 'front' || isFlipping) return;
+              setIsFlipping(true);
+              setTimeout(() => {
+                setElevationFace('front');
+                setTimeout(() => setIsFlipping(false), 200);
+              }, 200);
+            }}
+            style={{
+              padding: '6px 24px',
+              borderRadius: '4px 0 0 4px',
+              border: '1px solid #0077b3',
+              borderRight: 'none',
+              background: elevationFace === 'front' ? '#0088cc' : '#fff',
+              color: elevationFace === 'front' ? '#fff' : '#333',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: elevationFace === 'front' ? 'default' : 'pointer',
+            }}
+          >Front</button>
+          <button
+            onClick={() => {
+              if (elevationFace === 'back' || isFlipping) return;
+              setIsFlipping(true);
+              setTimeout(() => {
+                setElevationFace('back');
+                setTimeout(() => setIsFlipping(false), 200);
+              }, 200);
+            }}
+            style={{
+              padding: '6px 24px',
+              borderRadius: '0 4px 4px 0',
+              border: '1px solid #0077b3',
+              background: elevationFace === 'back' ? '#0088cc' : '#fff',
+              color: elevationFace === 'back' ? '#fff' : '#333',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: elevationFace === 'back' ? 'default' : 'pointer',
+            }}
+          >Back</button>
+        </div>
+      )}
       </div>
     </div>
   );

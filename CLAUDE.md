@@ -172,9 +172,26 @@ The export function in `App.tsx` mirrors Y coordinates (`exportY = w - node.Y`) 
 - **`HingePanel.tsx`** / **`HandlePanel.tsx`** — sub-panels rendered inside HingeAdvancedDialog / HandleAdvancedDialog
 - **`PanelSplitControls.tsx`** — controls for split panel position and width
 - **`ElevationViewer.tsx`** — 2D front elevation rendering with inline click-to-edit overlays for stile/rail widths, hinge positions, and handle elevation
-- **`LayoutCustomizer.tsx`** — dashboard panel layout drag-to-resize customizer
+- **`LayoutCustomizer.tsx`** — dashboard panel layout drag-to-resize customizer with 4 presets (Default, Compact, Simple, Simple + XS)
 - **`OrderListPanel.tsx`** — order list panel for managing door order line items
-- **`OrderPanel.tsx`** — order management panel for viewing, filtering, and exporting the door order list with configurable columns and group-by
+- **`OrderPanel.tsx`** — order management panel for viewing, filtering, and exporting the door order list with configurable columns and group-by. Eye icon opens `ItemViewerModal` (read-only) or the interactive simple overlay depending on layout preset.
+- **`ItemViewerModal.tsx`** — read-only modal showing elevation + cross-section + door details for an order item
+- **`SceneLighting.tsx`** — renders procedural lights (ambient + directional) from presets, optional HDRI environment map via drei's `Environment` component, and post-processing effects (SSAO, bloom, halftone)
+
+### Layout Presets
+
+`LayoutPreset = 'default' | 'compact' | 'simple' | 'simple-xs'` in `types.ts`:
+
+- **Default** — 5-panel: 3 stacked left (toolbar, cross-section, 3D canvas) + 2 right (elevation, order list). Panels swappable via drag-and-drop.
+- **Compact** — 5-panel: 2 left (toolbar, cross-section) + 2 top-right side-by-side (3D canvas, elevation) + bottom-right (order list).
+- **Simple** — 2-panel: toolbar (top) + order list (bottom). Eye icon on order items opens an interactive overlay with 3D canvas + split elevation. Floating FAB button for cross-section popover.
+- **Simple + XS** — 3-panel: toolbar (top) + cross-section (middle, thin) + order list (bottom). Same eye-icon overlay as Simple.
+
+**Simple overlay** (`App.tsx`): When eye icon is clicked in simple/simple-xs mode, `handleLoadOrderItem` loads the item's state, then a fixed overlay (85vw × 85vh) opens with the 3D canvas on the left and fully interactive split elevation on the right (mullions, kerfs, panel selection). The always-mounted Canvas repositions to the overlay via `position: fixed` with raw viewport coordinates. Click outside overlay to dismiss.
+
+### HDRI Environment Lighting
+
+`useViewerSettings.ts` persists `envPreset` (drei preset name or `'none'`) and `envIntensity` (0–3) to localStorage. `SceneLighting.tsx` renders `<Environment preset={...} environmentIntensity={...} />` from `@react-three/drei` when active. Controls rendered as a bottom-left overlay on the 3D canvas (preset dropdown + intensity slider). 10 built-in presets available (apartment, city, dawn, forest, lobby, night, park, studio, sunset, warehouse) — no local .hdr files needed.
 
 ### Configure System
 

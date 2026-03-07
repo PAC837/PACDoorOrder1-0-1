@@ -3,7 +3,7 @@
 // Adding a new parameter = adding one entry here + its default in server/db.ts.
 // ---------------------------------------------------------------------------
 
-export type ParamType = 'checkbox-list' | 'fixed-checkbox-list' | 'group-depth-list' | 'number' | 'auto-checkbox' | 'boolean-radio' | 'texture-checkbox-list';
+export type ParamType = 'checkbox-list' | 'fixed-checkbox-list' | 'group-depth-list' | 'number' | 'auto-checkbox' | 'boolean-radio' | 'texture-checkbox-list' | 'door-type-defaults';
 export type ParamSource = 'panelGroups' | 'edgeGroups';
 
 export interface ParamDefinition {
@@ -49,6 +49,8 @@ export const PARAM_DEFINITIONS: ParamDefinition[] = [
     { value: 'slab', label: 'Slab' },
     { value: 'end-panel', label: 'End Panel' },
   ]},
+  { key: 'doorTypeDefaults',  label: 'Door Type Defaults', type: 'door-type-defaults' },
+  { key: 'reducedRailReduction', label: 'Reduced Rail Cut', type: 'number', unit: 'mm' },
   { key: 'backRouteGroups',  label: 'Back Route Groups',  type: 'group-depth-list', source: 'panelGroups' },
   { key: 'backPocketGroups', label: 'Back Pocket Groups', type: 'group-depth-list', source: 'panelGroups' },
   { key: 'backCustomGroups', label: 'Back Custom Groups', type: 'group-depth-list', source: 'panelGroups' },
@@ -93,6 +95,22 @@ export interface GroupDepthListValue {
 export interface TextureCheckboxListValue {
   enabledTextures: string[];
 }
+
+export interface DoorTypeDefaultsValue {
+  door:           { stile: number; rail: number };
+  drawer:         { stile: number; rail: number };
+  'reduced-rail': { stile: number; rail: number };
+  slab:           { minWidth: number; minLength: number };
+  'end-panel':    { stile: number; rail: number; bottomRail: number };
+}
+
+export const DEFAULT_DOOR_TYPE_DEFAULTS: DoorTypeDefaultsValue = {
+  door:           { stile: 63.5, rail: 63.5 },
+  drawer:         { stile: 63.5, rail: 63.5 },
+  'reduced-rail': { stile: 63.5, rail: 44.45 },
+  slab:           { minWidth: 152.4, minLength: 152.4 },
+  'end-panel':    { stile: 63.5, rail: 63.5, bottomRail: 139.7 },
+};
 
 // ---------------------------------------------------------------------------
 // Helper: generate 1/8" increments between min and max (in mm)

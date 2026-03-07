@@ -23,6 +23,14 @@ const PARAM_DEFAULTS: Record<string, string> = {
   panelTypes:       JSON.stringify({ enabledOptions: ['pocket', 'raised', 'glass'] }),
   backOperations:   JSON.stringify({ enabledOptions: ['none', 'back-route', 'back-pocket', 'back-bridge', 'custom'] }),
   doorTypes:        JSON.stringify({ enabledOptions: ['door', 'drawer', 'reduced-rail', 'slab', 'end-panel'] }),
+  doorTypeDefaults: JSON.stringify({
+    door:           { stile: 63.5, rail: 63.5 },
+    drawer:         { stile: 63.5, rail: 63.5 },
+    'reduced-rail': { stile: 63.5, rail: 44.45 },
+    slab:           { minWidth: 152.4, minLength: 152.4 },
+    'end-panel':    { stile: 63.5, rail: 63.5, bottomRail: 139.7 },
+  }),  // keep in sync with DEFAULT_DOOR_TYPE_DEFAULTS in configParams.ts
+  reducedRailReduction: JSON.stringify({ value: 19.05 }),  // 0.75" — how much to reduce rails for Reduced type
   backRouteGroups:  JSON.stringify({ entries: [] }),
   backPocketGroups: JSON.stringify({ entries: [] }),
   backCustomGroups: JSON.stringify({ entries: [] }),
